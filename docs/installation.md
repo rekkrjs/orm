@@ -1,6 +1,6 @@
 # Installation
 
-Bunny ORM is a **Bun-only package**. It links directly against `bun:sql`, so it cannot run under Node.js, npm, yarn, or pnpm.
+ORM is a **Bun-only package**. It links directly against `bun:sql`, so it cannot run under Node.js, npm, yarn, or pnpm.
 
 ## Requirements
 
@@ -16,7 +16,7 @@ bun --version
 ## Add the package
 
 ```bash
-bun add @bunnykit/orm
+bun add @rekkr/orm
 ```
 
 That is the entire install step. The package ships with **zero runtime dependencies** — no `pg`, no `mysql2`, no driver layer to wire up. Connections go through `bun:sql`, which Bun provides natively.
@@ -26,9 +26,9 @@ That is the entire install step. The package ships with **zero runtime dependenc
 A branch, tag, or commit works the same way — no build step, no `trustedDependencies` entry:
 
 ```bash
-bun add github:bunnykit/orm                # default branch
-bun add github:bunnykit/orm#<tag>          # a published tag, e.g. v0.4.0
-bun add github:bunnykit/orm#<commit-sha>   # a specific commit
+bun add github:rekkrjs/orm                # default branch
+bun add github:rekkrjs/orm#<tag>          # a published tag, e.g. v0.4.0
+bun add github:rekkrjs/orm#<commit-sha>   # a specific commit
 ```
 
 The package resolves through the `bun` export condition straight to its TypeScript
@@ -62,7 +62,7 @@ Scope it to `ssr` and nothing else. `resolve.conditions` at the top level is
 which would pull the ORM's source into a browser bundle, where its `import "bun"`
 cannot resolve.
 
-That is a boundary worth stating plainly: **Bunny is server-only.** It links
+That is a boundary worth stating plainly: **ORM is server-only.** It links
 against `bun:sql`, so it must be imported from server modules exclusively — in
 SvelteKit that means `+page.server.ts`, `+server.ts`, `hooks.server.ts`, or a
 `$lib/server/` module. Importing it from client code fails the build, by design.
@@ -89,12 +89,12 @@ If your project uses TypeScript, no extra `@types/*` packages are needed — typ
 
 ## The CLI
 
-Installing the package also exposes the `bunny` CLI for migrations, seeders, and the REPL:
+Installing the package also exposes the `orm` CLI for migrations, seeders, and the REPL:
 
 ```bash
-bunx bunny --help
-bunx bunny migrate
-bunx bunny repl
+bunx orm --help
+bunx orm migrate
+bunx orm repl
 ```
 
 If you want a shorter invocation, add a script alias to `package.json`:
@@ -102,16 +102,16 @@ If you want a shorter invocation, add a script alias to `package.json`:
 ```jsonc
 {
   "scripts": {
-    "bunny": "bunny"
+    "orm": "orm"
   }
 }
 ```
 
-Then `bun run bunny migrate` instead of `bunx bunny migrate`.
+Then `bun run orm migrate` instead of `bunx orm migrate`.
 
 ## Next steps
 
-- [Configuration](./configuration.md) — create `bunny.config.ts` and wire up the connection.
+- [Configuration](./configuration.md) — create `orm.config.ts` and wire up the connection.
 - [Quickstart](./quickstart.md) — define your first model and run a query.
 
 ## Troubleshooting

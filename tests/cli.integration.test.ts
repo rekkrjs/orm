@@ -11,7 +11,7 @@ interface CliResult {
   timedOut: boolean;
 }
 
-const cli = join(process.cwd(), "bin", "bunny.ts");
+const cli = join(process.cwd(), "bin", "orm.ts");
 let project: string;
 let databasePath: string;
 
@@ -23,7 +23,7 @@ async function runCli(
     cwd: project,
     env: {
       ...process.env,
-      BUNNY_REPL_TMPDIR: project,
+      ORM_REPL_TMPDIR: project,
       ...options.env,
     },
     stdin: options.input === undefined ? "ignore" : "pipe",
@@ -49,7 +49,7 @@ async function runCli(
   return { stdout: await stdout, stderr: await stderr, exitCode, timedOut };
 }
 
-describe.serial("bunny CLI integration", () => {
+describe.serial("orm CLI integration", () => {
   beforeAll(async () => {
     project = await mkdtemp(join(process.cwd(), "tests", ".tmp-cli-"));
     databasePath = join(project, "app.sqlite");
@@ -62,7 +62,7 @@ describe.serial("bunny CLI integration", () => {
       mkdir(commands, { recursive: true }),
     ]);
 
-    await Bun.write(join(project, "bunny.config.ts"), `
+    await Bun.write(join(project, "orm.config.ts"), `
 export default {
   connection: { url: ${JSON.stringify(`sqlite://${databasePath}`)} },
   migrationsPath: ${JSON.stringify(migrations)},
@@ -110,7 +110,7 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
   test("runs help, application commands, migrations, and seeders as subprocesses", async () => {
     const help = await runCli(["--help"]);
     expect(help.exitCode).toBe(0);
-    expect(help.stdout).toContain("Usage: bunny");
+    expect(help.stdout).toContain("Usage: orm");
     expect(help.stdout).not.toContain("\x1b[");
 
     const custom = await runCli(["run", "smoke:hello", "Ada", "--loud"]);
@@ -187,17 +187,17 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
     expect(repl.timedOut).toBe(false);
     expect(repl.exitCode).toBe(0);
     expect(repl.stderr).toBe("");
-    expect(repl.stdout).toContain("Bunny REPL ready.");
+    expect(repl.stdout).toContain("ORM REPL ready.");
     expect(repl.stdout).toContain("REPL_SMOKE function object");
   }, 20_000);
 
-  test("creates BUNNY_REPL_TMPDIR and keeps the transpiler cache across sessions", async () => {
+  test("creates ORM_REPL_TMPDIR and keeps the transpiler cache across sessions", async () => {
     const missingRoot = join(project, "missing-repl-root", "nested");
     const runRepl = () =>
       runCli(["repl"], {
         input: `console.log("REPL_SMOKE", typeof Model, typeof connection)\n.exit\n`,
         timeoutMs: 15_000,
-        env: { BUNNY_REPL_TMPDIR: missingRoot },
+        env: { ORM_REPL_TMPDIR: missingRoot },
       });
 
     const first = await runRepl();
@@ -206,7 +206,7 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
     expect(first.exitCode).toBe(0);
     expect(first.stdout).toContain("REPL_SMOKE function object");
 
-    const cacheDir = join(missingRoot, "bunny-repl-cache");
+    const cacheDir = join(missingRoot, "orm-repl-cache");
     const cachedAfterFirst = await readdir(cacheDir);
     expect(cachedAfterFirst.length).toBeGreaterThan(0);
 
@@ -216,7 +216,7 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
     expect((await readdir(cacheDir)).length).toBeGreaterThan(0);
 
     // The disposable bootstrap dirs must not survive either session.
-    const leftovers = (await readdir(missingRoot)).filter((entry) => entry !== "bunny-repl-cache");
+    const leftovers = (await readdir(missingRoot)).filter((entry) => entry !== "orm-repl-cache");
     expect(leftovers).toEqual([]);
   }, 40_000);
 });

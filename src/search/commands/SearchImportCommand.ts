@@ -1,10 +1,10 @@
 import { Command } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { resolveSearchableModel } from "./resolveSearchableModel.js";
 import { importModel, resolveChunkSize } from "./importHelper.js";
 import { runWithTenant } from "./runWithTenant.js";
 
-export function makeSearchImportCommand(config: BunnyConfig) {
+export function makeSearchImportCommand(config: OrmConfig) {
   return class extends Command.define("search:import {model : Model class name} {--chunk= : Rows per batch} {--dry-run : Count rows without pushing} {--tenant= : Run under a tenant context}") {
     static description = "Bulk-index existing rows of a searchable model.";
 

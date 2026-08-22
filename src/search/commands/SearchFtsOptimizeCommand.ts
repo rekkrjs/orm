@@ -1,10 +1,10 @@
 import { Command } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { Search } from "../SearchManager.js";
 import { resolveSearchableModel } from "./resolveSearchableModel.js";
 import { runWithTenant } from "./runWithTenant.js";
 
-export function makeSearchFtsOptimizeCommand(config: BunnyConfig) {
+export function makeSearchFtsOptimizeCommand(config: OrmConfig) {
   return class extends Command.define("search:fts:optimize {model : Model class name} {--tenant= : Run under a tenant context}") {
     static description = "Run FTS5 'optimize' on the model's index (merges b-tree levels).";
 

@@ -13,7 +13,7 @@ Inside a shared observer, `model.isInstanceOf(User)` is the easiest way to branc
 For IntelliSense to narrow correctly, type the hook parameter as `Model` or a union of model types, not `any`:
 
 ```ts
-import { Model, Observer } from "@bunnykit/orm";
+import { Model, Observer } from "@rekkr/orm";
 import User from "./models/User";
 import Order from "./models/Order";
 
@@ -44,10 +44,10 @@ AuditObserver.unobserve([User, Order]);
 
 ## Registering
 
-For larger observers, extend `Observer<Model>` and call `YourObserver.observe(ModelClass)` once at app startup — typically right after `configureBunny()`:
+For larger observers, extend `Observer<Model>` and call `YourObserver.observe(ModelClass)` once at app startup — typically right after `configureOrm()`:
 
 ```ts
-import { Observer } from "@bunnykit/orm";
+import { Observer } from "@rekkr/orm";
 import Admission from "./models/Admission";
 import { AdmissionStatusEnum } from "./enums";
 
@@ -73,7 +73,7 @@ The `Observer<Admission>` generic makes the generated hook signatures show `mode
 For small inline observers, `ObserverRegistry.register(ModelClass, observer)` attaches one or more handlers to a model:
 
 ```ts
-import { ObserverRegistry } from "@bunnykit/orm";
+import { ObserverRegistry } from "@rekkr/orm";
 import User from "./models/User";
 import { sendWelcomeEmail, recordSignup } from "./services/users";
 
@@ -210,7 +210,7 @@ In test setup, register the observers you want to exercise and unregister them i
 
 ```ts
 import { beforeEach, afterEach } from "bun:test";
-import { ObserverRegistry } from "@bunnykit/orm";
+import { ObserverRegistry } from "@rekkr/orm";
 import User from "../src/models/User";
 import { UserObserver } from "../src/observers/UserObserver";
 

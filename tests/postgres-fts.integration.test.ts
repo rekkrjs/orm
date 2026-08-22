@@ -99,7 +99,7 @@ describe.serial("PostgreSQL FTS Engine Integration", () => {
       {
         index: "pg_posts",
         id: 1,
-        data: { title: "Getting Started with Bunny", body: "An Eloquent-style Bun native ORM", status: "published", views: 100 },
+        data: { title: "Getting Started with ORM", body: "An Eloquent-style Bun native ORM", status: "published", views: 100 },
       },
       {
         index: "pg_posts",
@@ -111,13 +111,13 @@ describe.serial("PostgreSQL FTS Engine Integration", () => {
     // Search query FTS match
     let hits = await engine.search({
       index: "pg_posts",
-      query: "Bunny ORM",
+      query: "ORM ORM",
       filters: [],
       sorts: [],
     });
     expect(hits).toHaveLength(1);
     expect(hits[0].id).toBe("1");
-    expect(hits[0].data.title).toBe("Getting Started with Bunny");
+    expect(hits[0].data.title).toBe("Getting Started with ORM");
 
     // Search query FTS match 2
     hits = await engine.search({
@@ -147,7 +147,7 @@ describe.serial("PostgreSQL FTS Engine Integration", () => {
     await engine.delete([{ index: "pg_posts", id: 1, data: {} }]);
     hits = await engine.search({
       index: "pg_posts",
-      query: "Bunny",
+      query: "ORM",
       filters: [],
       sorts: [],
     });

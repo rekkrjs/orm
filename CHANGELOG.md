@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 - 2026-08-22
+
+### Changed
+
+- **Breaking:** The package is now published as `@rekkr/orm` from
+  `github.com/rekkrjs/orm`.
+- **Breaking:** The CLI executable is now `orm`, its default configuration file
+  is `orm.config.ts`, and its REPL temporary-directory variable is
+  `ORM_REPL_TMPDIR`.
+- **Breaking:** The runtime facade and configuration types are now
+  `configureOrm()`, `OrmConfig`, and `ConfiguredOrm`.
+- Internal cache, queue, migration, and temporary-resource prefixes now use the
+  `orm` namespace.
 
 ### Added
 
@@ -110,7 +122,7 @@
 ### Fixed
 
 - `constrained()` now recognizes camelCase foreign keys ending in `Id` and
-  applies Bunny's `snakeCase` table convention: `userId` targets `users` and
+  applies ORM's `snakeCase` table convention: `userId` targets `users` and
   `blogPostId` targets `blog_posts`. Code that relied on the previous inferred
   names such as `userIds` must pass that table name explicitly.
 
@@ -176,7 +188,7 @@
   `static queue = "default"`.
 - **Query logs hide binding values by default.** Bindings carry password hashes,
   tokens and PII; the log line now reports how many were hidden. Opt back in with
-  `log: { bindings: true }`. `configureBunny` is authoritative about logging: a
+  `log: { bindings: true }`. `configureOrm` is authoritative about logging: a
   later call with `log: true`, `log: false` or no `log` at all resets every
   setting, so a previous `bindings: true` (or log file) cannot carry over into a
   configuration that never asked for it. Previously an absent `log` left the
@@ -289,7 +301,7 @@
 - `types:generate` no longer enters the tenant branch — and throws after writing
   the landlord files — in a project whose `modelsPath` is a plain string.
 - `queue:install` generates the tables named by `queue.table`/`queue.failedTable`.
-- `bunny init` serialises prompt answers with `JSON.stringify`, so a quote or
+- `orm init` serialises prompt answers with `JSON.stringify`, so a quote or
   `${...}` in an answer cannot break or inject into the generated config.
 - The command signature parser reads `{-f}` as a short flag rather than a
   required positional argument, and trims `{--dir= ./app}` defaults.
@@ -348,7 +360,7 @@
   `number | string | bigint`; callers must not assume a `number`.
 - Saving an existing model without its primary key now throws instead of
   issuing an unsafe update. Textual primary keys are generated only when the
-  model and database schema indicate that Bunny owns their generation.
+  model and database schema indicate that ORM owns their generation.
 
 ### Changed
 

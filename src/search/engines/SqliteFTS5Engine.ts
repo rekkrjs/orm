@@ -137,7 +137,7 @@ export class SqliteFTS5Engine implements SearchEngine {
     if (this.explicitConnection) return this.explicitConnection;
     if (this.shared) {
       const def = ConnectionManager.getDefault();
-      if (!def) throw new Error("SqliteFTS5Engine: shared mode requires a default ORM connection (call configureBunny first).");
+      if (!def) throw new Error("SqliteFTS5Engine: shared mode requires a default ORM connection (call configureOrm first).");
       return def;
     }
     throw new Error("SqliteFTS5Engine: no connection. Pass `{ connection }` or `{ shared: true }`.");

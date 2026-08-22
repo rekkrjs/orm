@@ -507,7 +507,7 @@ export class Validator<S extends ValidationSchema, TInput = unknown> {
       get "~standard"() {
         return {
           version: 1,
-          vendor: "bunnykit",
+          vendor: "rekkr",
           validate: async (value: unknown) => {
             const result = await safeParse(value);
             if (result.success) {

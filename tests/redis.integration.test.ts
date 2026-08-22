@@ -6,7 +6,7 @@ import { RedisQueueDriver } from "../src/queue/RedisQueueDriver.js";
 
 const redisUrl = process.env.REDIS_TEST_URL || process.env.REDIS_URL;
 const runIfRedis = redisUrl ? test.serial : test.skip;
-const prefix = `bunny:test:${process.pid}:${Math.random().toString(36).slice(2)}:`;
+const prefix = `orm:test:${process.pid}:${Math.random().toString(36).slice(2)}:`;
 let redis: RedisClient;
 
 async function clearPrefix(): Promise<void> {

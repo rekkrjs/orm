@@ -4,9 +4,9 @@ import { makeMakeCommandCommand } from "../src/commands/MakeCommandCommand.js";
 import { mkdir, rm, readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import type { BunnyConfig } from "../src/config/BunnyConfig.js";
+import type { OrmConfig } from "../src/config/OrmConfig.js";
 
-const baseConfig = { connection: { client: "pg", connection: {} } } as unknown as BunnyConfig;
+const baseConfig = { connection: { client: "pg", connection: {} } } as unknown as OrmConfig;
 
 const runner = new CommandRunner();
 
@@ -51,7 +51,7 @@ describe("make:command — file creation", () => {
     const config = {
       ...baseConfig,
       commands: { commandsPath: tmpDir },
-    } as BunnyConfig;
+    } as OrmConfig;
 
     const cmd = makeMakeCommandCommand(config);
     await runner.run(cmd, ["NotifyUserCommand"]);
@@ -65,7 +65,7 @@ describe("make:command — file creation", () => {
     const config = {
       ...baseConfig,
       commands: { commandsPath: join(tmpDir, "config-path") },
-    } as BunnyConfig;
+    } as OrmConfig;
 
     const cmd = makeMakeCommandCommand(config);
     await runner.run(cmd, ["OverrideCommand", `--dir=${otherDir}`]);
@@ -114,12 +114,12 @@ describe("make:command — class name derivation", () => {
 });
 
 describe("make:command — stub content", () => {
-  it("stub imports Command from @bunnykit/orm/commands", async () => {
+  it("stub imports Command from @rekkr/orm/commands", async () => {
     const cmd = makeMakeCommandCommand(baseConfig);
     await runner.run(cmd, ["StubCheckCommand", `--dir=${tmpDir}`]);
 
     const content = await readFile(join(tmpDir, "StubCheckCommand.ts"), "utf-8");
-    expect(content).toContain('import { Command } from "@bunnykit/orm/commands"');
+    expect(content).toContain('import { Command } from "@rekkr/orm/commands"');
   });
 
   it("stub has empty handle method", async () => {

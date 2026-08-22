@@ -21,7 +21,7 @@ const urls: Record<Driver, string | undefined> = {
   postgres: process.env.POSTGRES_TEST_URL,
 };
 
-const cli = join(import.meta.dir, "..", "bin", "bunny.ts");
+const cli = join(import.meta.dir, "..", "bin", "orm.ts");
 const ormEntry = join(import.meta.dir, "..", "src", "index.js");
 
 interface CliResult {
@@ -80,7 +80,7 @@ export default class extends Migration {
 
 /** A database (MySQL) or schema (PostgreSQL) of this test's own, dropped afterwards. */
 async function createNamespace(driver: Driver, project: string): Promise<{ connection: string; dispose: () => Promise<void> }> {
-  const namespace = `bunny_cli_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
+  const namespace = `orm_cli_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
 
   if (driver === "sqlite") {
     return { connection: `{ url: "sqlite://${join(project, "app.sqlite")}" }`, dispose: async () => {} };
@@ -114,7 +114,7 @@ for (const driver of ["sqlite", "mysql", "postgres"] as Driver[]) {
   const available = Boolean(urls[driver]);
   const it = available ? test.serial : test.skip;
 
-  describe.serial(`bunny migration CLI over ${driver}`, () => {
+  describe.serial(`orm migration CLI over ${driver}`, () => {
     let project: string;
     let migrations: string;
     let dispose: () => Promise<void> = async () => {};
@@ -126,7 +126,7 @@ for (const driver of ["sqlite", "mysql", "postgres"] as Driver[]) {
       await mkdir(migrations, { recursive: true });
       const namespace = await createNamespace(driver, project);
       dispose = namespace.dispose;
-      await writeFile(join(project, "bunny.config.ts"), `
+      await writeFile(join(project, "orm.config.ts"), `
 export default {
   connection: ${namespace.connection},
   migrationsPath: "./database/migrations",
@@ -290,8 +290,8 @@ export default {
     it("takes its configuration from --config", async () => {
       await mkdir(join(project, "config"), { recursive: true });
       const moved = join(project, "config", "database.ts");
-      await writeFile(moved, `console.log("output while loading explicit config");\n${await Bun.file(join(project, "bunny.config.ts")).text()}`);
-      await rm(join(project, "bunny.config.ts"));
+      await writeFile(moved, `console.log("output while loading explicit config");\n${await Bun.file(join(project, "orm.config.ts")).text()}`);
+      await rm(join(project, "orm.config.ts"));
 
       try {
         const withoutConfig = await runCli(project, ["migrate:status", "--json"]);
@@ -302,7 +302,7 @@ export default {
         expect(JSON.parse(withConfig.stdout).migrations).toHaveLength(3);
         expect(withConfig.stderr).toContain("output while loading explicit config");
       } finally {
-        await writeFile(join(project, "bunny.config.ts"), await Bun.file(moved).text());
+        await writeFile(join(project, "orm.config.ts"), await Bun.file(moved).text());
       }
     });
   });
@@ -314,14 +314,14 @@ export default {
  * stderr, and nothing on stdout — rather than dump a stack trace or, worse,
  * succeed quietly.
  */
-describe.serial("bunny CLI configuration and argument errors", () => {
+describe.serial("orm CLI configuration and argument errors", () => {
   let configured: string;
   let bare: string;
 
   beforeAll(async () => {
     configured = await mkdtemp(join(process.cwd(), "tests", ".tmp-cli-args-"));
     await mkdir(join(configured, "database", "migrations"), { recursive: true });
-    await writeFile(join(configured, "bunny.config.ts"), `
+    await writeFile(join(configured, "orm.config.ts"), `
 export default {
   connection: { url: "sqlite://${join(configured, "app.sqlite")}" },
   migrationsPath: "./database/migrations",
@@ -380,6 +380,6 @@ export default {
     const result = await runCli(bare, ["migrate:status"]);
 
     expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain("No bunny.config.ts found.");
+    expect(result.stderr).toContain("No orm.config.ts found.");
   });
 });

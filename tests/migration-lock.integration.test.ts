@@ -93,7 +93,7 @@ describe.serial("Native migration advisory locks", () => {
   });
 
   runIfMySql("keeps the CLI alive until a MySQL migration command completes", async () => {
-    const child = Bun.spawn([process.execPath, "run", "bin/bunny.ts", "migrate"], {
+    const child = Bun.spawn([process.execPath, "run", "bin/orm.ts", "migrate"], {
       cwd: process.cwd(),
       env: {
         ...process.env,

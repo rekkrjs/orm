@@ -175,7 +175,7 @@ export class RedisQueueDriver implements QueueDriver {
   private prefix: string;
 
   constructor(private client: RedisQueueLike, options: RedisQueueDriverOptions = {}) {
-    this.prefix = options.prefix ?? "bunny:queue:";
+    this.prefix = options.prefix ?? "orm:queue:";
   }
 
   // No DDL needed for Redis

@@ -1,9 +1,9 @@
 # Validation
 
-Bunny includes an async, typed validator with Laravel-style rule chains and no string DSL.
+ORM includes an async, typed validator with Laravel-style rule chains and no string DSL.
 
 ```ts
-import { Validator, rule } from "@bunnykit/orm/validation";
+import { Validator, rule } from "@rekkr/orm/validation";
 
 const validated = await Validator.make(input, {
   email: rule().required().string().email().unique("users", "email"),
@@ -127,7 +127,7 @@ Use the root schema helpers for single-argument `command()` / `query()` handlers
 
 ```ts
 import { command, query, form } from "$app/server";
-import { Validator, rule } from "@bunnykit/orm/validation";
+import { Validator, rule } from "@rekkr/orm/validation";
 
 export const updateLikes = command(Validator.required().string(), async (id) => {
   // id: string
@@ -170,7 +170,7 @@ SvelteKit `actions` example:
 ```ts
 import * as db from "$lib/server/db";
 import { fail, type Actions, type PageServerLoad } from "@sveltejs/kit";
-import { Validator, rule } from "@bunnykit/orm/validation";
+import { Validator, rule } from "@rekkr/orm/validation";
 
 const loginSchema = Validator.schema({
   email: rule().required().string().email(),
@@ -611,7 +611,7 @@ await Validator.make(input, {
 Reusable custom rules implement `RuleContract`. This version reads from context as well:
 
 ```ts
-import type { RuleContract, ValidationContext } from "@bunnykit/orm/validation";
+import type { RuleContract, ValidationContext } from "@rekkr/orm/validation";
 
 class CompanyEmailRule implements RuleContract {
   name = "company_email";
@@ -633,7 +633,7 @@ await Validator.make(input, {
 This class-based rule compares two fields through `ValidationContext`:
 
 ```ts
-import type { RuleContract, ValidationContext } from "@bunnykit/orm/validation";
+import type { RuleContract, ValidationContext } from "@rekkr/orm/validation";
 
 class MustMatchFieldRule implements RuleContract {
   name = "must_match_field";

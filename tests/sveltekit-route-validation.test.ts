@@ -93,7 +93,7 @@ describe("sveltekit route() validation response", () => {
       cookies,
     } as any);
 
-    const stored = cookies.snapshot().bunnykit_flash;
+    const stored = cookies.snapshot().rekkr_flash;
     expect(typeof stored).toBe("string");
     expect(stored).toContain("Successfully updated");
     expect(stored).toContain("\"Done\"");
@@ -108,7 +108,7 @@ describe("sveltekit route() validation response", () => {
     });
 
     const cookies = makeCookies({
-      bunnykit_flash: JSON.stringify([{ type: "error", message: "Failed to update" }]),
+      rekkr_flash: JSON.stringify([{ type: "error", message: "Failed to update" }]),
     });
 
     const load = route().load(async (_event, { flash }) => ({ flash }));
@@ -141,7 +141,7 @@ describe("sveltekit route() validation response", () => {
     });
 
     const singleCookies = makeCookies({
-      bunnykit_flash: JSON.stringify(["Saved"]),
+      rekkr_flash: JSON.stringify(["Saved"]),
     });
     const load = route().load(async (_event, { flash }) => ({ flash }));
     const single = await load({
@@ -152,7 +152,7 @@ describe("sveltekit route() validation response", () => {
     expect(single).toEqual({ flash: "Saved" });
 
     const multipleCookies = makeCookies({
-      bunnykit_flash: JSON.stringify(["Saved", { type: "error", message: "Failed" }]),
+      rekkr_flash: JSON.stringify(["Saved", { type: "error", message: "Failed" }]),
     });
     const multiple = await load({
       params: {},
@@ -342,7 +342,7 @@ describe("sveltekit route() validation response", () => {
     expect(response.status).toBe(422);
     expect(response.headers.get("content-type")).toBe("application/problem+json");
     expect(await response.json()).toEqual({
-      type: "https://bunnykit.dev/problems/validation-error",
+      type: "https://rekkr.dev/problems/validation-error",
       title: "Validation failed",
       status: 422,
       detail: "One or more fields are invalid.",

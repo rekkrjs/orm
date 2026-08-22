@@ -2,7 +2,7 @@ import { Command } from "./Command.js";
 import { normalizePathList } from "../utils.js";
 import { mkdir, writeFile, access } from "fs/promises";
 import { join } from "path";
-import type { BunnyConfig } from "../config/BunnyConfig.js";
+import type { OrmConfig } from "../config/OrmConfig.js";
 
 function toClassName(name: string): string {
   return name
@@ -20,7 +20,7 @@ function toCommandSignature(className: string): string {
 }
 
 function buildCommandStub(className: string, signature: string): string {
-  return `import { Command } from "@bunnykit/orm/commands";
+  return `import { Command } from "@rekkr/orm/commands";
 
 export class ${className} extends Command {
   static signature = "${signature}";
@@ -37,7 +37,7 @@ async function exists(path: string): Promise<boolean> {
   return access(path).then(() => true).catch(() => false);
 }
 
-export function makeMakeCommandCommand(config: BunnyConfig) {
+export function makeMakeCommandCommand(config: OrmConfig) {
   return class MakeCommandCommand extends Command {
     static signature = "make:command {name : Command class name} {--dir= : Output directory} {--command= : Override the command signature}";
     static description = "Create a new command file.";

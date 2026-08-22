@@ -5,13 +5,13 @@ import { pathToFileURL } from "url";
 
 interface CliResult { stdout: string; stderr: string; exitCode: number }
 
-const cli = join(process.cwd(), "bin", "bunny.ts");
+const cli = join(process.cwd(), "bin", "orm.ts");
 let project: string;
 
 async function runCli(args: string[], options: { input?: string; timeoutMs?: number } = {}): Promise<CliResult> {
   const proc = Bun.spawn(["bun", cli, ...args], {
     cwd: project,
-    env: { ...process.env, BUNNY_REPL_TMPDIR: project },
+    env: { ...process.env, ORM_REPL_TMPDIR: project },
     stdin: options.input === undefined ? "ignore" : "pipe",
     stdout: "pipe",
     stderr: "pipe",
@@ -29,13 +29,13 @@ async function runCli(args: string[], options: { input?: string; timeoutMs?: num
   return { stdout: await stdout, stderr: await stderr, exitCode };
 }
 
-describe.serial("bunny CLI hardening", () => {
+describe.serial("orm CLI hardening", () => {
   beforeAll(async () => {
     project = await mkdtemp(join(process.cwd(), "tests", ".tmp-cli-hardening-"));
     const jobs = join(project, "jobs");
     await mkdir(jobs, { recursive: true });
 
-    await Bun.write(join(project, "bunny.config.ts"), `
+    await Bun.write(join(project, "orm.config.ts"), `
 export default {
   connection: { url: ${JSON.stringify(`sqlite://${join(project, "app.sqlite")}`)} },
   queue: { driver: "db", pollIntervalMs: 10, jobsPath: ${JSON.stringify(jobs)} },
@@ -88,7 +88,7 @@ export class PingJob extends DispatchableJob { async handle() {} }
   test("refuses to start when jobsPath is configured but registers nothing", async () => {
     const empty = join(project, "empty-jobs");
     await mkdir(empty, { recursive: true });
-    await Bun.write(join(project, "bunny.config.ts"), `
+    await Bun.write(join(project, "orm.config.ts"), `
 export default {
   connection: { url: ${JSON.stringify(`sqlite://${join(project, "app.sqlite")}`)} },
   queue: { driver: "db", pollIntervalMs: 10, jobsPath: ${JSON.stringify(empty)} },

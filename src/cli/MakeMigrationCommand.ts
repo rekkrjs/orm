@@ -4,7 +4,7 @@ import { normalizePathList, pluralize, snakeCase } from "../utils.js";
 import { getDefaultMigrationsPath, getModelPaths } from "./MigrationHelpers.js";
 import { mkdir, writeFile, access } from "fs/promises";
 import { join } from "path";
-import type { BunnyConfig } from "../config/BunnyConfig.js";
+import type { OrmConfig } from "../config/OrmConfig.js";
 
 function toClassName(name: string): string {
   return name
@@ -22,7 +22,7 @@ function inferTableName(migrationName: string): string | undefined {
 
 function buildMigrationStub(className: string, tableName?: string): string {
   if (tableName) {
-    return `import { Migration, Schema } from "@bunnykit/orm";
+    return `import { Migration, Schema } from "@rekkr/orm";
 
 export default class ${className} extends Migration {
   async up(): Promise<void> {
@@ -39,7 +39,7 @@ export default class ${className} extends Migration {
 `;
   }
 
-  return `import { Migration, Schema } from "@bunnykit/orm";
+  return `import { Migration, Schema } from "@rekkr/orm";
 
 export default class ${className} extends Migration {
   async up(): Promise<void> {
@@ -54,7 +54,7 @@ export default class ${className} extends Migration {
 }
 
 function buildModelStub(modelClass: string, tableName: string): string {
-  return `import { Model } from "@bunnykit/orm";
+  return `import { Model } from "@rekkr/orm";
 
 interface ${modelClass}Attributes {
   id: number;
@@ -70,7 +70,7 @@ async function exists(path: string): Promise<boolean> {
   return access(path).then(() => true).catch(() => false);
 }
 
-export function makeMakeMigrationCommand(config: BunnyConfig) {
+export function makeMakeMigrationCommand(config: OrmConfig) {
   return class extends Command.define("make:migration {name : Migration name e.g. create_users_table} {--model : Also create a model file} {--m : Alias for --model} {--dir= : Directory to create the migration in} {--models-dir= : Directory to create the model in}") {
     static description = "Create a new migration file.";
 

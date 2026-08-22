@@ -187,7 +187,7 @@ export class CommandRunner {
       return ` ${c.green(`<${a.name}>`)}`;
     }).join("");
 
-    out(`\n${c.bold("Usage:")} bunny run ${c.yellow(sig.name)}${usageArgs}${sig.options.length ? c.dim(" [options]") : ""}\n`);
+    out(`\n${c.bold("Usage:")} orm run ${c.yellow(sig.name)}${usageArgs}${sig.options.length ? c.dim(" [options]") : ""}\n`);
 
     if (description) {
       out(`  ${description}\n`);

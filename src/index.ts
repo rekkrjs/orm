@@ -3,8 +3,8 @@ export { ConnectionManager } from "./connection/ConnectionManager.js";
 export type { TenantCachePolicy, TenantResolution, TenantResolver } from "./connection/ConnectionManager.js";
 export { TenantContext } from "./connection/TenantContext.js";
 export type { ActiveTenantContext } from "./connection/TenantContext.js";
-export { configureBunny } from "./config/BunnyConfig.js";
-export type { BunnyConfig, ConfiguredBunny } from "./config/BunnyConfig.js";
+export { configureOrm } from "./config/OrmConfig.js";
+export type { OrmConfig, ConfiguredOrm } from "./config/OrmConfig.js";
 export type { ConnectionConfig } from "./types/index.js";
 
 export { Schema } from "./schema/Schema.js";
@@ -84,6 +84,6 @@ export { Seeder, SeederRunner } from "./seeding/Seeder.js";
 export { Factory, Sequence } from "./seeding/Factory.js";
 export type { FactoryState, FactoryStateValue, AfterHook } from "./seeding/Factory.js";
 
-// Validation lives at the `@bunnykit/orm/validation` subpath import only —
+// Validation lives at the `@rekkr/orm/validation` subpath import only —
 // keeping it out of the main entry trims the surface and makes the dependency
 // boundary explicit.

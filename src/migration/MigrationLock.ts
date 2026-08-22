@@ -132,7 +132,7 @@ async function acquirePostgresLock(
   timeoutMs: number
 ): Promise<MigrationLockHandle> {
   // pg advisory locks take a signed 64-bit key, so hash the lock name down to one.
-  const digest = createHash("sha256").update(`bunny|${connection.getSchema() ?? ""}|${name}`).digest();
+  const digest = createHash("sha256").update(`orm|${connection.getSchema() ?? ""}|${name}`).digest();
   const key = digest.readBigInt64BE(0).toString();
   const session = dedicatedSession(connection);
   const started = Date.now();
@@ -167,7 +167,7 @@ async function acquireMySqlLock(
 ): Promise<MigrationLockHandle> {
   // GET_LOCK names are server-wide and capped at 64 characters.
   const digest = createHash("sha256").update(`${databaseName(connection)}|${connection.getSchema() ?? ""}|${name}`).digest("hex");
-  const lockName = `bunny:${digest.slice(0, 40)}`;
+  const lockName = `orm:${digest.slice(0, 40)}`;
   const session = dedicatedSession(connection);
 
   const started = Date.now();

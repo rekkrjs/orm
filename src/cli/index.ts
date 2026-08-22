@@ -18,9 +18,9 @@ import { makeMakeCommandCommand } from "../commands/cli/index.js";
 import { registerSearchCommands } from "../search/commands/index.js";
 import { makeMakeJobCommand } from "../queue/commands/index.js";
 import type { Connection } from "../connection/Connection.js";
-import type { BunnyConfig } from "../config/BunnyConfig.js";
+import type { OrmConfig } from "../config/OrmConfig.js";
 
-export function registerOrmCommands(config: BunnyConfig, connection: Connection): void {
+export function registerOrmCommands(config: OrmConfig, connection: Connection): void {
   registerCommand(makeMigrateCommand(config, connection));
   registerCommand(makeMigrateRollbackCommand(config, connection));
   registerCommand(makeMigrateResetCommand(config, connection));

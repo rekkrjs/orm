@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
-import { configureBunny, Connection, ConnectionManager, DB } from "../src/index.js";
+import { configureOrm, Connection, ConnectionManager, DB } from "../src/index.js";
 
 const TENANT_MIGRATIONS_DIR = join(process.cwd(), "tests", "temp_bcf_tenant_schema_migrations");
 
@@ -12,7 +12,7 @@ async function setupMigrationFile(): Promise<void> {
   await mkdir(TENANT_MIGRATIONS_DIR, { recursive: true });
 }
 
-describe.serial("configureBunny: tenant schema auto-create", () => {
+describe.serial("configureOrm: tenant schema auto-create", () => {
   afterEach(async () => {
     await rm(TENANT_MIGRATIONS_DIR, { recursive: true, force: true });
     await ConnectionManager.closeAll();
@@ -34,7 +34,7 @@ describe.serial("configureBunny: tenant schema auto-create", () => {
       );
       expect(beforeRows.length).toBe(0);
 
-      const bunny = configureBunny({
+      const orm = configureOrm({
         connection: { url: postgresUrl! },
         migrations: {
           tenant: TENANT_MIGRATIONS_DIR,
@@ -50,7 +50,7 @@ describe.serial("configureBunny: tenant schema auto-create", () => {
         },
       });
 
-      await DB.tenant(tenantId(), () => bunny.migrate("tenant"));
+      await DB.tenant(tenantId(), () => orm.migrate("tenant"));
 
       // Schema now exists — createIfMissing kicked in before running migrations
       const afterRows = await adminConn.query(
@@ -69,7 +69,7 @@ function tenantId(): string {
   return "acme";
 }
 
-describe.serial("configureBunny: tenant schema idempotent", () => {
+describe.serial("configureOrm: tenant schema idempotent", () => {
   afterEach(async () => {
     await rm(TENANT_MIGRATIONS_DIR, { recursive: true, force: true });
     await ConnectionManager.closeAll();
@@ -86,7 +86,7 @@ describe.serial("configureBunny: tenant schema idempotent", () => {
     try {
       await adminConn.run(`CREATE SCHEMA "${tenantSchema}"`);
 
-      const bunny = configureBunny({
+      const orm = configureOrm({
         connection: { url: postgresUrl! },
         migrations: {
           tenant: TENANT_MIGRATIONS_DIR,
@@ -102,7 +102,7 @@ describe.serial("configureBunny: tenant schema idempotent", () => {
         },
       });
 
-      await DB.tenant("acme", () => bunny.migrate("tenant"));
+      await DB.tenant("acme", () => orm.migrate("tenant"));
 
       const rows = await adminConn.query(
         "SELECT 1 FROM information_schema.schemata WHERE schema_name = $1",

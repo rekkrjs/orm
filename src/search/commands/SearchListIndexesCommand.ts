@@ -1,9 +1,9 @@
 import { Command } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { Search } from "../SearchManager.js";
 import { loadSearchableModels } from "./resolveSearchableModel.js";
 
-export function makeSearchListIndexesCommand(config: BunnyConfig) {
+export function makeSearchListIndexesCommand(config: OrmConfig) {
   return class extends Command.define(
     "search:list-indexes " +
     "{--tenant= : Resolve indexes for a single tenant id} " +

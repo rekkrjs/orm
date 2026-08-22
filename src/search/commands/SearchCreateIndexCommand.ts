@@ -1,10 +1,10 @@
 import { Command } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { Search } from "../SearchManager.js";
 import { resolveSearchableModel } from "./resolveSearchableModel.js";
 import { runWithTenant } from "./runWithTenant.js";
 
-export function makeSearchCreateIndexCommand(config: BunnyConfig) {
+export function makeSearchCreateIndexCommand(config: OrmConfig) {
   return class extends Command.define("search:create-index {model : Model class name} {--tenant= : Run under a tenant context}") {
     static description = "Create the search index for a model.";
 

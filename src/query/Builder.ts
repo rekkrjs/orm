@@ -2198,10 +2198,10 @@ export class Builder<T = Record<string, any>, TResult = T> {
     query.invalidateSqlCache();
     const innerSql = query.toSql();
     const rows = await this.connection.query(
-      `SELECT COUNT(*) AS bunny_count FROM (${innerSql}) AS ${this.grammar.wrap("bunny_count_query")}`,
+      `SELECT COUNT(*) AS orm_count FROM (${innerSql}) AS ${this.grammar.wrap("orm_count_query")}`,
       query.bindings
     );
-    return rows.length > 0 ? Number((rows[0] as any).bunny_count) : 0;
+    return rows.length > 0 ? Number((rows[0] as any).orm_count) : 0;
   }
 
   async count(column: ModelColumn<T> | "*" = "*"): Promise<number> {
@@ -2707,8 +2707,8 @@ export class Builder<T = Record<string, any>, TResult = T> {
       // and returns nothing usable instead of failing. Fall back to the rowid,
       // which is what this returned before RETURNING was used here.
       if (driver === "sqlite") {
-        const rowid = await this.connection.query("SELECT last_insert_rowid() AS bunny_rowid");
-        return rowid[0]?.bunny_rowid ?? null;
+        const rowid = await this.connection.query("SELECT last_insert_rowid() AS orm_rowid");
+        return rowid[0]?.orm_rowid ?? null;
       }
       return null;
     }
@@ -3012,7 +3012,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
     query.invalidateSqlCache();
     const innerSql = query.toSql();
     const rows = await this.connection.query(
-      `SELECT 1 FROM (${innerSql}) AS ${this.grammar.wrap("bunny_exists_query")} LIMIT 1`,
+      `SELECT 1 FROM (${innerSql}) AS ${this.grammar.wrap("orm_exists_query")} LIMIT 1`,
       query.bindings
     );
     return rows.length > 0;

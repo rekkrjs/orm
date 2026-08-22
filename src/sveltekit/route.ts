@@ -77,7 +77,7 @@ type RouteKitHelpers = {
 };
 type BindFailureReason = "missing_param" | "invalid_uuid" | "not_found";
 let configuredHelpers: RouteKitHelpers | null = null;
-const FLASH_COOKIE = "bunnykit_flash";
+const FLASH_COOKIE = "rekkr_flash";
 type CookieLike = Pick<Cookies, "get" | "set" | "delete">;
 
 function resolveHelpers(helpers: RouteKitHelpers = {}): Required<RouteKitHelpers> {
@@ -496,7 +496,7 @@ class RouteBuilder<
           }
           if (options.validationError === "problem+json") {
             return new Response(JSON.stringify({
-              type: "https://bunnykit.dev/problems/validation-error",
+              type: "https://rekkr.dev/problems/validation-error",
               title: "Validation failed",
               status: 422,
               detail: "One or more fields are invalid.",

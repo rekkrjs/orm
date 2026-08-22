@@ -1,13 +1,13 @@
 # Testing
 
-Bunny ships with no built-in test harness — it's just a database library — but it integrates cleanly with Bun's built-in test runner (`bun test`). This page collects the patterns you'll want when writing tests against your models.
+ORM ships with no built-in test harness — it's just a database library — but it integrates cleanly with Bun's built-in test runner (`bun test`). This page collects the patterns you'll want when writing tests against your models.
 
 ## Quick start with `bun:test`
 
 ```ts
 // tests/user.test.ts
 import { describe, expect, test, beforeAll } from "bun:test";
-import { Connection, Model, Schema } from "@bunnykit/orm";
+import { Connection, Model, Schema } from "@rekkr/orm";
 import User from "../src/models/User";
 
 describe("User model", () => {
@@ -46,7 +46,7 @@ For unit tests, `sqlite://:memory:` is the right default — each connection has
 
 ```ts
 // tests/helpers.ts
-import { Connection, Model, Schema } from "@bunnykit/orm";
+import { Connection, Model, Schema } from "@rekkr/orm";
 
 export function setupTestDb() {
   const connection = new Connection({ url: "sqlite://:memory:" });
@@ -78,14 +78,14 @@ afterAll(async () => {
 });
 ```
 
-This is the same pattern Bunny's own test suite uses — see `tests/helpers.ts` in the repository.
+This is the same pattern ORM's own test suite uses — see `tests/helpers.ts` in the repository.
 
 ## Running real migrations in tests
 
 For integration-style coverage, run your actual migrations rather than re-declaring schemas in test setup:
 
 ```ts
-import { Migrator } from "@bunnykit/orm";
+import { Migrator } from "@rekkr/orm";
 
 beforeAll(async () => {
   const connection = setupTestDb();
@@ -93,14 +93,14 @@ beforeAll(async () => {
 });
 ```
 
-Each test file then starts with the production schema. Pair with [`bunny.fresh()`](./library-usage.md) or `migrator.fresh()` between suites for hard isolation.
+Each test file then starts with the production schema. Pair with [`orm.fresh()`](./library-usage.md) or `migrator.fresh()` between suites for hard isolation.
 
 ## Seeding test data
 
 Use [factories](./seeders.md#factories) to produce realistic fixtures inline without writing seeder files:
 
 ```ts
-import { Factory } from "@bunnykit/orm";
+import { Factory } from "@rekkr/orm";
 import User from "../src/models/User";
 
 class UserFactory extends Factory<User> {
@@ -121,7 +121,7 @@ test("paginates users", async () => {
 For shared fixtures across many tests, put a seeder under `tests/fixtures/` and invoke it from `beforeAll`:
 
 ```ts
-import { SeederRunner } from "@bunnykit/orm";
+import { SeederRunner } from "@rekkr/orm";
 import UserFixtureSeeder from "./fixtures/UserFixtureSeeder";
 
 beforeAll(async () => {
@@ -132,7 +132,7 @@ beforeAll(async () => {
 
 ## Transactional isolation
 
-The fastest way to isolate test cases is to wrap each test in a transaction and roll back at the end. Bunny's nested-transaction support makes this safe even when the system under test opens its own transactions:
+The fastest way to isolate test cases is to wrap each test in a transaction and roll back at the end. ORM's nested-transaction support makes this safe even when the system under test opens its own transactions:
 
 ```ts
 import { afterEach } from "bun:test";
@@ -156,7 +156,7 @@ Register observers in `beforeEach` and unregister in `afterEach` to avoid cross-
 
 ```ts
 import { beforeEach, afterEach } from "bun:test";
-import { ObserverRegistry } from "@bunnykit/orm";
+import { ObserverRegistry } from "@rekkr/orm";
 import User from "../src/models/User";
 import UserObserver from "../src/observers/UserObserver";
 

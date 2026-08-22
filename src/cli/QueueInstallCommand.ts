@@ -4,7 +4,7 @@ import { normalizePathList } from "../utils.js";
 import { getDefaultMigrationsPath, getModelPaths } from "./MigrationHelpers.js";
 import { mkdir, writeFile, access } from "fs/promises";
 import { join } from "path";
-import type { BunnyConfig } from "../config/BunnyConfig.js";
+import type { OrmConfig } from "../config/OrmConfig.js";
 
 /**
  * The driver reads `queue.table` / `queue.failedTable`, so the generated schema
@@ -13,7 +13,7 @@ import type { BunnyConfig } from "../config/BunnyConfig.js";
  */
 function buildMigrationStub(jobsTable: string, failedTable: string): string {
   const className = `Create${pascalCase(jobsTable)}Tables`;
-  return `import { Migration, Schema } from "@bunnykit/orm";
+  return `import { Migration, Schema } from "@rekkr/orm";
 
 export default class ${className} extends Migration {
   async up(): Promise<void> {
@@ -55,7 +55,7 @@ function pascalCase(value: string): string {
     .join("");
 }
 
-const JOB_MODEL_STUB_TEMPLATE = `import { Model } from "@bunnykit/orm";
+const JOB_MODEL_STUB_TEMPLATE = `import { Model } from "@rekkr/orm";
 
 interface JobAttributes {
   id: number;
@@ -74,7 +74,7 @@ export class Job extends Model.define<JobAttributes>(__JOBS_TABLE__) {
 }
 `;
 
-const FAILED_JOB_MODEL_STUB_TEMPLATE = `import { Model } from "@bunnykit/orm";
+const FAILED_JOB_MODEL_STUB_TEMPLATE = `import { Model } from "@rekkr/orm";
 
 interface FailedJobAttributes {
   id: number;
@@ -94,7 +94,7 @@ async function exists(path: string): Promise<boolean> {
   return access(path).then(() => true).catch(() => false);
 }
 
-export function makeQueueInstallCommand(config: BunnyConfig) {
+export function makeQueueInstallCommand(config: OrmConfig) {
   return class extends Command.define("queue:install {dir? : Migration output directory} {--models= : Directory to create job models in}") {
     static description = "Generate the jobs and failed_jobs migration and optional models.";
 

@@ -8,17 +8,17 @@ Estimated time: ten minutes.
 
 ```bash
 bun init -y
-bun add @bunnykit/orm
+bun add @rekkr/orm
 ```
 
 If you are using TypeScript, make sure `tsconfig.json` has `"target": "ESNext"`, `"module": "ESNext"`, and `"moduleResolution": "bundler"`. See [Installation](./installation.md) for the full setup.
 
-## 2. Create `bunny.config.ts`
+## 2. Create `orm.config.ts`
 
-This file is read by the `bunny` CLI and by `configureBunny()` at runtime, so both share one source of truth.
+This file is read by the `orm` CLI and by `configureOrm()` at runtime, so both share one source of truth.
 
 ```ts
-// bunny.config.ts
+// orm.config.ts
 export default {
   connection: { url: "sqlite://app.db" },
   migrationsPath: "./database/migrations",
@@ -34,15 +34,15 @@ For more options — Postgres URLs, multi-tenant resolvers, schema auto-create �
 Create the `users` and `posts` tables.
 
 ```bash
-bunx bunny make:migration create_users_table
-bunx bunny make:migration create_posts_table
+bunx orm make:migration create_users_table
+bunx orm make:migration create_posts_table
 ```
 
 Each command writes a timestamped file under `./database/migrations`. Fill them in:
 
 ```ts
 // database/migrations/20260101000000_create_users_table.ts
-import { Migration, Schema } from "@bunnykit/orm";
+import { Migration, Schema } from "@rekkr/orm";
 
 export default class CreateUsersTable extends Migration {
   async up() {
@@ -62,7 +62,7 @@ export default class CreateUsersTable extends Migration {
 
 ```ts
 // database/migrations/20260101000001_create_posts_table.ts
-import { Migration, Schema } from "@bunnykit/orm";
+import { Migration, Schema } from "@rekkr/orm";
 
 export default class CreatePostsTable extends Migration {
   async up() {
@@ -84,7 +84,7 @@ export default class CreatePostsTable extends Migration {
 Run them:
 
 ```bash
-bunx bunny migrate
+bunx orm migrate
 ```
 
 You should see `Migrated: ...create_users_table.ts` and similar for posts. See [Migrations](./migrations.md) for rollback, refresh, and multi-tenant migrations.
@@ -95,7 +95,7 @@ You should see `Migrated: ...create_users_table.ts` and similar for posts. See [
 
 ```ts
 // src/models/User.ts
-import { Model } from "@bunnykit/orm";
+import { Model } from "@rekkr/orm";
 import Post from "./Post";
 
 interface UserAttributes {
@@ -115,7 +115,7 @@ export default class User extends Model.define<UserAttributes>("users") {
 
 ```ts
 // src/models/Post.ts
-import { Model } from "@bunnykit/orm";
+import { Model } from "@rekkr/orm";
 import User from "./User";
 
 interface PostAttributes {
@@ -139,12 +139,12 @@ Plain `extends Model` also works if you have generated declarations or don't nee
 ## 5. Write a seeder (optional)
 
 ```bash
-bunx bunny make:seeder UserSeeder
+bunx orm make:seeder UserSeeder
 ```
 
 ```ts
 // database/seeders/UserSeeder.ts
-import { Seeder } from "@bunnykit/orm";
+import { Seeder } from "@rekkr/orm";
 import User from "../../src/models/User";
 import Post from "../../src/models/Post";
 
@@ -160,34 +160,34 @@ export default class UserSeeder extends Seeder {
 Run it:
 
 ```bash
-bunx bunny seed
+bunx orm seed
 ```
 
 See [Seeders](./seeders.md) for targeted runs, ordering, and factories.
 
 ## 6. Wire up your app
 
-Call `configureBunny()` once at startup so models, schema, and the connection manager all share the same connection:
+Call `configureOrm()` once at startup so models, schema, and the connection manager all share the same connection:
 
 ```ts
 // src/app.ts
-import { configureBunny } from "@bunnykit/orm";
-import config from "../bunny.config";
+import { configureOrm } from "@rekkr/orm";
+import config from "../orm.config";
 
-const bunny = configureBunny(config);
+const orm = configureOrm(config);
 
 // You can now use models, the DB facade, and the facade helpers.
 ```
 
 Using SvelteKit / Vite dev? Wrap this in a `globalThis` singleton with an HMR-safe guard — see [SvelteKit](./configuration.md#sveltekit).
 
-The returned `bunny` object lets you run migrations and seeders programmatically too:
+The returned `orm` object lets you run migrations and seeders programmatically too:
 
 ```ts
-await bunny.migrate();
-await bunny.seed();
-await bunny.rollback();
-await bunny.fresh();
+await orm.migrate();
+await orm.seed();
+await orm.rollback();
+await orm.fresh();
 ```
 
 See [Library Usage](./library-usage.md) for the full facade reference.
@@ -241,7 +241,7 @@ await Post.where("user_id", 999).delete();
 ### Raw table access (no model)
 
 ```ts
-import { DB } from "@bunnykit/orm";
+import { DB } from "@rekkr/orm";
 
 const counts = await DB.table("posts")
   .selectRaw("user_id, COUNT(*) as total")
@@ -255,18 +255,18 @@ See [Query Builder](./query-builder.md) for the complete reference.
 ## 8. Try the REPL
 
 ```bash
-bunx bunny repl
+bunx orm repl
 ```
 
-The prompt is `bunny> ` and your models, `DB`, `Schema`, and `Connection` are all in scope:
+The prompt is `orm> ` and your models, `DB`, `Schema`, and `Connection` are all in scope:
 
 ```
-bunny> await User.with('posts').first()
-bunny> await DB.table('users').count()
-bunny> await DB.tenant('acme', () => User.all())
+orm> await User.with('posts').first()
+orm> await DB.table('users').count()
+orm> await DB.tenant('acme', () => User.all())
 ```
 
-When no `bunny.config.ts` is present the REPL starts against an in-memory SQLite database so you can experiment without a project setup.
+When no `orm.config.ts` is present the REPL starts against an in-memory SQLite database so you can experiment without a project setup.
 
 ## Where to next
 

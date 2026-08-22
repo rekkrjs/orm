@@ -1,11 +1,11 @@
 import { Command } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { Search } from "../SearchManager.js";
 import { resolveSearchableModel } from "./resolveSearchableModel.js";
 import { importModel, resolveChunkSize } from "./importHelper.js";
 import { runWithTenant } from "./runWithTenant.js";
 
-export function makeSearchReimportCommand(config: BunnyConfig) {
+export function makeSearchReimportCommand(config: OrmConfig) {
   return class extends Command.define("search:reimport {model : Model class name} {--chunk= : Rows per batch} {--tenant= : Run under a tenant context}") {
     static description = "Flush a model's search index, then bulk-import all rows.";
 

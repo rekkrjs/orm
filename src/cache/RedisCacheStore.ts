@@ -11,7 +11,7 @@ export class RedisCacheStore implements CacheStore {
   private readonly prefix: string;
 
   constructor(private readonly client: RedisLike, options: RedisCacheStoreOptions = {}) {
-    this.prefix = options.prefix ?? "bunny:";
+    this.prefix = options.prefix ?? "orm:";
   }
 
   async get<T = unknown>(key: string): Promise<T | null> {

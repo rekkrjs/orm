@@ -1,6 +1,6 @@
 # Search
 
-`@bunnykit/orm/search` — Laravel Scout-inspired full-text search. Ships Meilisearch, PostgreSQL FTS, and SQLite FTS5 engines. The `SearchEngine` interface stays driver-agnostic so custom engines can drop in.
+`@rekkr/orm/search` — Laravel Scout-inspired full-text search. Ships Meilisearch, PostgreSQL FTS, and SQLite FTS5 engines. The `SearchEngine` interface stays driver-agnostic so custom engines can drop in.
 
 ## Install
 
@@ -14,12 +14,12 @@ No npm dep is required — the engine uses Bun's native `fetch`. PostgreSQL FTS 
 
 ## Configure
 
-Wire the engine into `configureBunny`. For default engine instances, use a string alias:
+Wire the engine into `configureOrm`. For default engine instances, use a string alias:
 
 ```ts
-import { configureBunny } from "@bunnykit/orm";
+import { configureOrm } from "@rekkr/orm";
 
-configureBunny({
+configureOrm({
   connection: { url: "sqlite://app.db" },
   modelsPath: "./app/Models",
   search: {
@@ -44,7 +44,7 @@ Aliases:
 For `"meilisearch"`, provide `host` and `apiKey` directly:
 
 ```ts
-configureBunny({
+configureOrm({
   connection: { url: process.env.DATABASE_URL! },
   search: {
     engine: "meilisearch",
@@ -57,7 +57,7 @@ configureBunny({
 For `"pg"` and `"sqlite"`, provide `search.connection` to use a dedicated connection while still using the string alias:
 
 ```ts
-configureBunny({
+configureOrm({
   connection: { url: process.env.DATABASE_URL! },
   search: {
     engine: "pg",
@@ -71,10 +71,10 @@ configureBunny({
 Pass an engine instance when you need options or a custom engine:
 
 ```ts
-import { configureBunny } from "@bunnykit/orm";
-import { MeilisearchEngine } from "@bunnykit/orm/search";
+import { configureOrm } from "@rekkr/orm";
+import { MeilisearchEngine } from "@rekkr/orm/search";
 
-configureBunny({
+configureOrm({
   connection: { url: "sqlite://app.db" },
   modelsPath: "./app/Models",
   search: {
@@ -86,10 +86,10 @@ configureBunny({
 });
 ```
 
-Or configure outside the bunny facade:
+Or configure outside the ORM facade:
 
 ```ts
-import { Search } from "@bunnykit/orm/search";
+import { Search } from "@rekkr/orm/search";
 
 Search.configure({ engine: "pg" });
 ```
@@ -102,8 +102,8 @@ Keep the model declaration clean. Register it once to attach the observer and pr
 
 ```ts
 // app/models/Post.ts
-import { Model } from "@bunnykit/orm";
-import { Search } from "@bunnykit/orm/search";
+import { Model } from "@rekkr/orm";
+import { Search } from "@rekkr/orm/search";
 
 export interface PostAttributes {
   id: number;
@@ -145,7 +145,7 @@ import type { PostInstance } from "./app/models/Post";
 const hits: PostInstance[] = await Post.search("rust").get();
 ```
 
-Scaffold via CLI: `bunny make:searchable Post`.
+Scaffold via CLI: `orm make:searchable Post`.
 
 ### Alternative — `Search.define()`
 
@@ -153,8 +153,8 @@ Wrap an existing model class, add the searchable API, and register the
 observer automatically.
 
 ```ts
-import { Model } from "@bunnykit/orm";
-import { Search } from "@bunnykit/orm/search";
+import { Model } from "@rekkr/orm";
+import { Search } from "@rekkr/orm/search";
 
 class _Post extends Model.define<PostAttrs>("posts") {
   static fillable = ["title", "body", "status"];
@@ -174,7 +174,7 @@ export class Post extends Search.define<PostAttrs>("posts", { index: "posts_v2" 
 ### Alternative — `Searchable` mixin
 
 ```ts
-import { Searchable, Search } from "@bunnykit/orm/search";
+import { Searchable, Search } from "@rekkr/orm/search";
 
 export class Post extends Searchable(Model.define<PostAttrs>("posts"), { index: "posts_v2" }) {
   static fillable = ["title", "body", "status"];
@@ -390,7 +390,7 @@ hits[0].matchesPosition;    // { title: [{ start: 0, length: 4 }], body: [...] }
 Run multiple indexes / models in a single round-trip:
 
 ```ts
-import { Search } from "@bunnykit/orm/search";
+import { Search } from "@rekkr/orm/search";
 
 const [postResults, articleResults] = await Search.multi([
   Post.search("rust").take(5),
@@ -411,32 +411,32 @@ When `search` is configured, these commands register automatically:
 
 | Command | Purpose |
 |---|---|
-| `bunny search:import <Model>` | Bulk-index all rows of a model (chunked). |
-| `bunny search:flush <Model>` | Wipe the index for a model. |
-| `bunny search:sync-index-settings [Model]` | Push `searchIndexSettings` to Meilisearch. |
-| `bunny search:status` | Engine health + configured indexes. SQLite and PostgreSQL FTS engines expose engine diagnostics. |
-| `bunny search:create-index <Model>` | Create the model's index. Auto-applies `Model.searchFtsConfig` via `engine.configureIndex()` when the engine supports it (SQLite FTS5 and PostgreSQL FTS). |
-| `bunny search:delete-index <Model> --force` | Delete the model's index. `--force` required. |
-| `bunny search:reimport <Model> [--chunk=N]` | Flush + bulk-import in one step. |
-| `bunny search:import <Model> [--chunk=N] [--dry-run]` | `--dry-run` counts rows without pushing. |
-| `bunny search:fts:optimize <Model>` | FTS5-only. Merges b-tree levels, reduces fragmentation. |
-| `bunny search:fts:rebuild <Model>` | FTS engines with `rebuild()`. Repopulates the index from the source content table. |
-| `bunny search:list-indexes [--tenant=ID] [--tenants=A,B] [--all-tenants] [--include-landlord]` | Print the resolved index name per searchable model, optionally per-tenant. |
-| `bunny search:verify [--tenant=ID] [--all-tenants] [--include-landlord] [--fix]` | Check that every searchable model's index exists on the engine. `--fix` auto-creates missing ones. |
+| `orm search:import <Model>` | Bulk-index all rows of a model (chunked). |
+| `orm search:flush <Model>` | Wipe the index for a model. |
+| `orm search:sync-index-settings [Model]` | Push `searchIndexSettings` to Meilisearch. |
+| `orm search:status` | Engine health + configured indexes. SQLite and PostgreSQL FTS engines expose engine diagnostics. |
+| `orm search:create-index <Model>` | Create the model's index. Auto-applies `Model.searchFtsConfig` via `engine.configureIndex()` when the engine supports it (SQLite FTS5 and PostgreSQL FTS). |
+| `orm search:delete-index <Model> --force` | Delete the model's index. `--force` required. |
+| `orm search:reimport <Model> [--chunk=N]` | Flush + bulk-import in one step. |
+| `orm search:import <Model> [--chunk=N] [--dry-run]` | `--dry-run` counts rows without pushing. |
+| `orm search:fts:optimize <Model>` | FTS5-only. Merges b-tree levels, reduces fragmentation. |
+| `orm search:fts:rebuild <Model>` | FTS engines with `rebuild()`. Repopulates the index from the source content table. |
+| `orm search:list-indexes [--tenant=ID] [--tenants=A,B] [--all-tenants] [--include-landlord]` | Print the resolved index name per searchable model, optionally per-tenant. |
+| `orm search:verify [--tenant=ID] [--all-tenants] [--include-landlord] [--fix]` | Check that every searchable model's index exists on the engine. `--fix` auto-creates missing ones. |
 
 ### `--tenant=<id>` flag
 
 Every per-model command accepts `--tenant=<id>` to run under a `TenantContext`. The command resolves the model's tenant-scoped index (when `tenantScope` is configured) before issuing the operation:
 
 ```bash
-bunny search:create-index Post --tenant=42
-bunny search:import Post --tenant=42 --chunk=1000
-bunny search:flush Post --tenant=42
-bunny search:reimport Post --tenant=42
-bunny search:delete-index Post --tenant=42 --force
-bunny search:sync-index-settings Post --tenant=42
-bunny search:fts:optimize Post --tenant=42
-bunny search:fts:rebuild Post --tenant=42
+orm search:create-index Post --tenant=42
+orm search:import Post --tenant=42 --chunk=1000
+orm search:flush Post --tenant=42
+orm search:reimport Post --tenant=42
+orm search:delete-index Post --tenant=42 --force
+orm search:sync-index-settings Post --tenant=42
+orm search:fts:optimize Post --tenant=42
+orm search:fts:rebuild Post --tenant=42
 ```
 
 Without `--tenant`, commands operate in the landlord context.
@@ -446,10 +446,10 @@ Without `--tenant`, commands operate in the landlord context.
 Walks every searchable model and confirms its resolved index exists on the engine. Useful in CI, deploy hooks, or after onboarding a new tenant.
 
 ```bash
-bunny search:verify                                    # default context
-bunny search:verify --tenant=42                        # one tenant
-bunny search:verify --all-tenants --include-landlord   # full sweep
-bunny search:verify --all-tenants --fix                # auto-create missing
+orm search:verify                                    # default context
+orm search:verify --tenant=42                        # one tenant
+orm search:verify --all-tenants --include-landlord   # full sweep
+orm search:verify --all-tenants --fix                # auto-create missing
 ```
 
 Output:
@@ -489,7 +489,7 @@ search: {
 Then run a worker that picks up `MakeSearchableJob` / `RemoveFromSearchJob`:
 
 ```bash
-bunny queue --queue=search
+orm queue --queue=search
 ```
 
 ### Routing to a dedicated queue driver
@@ -497,11 +497,11 @@ bunny queue --queue=search
 Register a secondary driver under a name, then point `search.queue.connection` at it. Search jobs land on that driver instead of the default:
 
 ```ts
-import { Queue, RedisQueueDriver } from "@bunnykit/orm/queue";
+import { Queue, RedisQueueDriver } from "@rekkr/orm/queue";
 
 Queue.registerDriver("search-driver", new RedisQueueDriver({ /* ... */ }));
 
-configureBunny({
+configureOrm({
   // ...
   search: {
     engine: new MeilisearchEngine({ host: "http://127.0.0.1:7700" }),
@@ -517,7 +517,7 @@ Worker process for that driver runs against the same Redis (or whatever the seco
 Set `tenantScope` to derive a per-tenant index name from the active `TenantContext`. The hook fires every time `Model.searchableAs()` resolves — so observer writes, queue payloads, `SearchBuilder` reads, and CLI commands all stay aligned.
 
 ```ts
-configureBunny({
+configureOrm({
   // ...
   tenancy: { resolveTenant: yourResolver },
   search: {
@@ -556,7 +556,7 @@ await Search.indexesForAllTenants("posts", { includeLandlord: true });
 Wire `listTenants` either on the search config or inherit it from `tenancy.listTenants`:
 
 ```ts
-configureBunny({
+configureOrm({
   tenancy: { resolveTenant, listTenants: () => listTenantIds() },
   search: {
     engine,
@@ -569,11 +569,11 @@ configureBunny({
 **CLI introspection:**
 
 ```bash
-bunny search:list-indexes                            # base names
-bunny search:list-indexes --tenant=42                # one tenant
-bunny search:list-indexes --tenants=1,2,3            # comma list
-bunny search:list-indexes --all-tenants              # uses listTenants()
-bunny search:list-indexes --all-tenants --include-landlord
+orm search:list-indexes                            # base names
+orm search:list-indexes --tenant=42                # one tenant
+orm search:list-indexes --tenants=1,2,3            # comma list
+orm search:list-indexes --all-tenants              # uses listTenants()
+orm search:list-indexes --all-tenants --include-landlord
 ```
 
 Output:
@@ -692,8 +692,8 @@ Declare the FTS schema on the model. `columns` are tokenized. `unindexed` column
 
 ```ts
 // app/models/Post.ts
-import { Model } from "@bunnykit/orm";
-import { Search } from "@bunnykit/orm/search";
+import { Model } from "@rekkr/orm";
+import { Search } from "@rekkr/orm/search";
 
 class _Post extends Model.define<PostAttributes>("posts") {
   static fillable = ["title", "body", "status"];
@@ -722,9 +722,9 @@ export default Post;
 
 ```ts
 // app.ts
-import { configureBunny } from "@bunnykit/orm";
+import { configureOrm } from "@rekkr/orm";
 
-configureBunny({
+configureOrm({
   connection: { url: process.env.DATABASE_URL! },
   modelsPath: "./app/models",
   search: { engine: "pg" },
@@ -732,8 +732,8 @@ configureBunny({
 ```
 
 ```bash
-bunny search:create-index Post
-bunny search:import Post
+orm search:create-index Post
+orm search:import Post
 ```
 
 The `"pg"` alias creates `new PostgresFTSEngine({ shared: true })`, so it reuses the ORM's active PostgreSQL connection. Add `search.connection` to keep the string alias but use a separate PostgreSQL connection:
@@ -748,7 +748,7 @@ search: {
 For custom engine options:
 
 ```ts
-import { PostgresFTSEngine } from "@bunnykit/orm/search";
+import { PostgresFTSEngine } from "@rekkr/orm/search";
 
 search: {
   engine: new PostgresFTSEngine({
@@ -814,8 +814,8 @@ Declare the FTS5 schema on the model. `search:create-index` discovers it automat
 
 ```ts
 // app/models/Post.ts
-import { Model } from "@bunnykit/orm";
-import { Search } from "@bunnykit/orm/search";
+import { Model } from "@rekkr/orm";
+import { Search } from "@rekkr/orm/search";
 
 class _Post extends Model.define<PostAttributes>("posts") {
   static fillable = ["title", "body", "status"];
@@ -841,10 +841,10 @@ export default Post;
 
 ```ts
 // app.ts
-import { configureBunny } from "@bunnykit/orm";
-import { SqliteFTS5Engine } from "@bunnykit/orm/search";
+import { configureOrm } from "@rekkr/orm";
+import { SqliteFTS5Engine } from "@rekkr/orm/search";
 
-configureBunny({
+configureOrm({
   connection: { url: "sqlite://./app.db" },
   modelsPath: "./app/models",
   search: { engine: new SqliteFTS5Engine({ shared: true }) },
@@ -852,7 +852,7 @@ configureBunny({
 ```
 
 ```bash
-bunny search:create-index Post   # picks up Post.searchFtsConfig automatically
+orm search:create-index Post   # picks up Post.searchFtsConfig automatically
 ```
 
 `shared: true` reuses the ORM's default connection — index lives in the same SQLite file as app data. Backups cover both. One file.
@@ -860,13 +860,13 @@ bunny search:create-index Post   # picks up Post.searchFtsConfig automatically
 ### Setup — separate SQLite index file (Postgres/MySQL app)
 
 ```ts
-import { Connection } from "@bunnykit/orm";
+import { Connection } from "@rekkr/orm";
 
 const searchConn = new Connection({ url: "sqlite://./search.db" });
 const fts = new SqliteFTS5Engine({ connection: searchConn });
 fts.configureIndex("posts_fts", { columns: ["title", "body"], unindexed: ["status"] });
 
-configureBunny({
+configureOrm({
   connection: { url: "postgres://app:pw@host/db" },
   search: { engine: fts },
 });
@@ -911,9 +911,9 @@ await fts.createIndex("posts_fts");
 
 ### Caveats
 
-- **Single writer.** SQLite serializes writes. Run search sync through a queue worker (`bunny queue --queue=search`) in multi-process apps to avoid lock contention.
+- **Single writer.** SQLite serializes writes. Run search sync through a queue worker (`orm queue --queue=search`) in multi-process apps to avoid lock contention.
 - **Single node.** SQLite file lives on one disk. For replicated reads, use Litestream/rqlite.
-- **Schema-tied.** Columns are fixed at `createIndex()` time. Renaming a tracked column means `deleteIndex()` + `createIndex()` + `bunny search:reimport`.
+- **Schema-tied.** Columns are fixed at `createIndex()` time. Renaming a tracked column means `deleteIndex()` + `createIndex()` + `orm search:reimport`.
 - **Enable WAL.** `PRAGMA journal_mode=WAL` for concurrent readers.
 - **Migrations.** When using `useTriggers`, treat the FTS table + triggers as part of your migrations so they survive `migrate:fresh`.
 

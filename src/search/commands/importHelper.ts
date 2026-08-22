@@ -1,4 +1,4 @@
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import type { CommandContext } from "../../commands/Command.js";
 import { Search } from "../SearchManager.js";
 import { makeSearchableRecord } from "../Searchable.js";
@@ -10,7 +10,7 @@ export interface ImportOptions {
 }
 
 export async function importModel(
-  config: BunnyConfig,
+  config: OrmConfig,
   ctor: SearchableModelConstructor,
   options: ImportOptions,
   ctx: Pick<CommandContext<string>, "info" | "warn">,
@@ -34,7 +34,7 @@ export async function importModel(
 }
 
 export function resolveChunkSize(
-  config: BunnyConfig,
+  config: OrmConfig,
   raw: string | boolean | undefined,
 ): number {
   return parseInt(String(raw ?? config.search?.chunk ?? 500), 10);

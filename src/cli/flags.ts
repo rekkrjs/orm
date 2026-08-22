@@ -2,7 +2,7 @@
  * Reads the value of a CLI flag from a raw argument list, accepting both
  * `--flag value` and `--flag=value`.
  *
- * A flag-looking token is never taken as a value: `bunny queue --workers
+ * A flag-looking token is never taken as a value: `orm queue --workers
  * --queue mail` used to read "--queue" as the worker count. Callers that need
  * to tell "flag absent" from "flag given without a value" should use
  * `readFlag`, which reports the difference instead of collapsing both to

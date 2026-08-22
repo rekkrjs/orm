@@ -19,7 +19,7 @@ export class Cache {
 
   static getStore(): CacheStore {
     if (!this.store) {
-      throw new Error("Cache has not been configured. Import from @bunnykit/orm/cache and call Cache.configure({ store }) before using cache APIs.");
+      throw new Error("Cache has not been configured. Import from @rekkr/orm/cache and call Cache.configure({ store }) before using cache APIs.");
     }
     return this.store;
   }

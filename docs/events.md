@@ -1,11 +1,11 @@
 # Events
 
-Bunny ORM includes a lightweight, process-global event dispatcher for application-level events that are not tied to a single model lifecycle.
+ORM includes a lightweight, process-global event dispatcher for application-level events that are not tied to a single model lifecycle.
 
 Import it from the events subpath:
 
 ```ts
-import { EventHandler, Events } from "@bunnykit/orm/events";
+import { EventHandler, Events } from "@rekkr/orm/events";
 ```
 
 Use observers when you want model lifecycle hooks such as `created`, `updated`, or `deleted`. Use events when you want to publish named domain activity and let different parts of your app react without coupling them directly.
@@ -40,7 +40,7 @@ export class InvoicePaid {
 Register a function listener with `Events.listen()`.
 
 ```ts
-import { Events } from "@bunnykit/orm/events";
+import { Events } from "@rekkr/orm/events";
 import { InvoicePaid } from "./events/InvoicePaid";
 
 Events.listen(InvoicePaid, async (event) => {
@@ -58,10 +58,10 @@ Listeners run in registration order. Async listeners are awaited before the next
 
 ## Class Handlers
 
-You can register a handler class. Bunny instantiates the handler once at registration, the same registration-time lifecycle used by model observers.
+You can register a handler class. ORM instantiates the handler once at registration, the same registration-time lifecycle used by model observers.
 
 ```ts
-import { EventHandler, Events } from "@bunnykit/orm/events";
+import { EventHandler, Events } from "@rekkr/orm/events";
 import { InvoicePaid } from "./events/InvoicePaid";
 
 class SendInvoiceReceipt extends EventHandler<InvoicePaid> {
@@ -85,19 +85,19 @@ class RecordRevenue {
 Events.listen(InvoicePaid, RecordRevenue);
 ```
 
-Handler classes must be constructable with no arguments because Bunny creates the handler instance during registration.
+Handler classes must be constructable with no arguments because ORM creates the handler instance during registration.
 
 ## Registering Events
 
 Register listeners once during application startup, after your application dependencies are available.
 
 ```ts
-import { configureBunny } from "@bunnykit/orm";
-import { Events } from "@bunnykit/orm/events";
+import { configureOrm } from "@rekkr/orm";
+import { Events } from "@rekkr/orm/events";
 import { InvoicePaid } from "./events/InvoicePaid";
 import { SendInvoiceReceipt } from "./listeners/SendInvoiceReceipt";
 
-configureBunny({
+configureOrm({
   connection: { url: process.env.DATABASE_URL! },
 });
 
@@ -175,8 +175,8 @@ If a listener failure should not block the caller, catch the error inside that l
 Events can keep cache invalidation separate from model observers.
 
 ```ts
-import { Cache } from "@bunnykit/orm/cache";
-import { Events } from "@bunnykit/orm/events";
+import { Cache } from "@rekkr/orm/cache";
+import { Events } from "@rekkr/orm/events";
 
 class EnrollmentChanged {
   constructor(public studentId: number) {}
@@ -199,7 +199,7 @@ Because event registrations are global process state, clear them between tests w
 
 ```ts
 import { afterEach, test } from "bun:test";
-import { Events } from "@bunnykit/orm/events";
+import { Events } from "@rekkr/orm/events";
 
 afterEach(() => {
   Events.clear();

@@ -2,7 +2,7 @@ import { Command } from "../../commands/Command.js";
 import { normalizePathList } from "../../utils.js";
 import { mkdir, writeFile, access } from "fs/promises";
 import { join } from "path";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 
 function toClassName(name: string): string {
   return name
@@ -12,7 +12,7 @@ function toClassName(name: string): string {
 }
 
 function buildJobStub(className: string, queue: string): string {
-  return `import { DispatchableJob, registerJob } from "@bunnykit/orm/queue";
+  return `import { DispatchableJob, registerJob } from "@rekkr/orm/queue";
 
 export default class ${className} extends DispatchableJob {
   static queue = "${queue}";
@@ -32,7 +32,7 @@ async function exists(path: string): Promise<boolean> {
   return access(path).then(() => true).catch(() => false);
 }
 
-export function makeMakeJobCommand(config: BunnyConfig) {
+export function makeMakeJobCommand(config: OrmConfig) {
   return class MakeJobCommand extends Command {
     static signature = "make:job {name : Job class name} {--queue= : Queue name} {--dir= : Output directory}";
     static description = "Create a new job file.";

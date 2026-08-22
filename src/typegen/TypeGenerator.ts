@@ -71,7 +71,7 @@ export class TypeGenerator {
         const modelDeclarations = this.getModelDeclarations(table, className, discovered, target.modelImportPrefix, tsconfigAliases);
 
         if (!declarationOnly) {
-          lines.push(`import { Model } from "@bunnykit/orm";`);
+          lines.push(`import { Model } from "@rekkr/orm";`);
           lines.push("");
         }
 

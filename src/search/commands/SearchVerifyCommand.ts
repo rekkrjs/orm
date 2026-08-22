@@ -1,5 +1,5 @@
 import { Command } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { Search } from "../SearchManager.js";
 import { loadSearchableModels } from "./resolveSearchableModel.js";
 import { runWithTenant } from "./runWithTenant.js";
@@ -11,7 +11,7 @@ interface VerifyRow {
   error?: string;
 }
 
-export function makeSearchVerifyCommand(config: BunnyConfig) {
+export function makeSearchVerifyCommand(config: OrmConfig) {
   return class extends Command.define(
     "search:verify " +
     "{--tenant= : Verify a single tenant context} " +

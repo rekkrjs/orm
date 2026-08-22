@@ -6,7 +6,7 @@ import { SeederRunner } from "../seeding/Seeder.js";
 import { normalizePathList } from "../utils.js";
 import { relayStdoutToStderr, writeToStdout } from "./StdoutContract.js";
 import { resolve, sep } from "path";
-import type { BunnyConfig, ModelsPath } from "../config/BunnyConfig.js";
+import type { OrmConfig, ModelsPath } from "../config/OrmConfig.js";
 import type { MigrationStatusRow, MigratorOptions } from "../migration/Migrator.js";
 
 export type MigrationCommand =
@@ -112,11 +112,11 @@ function jsonPayload(command: MigrationCommand, result: MigrationCommandResult):
   }
 }
 
-export function getDefaultMigrationsPath(config: BunnyConfig): string | string[] {
+export function getDefaultMigrationsPath(config: OrmConfig): string | string[] {
   return config.migrationsPath || config.migrations?.landlord || "./database/migrations";
 }
 
-export function getModelPaths(config: BunnyConfig): { landlord?: string | string[]; tenant?: string | string[] } {
+export function getModelPaths(config: OrmConfig): { landlord?: string | string[]; tenant?: string | string[] } {
   const mp = config.modelsPath;
   if (mp && typeof mp === "object" && !Array.isArray(mp)) return mp as ModelsPath;
   return { landlord: mp as string | string[] | undefined, tenant: mp as string | string[] | undefined };
@@ -134,7 +134,7 @@ export function getScopeExclusions(
   );
 }
 
-export function createTypeGeneratorOptions(config: BunnyConfig, modelsPathOverride?: string | string[]) {
+export function createTypeGeneratorOptions(config: OrmConfig, modelsPathOverride?: string | string[]) {
   const modelRoots = normalizePathList(
     modelsPathOverride ??
     (typeof config.modelsPath === "string" || Array.isArray(config.modelsPath) ? config.modelsPath : undefined) ??
@@ -152,12 +152,12 @@ export function createTypeGeneratorOptions(config: BunnyConfig, modelsPathOverri
   };
 }
 
-export function createMigrationOptions(config: BunnyConfig) {
+export function createMigrationOptions(config: OrmConfig) {
   return { createIfMissing: config.migrations?.createIfMissing };
 }
 
 export function buildMigrator(
-  config: BunnyConfig,
+  config: OrmConfig,
   connection: Connection,
   path: string | string[],
   scope: "landlord" | "tenant",
@@ -192,16 +192,16 @@ export async function runMigratorCommand(
   return { migrations };
 }
 
-export async function getTenantIds(config: BunnyConfig): Promise<string[]> {
+export async function getTenantIds(config: OrmConfig): Promise<string[]> {
   if (!config.tenancy?.listTenants) {
-    throw new Error("Tenant migrations require tenancy.listTenants() in bunny.config.ts.");
+    throw new Error("Tenant migrations require tenancy.listTenants() in orm.config.ts.");
   }
   return (await config.tenancy.listTenants()).map(String);
 }
 
 export async function runTenantMigrator(
   command: MigrationCommand,
-  config: BunnyConfig,
+  config: OrmConfig,
   connectionPath: string | string[],
   tenantId: string,
   options: boolean | MigrationCommandOptions = {},
@@ -227,7 +227,7 @@ export async function runTenantMigrator(
 
 export async function runTenantMigrationCommand(
   command: MigrationCommand,
-  config: BunnyConfig,
+  config: OrmConfig,
   tenantPath: string | string[],
   tenantId: string,
   options: boolean | MigrationCommandOptions = {},
@@ -245,7 +245,7 @@ export async function runTenantMigrationCommand(
 
 export async function runConfiguredMigrationCommand(
   command: MigrationCommand,
-  config: BunnyConfig,
+  config: OrmConfig,
   connection: Connection,
   target: MigrationTarget,
   options: boolean | MigrationCommandOptions = {},
@@ -273,7 +273,7 @@ export async function runConfiguredMigrationCommand(
 
 async function runConfiguredMigrationCommandWithoutSqlLogging(
   command: MigrationCommand,
-  config: BunnyConfig,
+  config: OrmConfig,
   connection: Connection,
   target: MigrationTarget,
   options: MigrationCommandOptions = {},
@@ -287,7 +287,7 @@ async function runConfiguredMigrationCommandWithoutSqlLogging(
     const defaultPath = getDefaultMigrationsPath(config);
     if (target.scope === "tenant" || target.scope === "tenants") {
       if (!config.tenancy?.resolveTenant) {
-        throw new Error("Tenant migrations require tenancy.resolveTenant() in bunny.config.ts.");
+        throw new Error("Tenant migrations require tenancy.resolveTenant() in orm.config.ts.");
       }
       ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
       if (target.scope === "tenant") {
@@ -313,7 +313,7 @@ async function runConfiguredMigrationCommandWithoutSqlLogging(
   const runAllTenants = async () => {
     if (!tenantPath) return;
     if (!config.tenancy?.resolveTenant) {
-      throw new Error("Tenant migrations require tenancy.resolveTenant() in bunny.config.ts.");
+      throw new Error("Tenant migrations require tenancy.resolveTenant() in orm.config.ts.");
     }
     ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
     for (const tenantId of await getTenantIds(config)) {
@@ -326,7 +326,7 @@ async function runConfiguredMigrationCommandWithoutSqlLogging(
   if (target.scope === "tenant") {
     if (!tenantPath) return result;
     if (!config.tenancy?.resolveTenant) {
-      throw new Error("Tenant migrations require tenancy.resolveTenant() in bunny.config.ts.");
+      throw new Error("Tenant migrations require tenancy.resolveTenant() in orm.config.ts.");
     }
     ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
     return mergeResult(result, await runTenantMigrationCommand(command, config, tenantPath, target.tenantId, options));
@@ -344,7 +344,7 @@ async function runConfiguredMigrationCommandWithoutSqlLogging(
 }
 
 export async function runSeederCommand(
-  config: BunnyConfig,
+  config: OrmConfig,
   connection: Connection,
   scope: MigrationTarget,
   target?: string,
@@ -360,7 +360,7 @@ export async function runSeederCommand(
   if (scope.scope === "default" || scope.scope === "landlord") { await runDefault(); return; }
 
   if (!config.tenancy?.resolveTenant) {
-    throw new Error("Tenant seeding requires tenancy.resolveTenant() in bunny.config.ts.");
+    throw new Error("Tenant seeding requires tenancy.resolveTenant() in orm.config.ts.");
   }
   ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
 

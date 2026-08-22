@@ -3,7 +3,7 @@
 Seeders are scripts that populate the database with development, demo, or test data. Factories generate realistic-looking model attributes that seeders (and tests) can use to create many similar records quickly.
 
 ```ts
-import { Seeder, factory, SeederRunner } from "@bunnykit/orm";
+import { Seeder, factory, SeederRunner } from "@rekkr/orm";
 ```
 
 ## Writing a seeder
@@ -12,7 +12,7 @@ Extend the `Seeder` class and implement `run()`:
 
 ```ts
 // database/seeders/UserSeeder.ts
-import { Seeder } from "@bunnykit/orm";
+import { Seeder } from "@rekkr/orm";
 import User from "../../src/models/User";
 
 export default class UserSeeder extends Seeder {
@@ -26,7 +26,7 @@ export default class UserSeeder extends Seeder {
 A seeder can call models, run raw SQL via `this.connection`, or invoke other seeders:
 
 ```ts
-import { Seeder } from "@bunnykit/orm";
+import { Seeder } from "@rekkr/orm";
 import UserSeeder from "./UserSeeder";
 import PostSeeder from "./PostSeeder";
 
@@ -42,7 +42,7 @@ export default class DemoSeeder extends Seeder {
 
 ## Configuring the seeder path
 
-Set `seedersPath` in `bunny.config.ts`:
+Set `seedersPath` in `orm.config.ts`:
 
 ```ts
 export default {
@@ -68,18 +68,18 @@ The CLI walks every file in these directories that ends in `.ts` or `.js` and lo
 
 ```bash
 # All seeders in seedersPath, in filename order
-bunx bunny db:seed
+bunx orm db:seed
 
 # A single seeder by class name (found under seedersPath)
-bunx bunny db:seed UserSeeder
+bunx orm db:seed UserSeeder
 
 # A single seeder by file path
-bunx bunny db:seed ./database/seeders/UserSeeder.ts
+bunx orm db:seed ./database/seeders/UserSeeder.ts
 
 # Multi-tenant
-bunx bunny db:seed --tenant acme
-bunx bunny db:seed --tenant acme UserSeeder
-bunx bunny db:seed --tenants                 # iterate every tenant from listTenants()
+bunx orm db:seed --tenant acme
+bunx orm db:seed --tenant acme UserSeeder
+bunx orm db:seed --tenants                 # iterate every tenant from listTenants()
 ```
 
 When the command runs in a tenant context, `SeederRunner` automatically uses the tenant's connection. Seeder runs are wrapped in a transaction — if any seeder throws, the entire run rolls back.
@@ -87,7 +87,7 @@ When the command runs in a tenant context, `SeederRunner` automatically uses the
 ### Programmatic — `SeederRunner`
 
 ```ts
-import { SeederRunner } from "@bunnykit/orm";
+import { SeederRunner } from "@rekkr/orm";
 
 const runner = new SeederRunner();
 
@@ -105,16 +105,16 @@ await runner.runTarget("UserSeeder", "./database/seeders");
 await runner.run(UserSeeder, new PostSeeder());
 ```
 
-### Programmatic — `configureBunny()` facade
+### Programmatic — `configureOrm()` facade
 
-If you already loaded `bunny.config.ts`, the facade is the shortest path:
+If you already loaded `orm.config.ts`, the facade is the shortest path:
 
 ```ts
-import { configureBunny } from "@bunnykit/orm";
-import config from "../bunny.config";
+import { configureOrm } from "@rekkr/orm";
+import config from "../orm.config";
 
-const bunny = configureBunny(config);
-await bunny.seed();    // uses config.seedersPath
+const orm = configureOrm(config);
+await orm.seed();    // uses config.seedersPath
 ```
 
 See [Library Usage](./library-usage.md).
@@ -127,7 +127,7 @@ Define a factory class per model (Laravel-style): subclass `Factory<Model>`, imp
 
 ```ts
 // factories/UserFactory.ts
-import { Factory } from "@bunnykit/orm";
+import { Factory } from "@rekkr/orm";
 import User from "../models/User";
 
 export class UserFactory extends Factory<User> {
@@ -197,7 +197,7 @@ The default returns `Factory<User>`, so `make()`/`create()` are typed to the mod
 ### Relationships, sequences, hooks
 
 ```ts
-import { Sequence } from "@bunnykit/orm";
+import { Sequence } from "@rekkr/orm";
 
 // belongsTo: .for(parentOrFactory, relationName)
 await Post.factory().for(User.factory(), "author").create();
@@ -239,17 +239,17 @@ export default class UserSeeder extends Seeder {
 }
 ```
 
-For destructive seeders (wipe and reload), call `Model.truncate()` first or rely on `bunny.fresh()` (drop + re-migrate + re-seed).
+For destructive seeders (wipe and reload), call `Model.truncate()` first or rely on `orm.fresh()` (drop + re-migrate + re-seed).
 
 ## Common pitfalls
 
-- **Order matters.** Bunny runs seeders alphabetically by filename. If `PostSeeder` needs users, prefix it (`02_PostSeeder.ts`) or call seeders from a single `DatabaseSeeder` that lists them in the right order.
+- **Order matters.** ORM runs seeders alphabetically by filename. If `PostSeeder` needs users, prefix it (`02_PostSeeder.ts`) or call seeders from a single `DatabaseSeeder` that lists them in the right order.
 - **Atomicity surprises.** If one seeder throws, the transaction rolls back the entire run. Side-effects sent to external systems (emails, queue jobs) outside the database still went out — make seeders pure data work.
-- **Tenant scope is implicit.** Inside `DB.tenant()` or `bunx bunny db:seed --tenant`, `this.connection` is the tenant connection. If you also want to seed landlord-scoped data, do it outside the tenant block.
+- **Tenant scope is implicit.** Inside `DB.tenant()` or `bunx orm db:seed --tenant`, `this.connection` is the tenant connection. If you also want to seed landlord-scoped data, do it outside the tenant block.
 - **Factories don't apply observers by default for `raw()` and `make()`.** Only `create()` persists the record (and therefore fires observers).
 
 ## Where to next
 
-- [Library Usage](./library-usage.md) — the `configureBunny()` facade including `bunny.seed()`.
-- [Migrations](./migrations.md) — `bunny.fresh()` to drop, re-migrate, and re-seed in one command.
+- [Library Usage](./library-usage.md) — the `configureOrm()` facade including `orm.seed()`.
+- [Migrations](./migrations.md) — `orm.fresh()` to drop, re-migrate, and re-seed in one command.
 - [Testing](./testing.md) — using factories inside `bun test`.

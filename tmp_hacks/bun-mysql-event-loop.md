@@ -24,7 +24,7 @@ A MySQL command produces **no output and exits with code 0** while having done
 only part of its work. It was first seen on the CLI:
 
 ```console
-$ DB_CONNECTION=mysql bunny migrate:status
+$ DB_CONNECTION=mysql orm migrate:status
 $ echo $?
 0
 ```
@@ -155,7 +155,7 @@ Wrapping `driver.begin()` holds the loop for the whole transaction callback.
 That is deliberate: a process must not be allowed to exit in the middle of an
 open transaction, which is exactly what this bug did.
 
-`bin/bunny.ts` also runs `await main()` at top level instead of
+`bin/orm.ts` also runs `await main()` at top level instead of
 `main().catch(...)`. A pending top-level await is itself a reference Bun counts,
 so the CLI cannot drain the loop and exit 0 mid-command. That is a second line
 of defence and is worth keeping on its own merits, but it only protects the

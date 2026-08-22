@@ -1,6 +1,6 @@
 # TypeScript
 
-Bunny is built TypeScript-first. With `Model.define<T>()`, every attribute, column name, relation, and scope is typed end-to-end — no code generator required, no `// @ts-ignore` needed for ordinary usage.
+ORM is built TypeScript-first. With `Model.define<T>()`, every attribute, column name, relation, and scope is typed end-to-end — no code generator required, no `// @ts-ignore` needed for ordinary usage.
 
 This document walks through the typing flow: how `Model.define<T>()` produces a fully-typed base class, how the query builder narrows on every chained call, and where you sometimes need a hand-written annotation (accessors, scopes, custom casts).
 
@@ -14,7 +14,7 @@ Pass an attribute interface and the table name. The returned class has:
 - **Typed eager-load narrowing** — after `.with("posts")`, the relation is `Collection<Post>`, not a relation method.
 
 ```ts
-import { Model } from "@bunnykit/orm";
+import { Model } from "@rekkr/orm";
 
 interface UserAttributes {
   id: number;
@@ -97,7 +97,7 @@ user!.name;                   // not typed — use getAttribute()
 `Builder<T>` is parameterized by the model class, so every result and every column reference narrows correctly:
 
 ```ts
-import type { Collection } from "@bunnykit/orm";
+import type { Collection } from "@rekkr/orm";
 
 const builder = User.where("name", "Alice");       // Builder<User>
 const users: Collection<User> = await builder.get();
@@ -110,7 +110,7 @@ const first: User | null = await User.first();
 When you use the `DB` facade without a model class, pass a row-shape generic to get the same column autocomplete:
 
 ```ts
-import { DB } from "@bunnykit/orm";
+import { DB } from "@rekkr/orm";
 
 interface UserRow {
   id: number;
@@ -162,7 +162,7 @@ users[0].profile_exists;     // boolean
 `static accessors` callbacks default to `(value, attributes, model) => any` parameters when the property is unannotated. To get full IntelliSense — including `model` as the concrete subclass — annotate with `AccessorMap<TAttrs, TModel>`:
 
 ```ts
-import { Model, type AccessorMap } from "@bunnykit/orm";
+import { Model, type AccessorMap } from "@rekkr/orm";
 
 interface UserAttrs {
   id: number;
@@ -207,7 +207,7 @@ See [Models — Accessors and mutators](./models.md#accessors-and-mutators).
 Static scope methods take a `Builder<TModel>` as their first argument. Annotate with the model class so the scope body has autocomplete:
 
 ```ts
-import type { Builder } from "@bunnykit/orm";
+import type { Builder } from "@rekkr/orm";
 
 class User extends Model.define<UserAttrs>("users") {
   static scopeActive(query: Builder<User>) {
@@ -247,7 +247,7 @@ User.where({ is_admin: true });              // ✓ — filters stay broad
 user.forceFill({ is_admin: true });          // ✓ — trusted write
 ```
 
-Without the marker, Bunny keeps its standalone-compatible attribute input types.
+Without the marker, ORM keeps its standalone-compatible attribute input types.
 An empty marked subset rejects every property.
 
 ## Common pitfalls

@@ -1,11 +1,11 @@
 # Configuration
 
-Bunny is configured through a single `BunnyConfig` object — typically exported from `bunny.config.ts` at your project root. The same file is read by the CLI (`bunx bunny migrate`, etc.) and by the `configureBunny()` runtime facade your application calls at startup.
+ORM is configured through a single `OrmConfig` object — typically exported from `orm.config.ts` at your project root. The same file is read by the CLI (`bunx orm migrate`, etc.) and by the `configureOrm()` runtime facade your application calls at startup.
 
 ## The minimum config
 
 ```ts
-// bunny.config.ts
+// orm.config.ts
 export default {
   connection: { url: "sqlite://app.db" },
   migrationsPath: "./database/migrations",
@@ -17,10 +17,10 @@ That is enough for a single-database app with file-based migrations. Everything 
 ## A complete config
 
 ```ts
-// bunny.config.ts
-import type { BunnyConfig } from "@bunnykit/orm";
+// orm.config.ts
+import type { OrmConfig } from "@rekkr/orm";
 
-const config: BunnyConfig = {
+const config: OrmConfig = {
   connection: {
     url: process.env.DATABASE_URL!,
   },
@@ -105,7 +105,7 @@ connection: {
 
 ### MySQL sessions must use UTC
 
-On MySQL, Bunny passes model dates to `Bun.SQL` as native `Date` bindings, which
+On MySQL, ORM passes model dates to `Bun.SQL` as native `Date` bindings, which
 Bun encodes as a UTC wall clock. Every physical connection in the pool must
 therefore start with `time_zone = '+00:00'`. This remains a runtime requirement:
 `DATETIME` stores that wall clock directly, while `TIMESTAMP` interprets it in
@@ -129,7 +129,7 @@ SELECT
   TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW()) AS offset_seconds;
 ```
 
-Bunny checks this before every date-bearing statement that runs directly on a
+ORM checks this before every date-bearing statement that runs directly on a
 pool, because consecutive statements may use different sessions. Inside
 `connection.transaction(...)` the session is pinned and the successful check is
 reused for the rest of that transaction. Group related date writes in a short
@@ -202,7 +202,7 @@ SQLite uses `filename` instead of `host`/`port`:
 connection: { driver: "sqlite", filename: "./app.db" }
 ```
 
-Bunny forwards the driver config to Bun's SQL client as-is and does not substitute defaults of its own. Every field you omit is therefore resolved by Bun from the adapter's standard environment variables — `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` for Postgres, and the `MYSQL_*` equivalents for MySQL — falling back to `localhost` and the adapter's default port when the variable is unset. So `{ driver: "postgres" }` in an environment with `PGHOST` set connects to that host, not to `localhost`. Pass the field explicitly whenever you need it to win over the environment:
+ORM forwards the driver config to Bun's SQL client as-is and does not substitute defaults of its own. Every field you omit is therefore resolved by Bun from the adapter's standard environment variables — `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` for Postgres, and the `MYSQL_*` equivalents for MySQL — falling back to `localhost` and the adapter's default port when the variable is unset. So `{ driver: "postgres" }` in an environment with `PGHOST` set connects to that host, not to `localhost`. Pass the field explicitly whenever you need it to win over the environment:
 
 ```ts
 connection: { driver: "postgres", host: "localhost", database: "mydb" }
@@ -210,12 +210,12 @@ connection: { driver: "postgres", host: "localhost", database: "mydb" }
 
 Credentials in this form are handed to the driver verbatim instead of being assembled into a URL, so usernames and passwords containing `/`, `?`, `#`, `@` or `%` need no escaping. The `url` form is parsed as a URL and still requires percent-encoded credentials.
 
-For PostgreSQL, `prepare` defaults to `false`. Bunny generates dynamic SQL for model queries, validation checks, migrations, and schema-qualified tenant queries; disabling named prepared statements avoids intermittent stale-plan errors after schema changes or when a long-running server reuses pooled connections. Set `prepare: true` only when you know your Postgres deployment benefits from Bun's persisted named prepared statements and your query result shapes are stable.
+For PostgreSQL, `prepare` defaults to `false`. ORM generates dynamic SQL for model queries, validation checks, migrations, and schema-qualified tenant queries; disabling named prepared statements avoids intermittent stale-plan errors after schema changes or when a long-running server reuses pooled connections. Set `prepare: true` only when you know your Postgres deployment benefits from Bun's persisted named prepared statements and your query result shapes are stable.
 
 For PostgreSQL, the pool `max` defaults to `10` when unset (`Connection.defaultPostgresPoolMax`). Override per-connection with `max`, or globally before constructing connections:
 
 ```ts
-import { Connection } from "@bunnykit/orm";
+import { Connection } from "@rekkr/orm";
 Connection.defaultPostgresPoolMax = 20;
 ```
 
@@ -231,7 +231,7 @@ Strategy implications:
 
 - **`qualify`** (recommended for high concurrency): all tenants share the base connection's pool — table names are schema-prefixed (`tenant_x.users`). One pool total. No connection pinned per request. Best scalability.
 - **`search_path`**: uses a dedicated reserved connection for the callback and sets `search_path` for that session, then resets it. **One pool connection is pinned for the callback duration** (including any external I/O inside the handler). Keep callbacks short; prefer `qualify` unless you need `search_path` behavior for raw SQL.
-- **`database`**: each distinct tenant database gets its **own pool**. `T` tenants ⇒ `T × max` sockets — this exhausts `max_connections` fast. This is mitigated by default: when `tenancy.resolveTenant` is set, `configureBunny()` applies a 5-minute idle TTL and a 60s background eviction sweep automatically. Tune or disable via [`tenancy.idleTimeoutMs`](#idletimeoutms) and [`tenancy.sweep`](#sweep):
+- **`database`**: each distinct tenant database gets its **own pool**. `T` tenants ⇒ `T × max` sockets — this exhausts `max_connections` fast. This is mitigated by default: when `tenancy.resolveTenant` is set, `configureOrm()` applies a 5-minute idle TTL and a 60s background eviction sweep automatically. Tune or disable via [`tenancy.idleTimeoutMs`](#idletimeoutms) and [`tenancy.sweep`](#sweep):
 
 ```ts
 tenancy: {
@@ -241,10 +241,10 @@ tenancy: {
 }
 ```
 
-The equivalent low-level handles are still available if you wire the runtime manually instead of through `configureBunny()`:
+The equivalent low-level handles are still available if you wire the runtime manually instead of through `configureOrm()`:
 
 ```ts
-import { ConnectionManager } from "@bunnykit/orm";
+import { ConnectionManager } from "@rekkr/orm";
 
 ConnectionManager.defaultTenantTtl = 5 * 60_000;   // a resolution-level `ttl` always wins
 ConnectionManager.enableTenantSweep(60_000);        // unref'd; call once at startup
@@ -273,7 +273,7 @@ migrations: {
 }
 ```
 
-When `migrations.landlord` or `migrations.tenant` is set, the CLI's `bunny migrate landlord` and `bunny migrate tenant` commands target each group separately. The flat `migrationsPath` is still honored as a fallback when a scope is requested but its grouped path is missing.
+When `migrations.landlord` or `migrations.tenant` is set, the CLI's `orm migrate landlord` and `orm migrate tenant` commands target each group separately. The flat `migrationsPath` is still honored as a fallback when a scope is requested but its grouped path is missing.
 
 ### `createIfMissing`
 
@@ -304,7 +304,7 @@ seedersPath: "./database/seeders",
 seedersPath: ["./database/seeders", "./database/test-fixtures"],
 ```
 
-Used by `bunx bunny seed` and `bunny.seed()`. See [Seeders](./seeders.md).
+Used by `bunx orm seed` and `orm.seed()`. See [Seeders](./seeders.md).
 
 ## `tenancy`
 
@@ -367,7 +367,7 @@ Resolution order for model table names:
 
 ### `listTenants`
 
-Only used by the CLI when running grouped tenant migrations across every tenant (`bunx bunny migrate tenants`):
+Only used by the CLI when running grouped tenant migrations across every tenant (`bunx orm migrate tenants`):
 
 ```ts
 tenancy: {
@@ -421,7 +421,7 @@ modelsPath: {
 }
 ```
 
-The grouped form lets `bunny migrate landlord` regenerate types only for landlord-scoped models.
+The grouped form lets `orm migrate landlord` regenerate types only for landlord-scoped models.
 
 ## `policyPath`
 
@@ -433,7 +433,7 @@ policyPath: "./app/policies",
 policyPath: ["./app/policies", "./modules/core/policies"],
 ```
 
-Used by `bunny make:policy` when `--dir` is not provided.
+Used by `orm make:policy` when `--dir` is not provided.
 
 ## Type generation
 
@@ -483,12 +483,12 @@ Useful in development; in production prefer the file form (or leave off) and ens
 
 ## `queue`
 
-Enables the background job queue. When present, `configureBunny()` automatically creates a `DatabaseQueueDriver` wired to the default connection.
+Enables the background job queue. When present, `configureOrm()` automatically creates a `DatabaseQueueDriver` wired to the default connection.
 
 ```ts
 queue: {
   defaultQueue: "default",        // queue name used when a job does not specify one
-  workers: 2,                     // concurrent worker slots for `bunny queue`
+  workers: 2,                     // concurrent worker slots for `orm queue`
   jobsPath: "./app/jobs",         // directory the worker imports to register job classes
   retryAfterSeconds: 90,          // re-queue jobs reserved but not finished within this time
   table: "jobs",                  // override the jobs table name
@@ -498,11 +498,11 @@ queue: {
 
 All fields are optional. Omitting the entire `queue` key leaves the queue unconfigured; you can still call `Queue.configure()` manually.
 
-To use the Redis driver instead, configure the driver manually after `configureBunny()` (or before dispatching jobs):
+To use the Redis driver instead, configure the driver manually after `configureOrm()` (or before dispatching jobs):
 
 ```ts
 import { redis } from "bun";
-import { Queue, RedisQueueDriver } from "@bunnykit/orm/queue";
+import { Queue, RedisQueueDriver } from "@rekkr/orm/queue";
 
 Queue.configure(new RedisQueueDriver(redis, { prefix: "myapp:queue:" }), "default");
 ```
@@ -511,20 +511,20 @@ See [Queue Jobs](./queue.md) for the full reference.
 
 ## Wiring it up at runtime
 
-The CLI loads `bunny.config.ts` automatically. Your application code activates the same config through `configureBunny()`:
+The CLI loads `orm.config.ts` automatically. Your application code activates the same config through `configureOrm()`:
 
 ```ts
 // src/app.ts
-import { configureBunny } from "@bunnykit/orm";
-import config from "../bunny.config";
+import { configureOrm } from "@rekkr/orm";
+import config from "../orm.config";
 
-const bunny = configureBunny(config);
+const orm = configureOrm(config);
 
-// bunny.connection — the live Connection
-// bunny.migrate(), bunny.seed(), bunny.migrator(), bunny.seeder() — facade helpers
+// orm.connection — the live Connection
+// orm.migrate(), orm.seed(), orm.migrator(), orm.seeder() — facade helpers
 ```
 
-`configureBunny()` does the following on call:
+`configureOrm()` does the following on call:
 
 1. Constructs a `Connection` from `config.connection` and registers it as the default.
 2. Sets the connection on `Model` and `Schema` so static helpers work.
@@ -537,51 +537,51 @@ It returns a [facade](./library-usage.md) you can use to run migrations and seed
 
 ### SvelteKit
 
-Bootstrap Bunny in a server-only singleton module so hot reloads do not re-create it from multiple places. Guard the singleton against Vite HMR invalidating the framework's own internal modules (`Model`, `ConnectionManager`) — when that happens the cached `__bunny` survives on `globalThis` but `Model.connection` / `ConnectionManager.defaultConnection` are wiped on the new class instances, which is exactly when you see `No connection set on model Tenant`:
+Bootstrap ORM in a server-only singleton module so hot reloads do not re-create it from multiple places. Guard the singleton against Vite HMR invalidating the framework's own internal modules (`Model`, `ConnectionManager`) — when that happens the cached `__orm` survives on `globalThis` but `Model.connection` / `ConnectionManager.defaultConnection` are wiped on the new class instances, which is exactly when you see `No connection set on model Tenant`:
 
 ```ts
-// src/lib/server/bunny.ts
-import { configureBunny, ConnectionManager, type ConfiguredBunny } from "@bunnykit/orm";
-import config from "../../../bunny.config";
+// src/lib/server/orm.ts
+import { configureOrm, ConnectionManager, type ConfiguredOrm } from "@rekkr/orm";
+import config from "../../../orm.config";
 
 declare global {
   // eslint-disable-next-line no-var
-  var __bunny: ConfiguredBunny | undefined;
+  var __orm: ConfiguredOrm | undefined;
 }
 
 // First load OR HMR invalidated Model/ConnectionManager (their static state
-// was reset). Re-running configureBunny is race-free — new defaults install
+// was reset). Re-running configureOrm is race-free — new defaults install
 // before the previous pool is torn down in the background.
-if (!globalThis.__bunny || !ConnectionManager.getDefault()) {
-  globalThis.__bunny = configureBunny(config);
+if (!globalThis.__orm || !ConnectionManager.getDefault()) {
+  globalThis.__orm = configureOrm(config);
 }
 
-const bunny = globalThis.__bunny;
-export default bunny;
+const orm = globalThis.__orm;
+export default orm;
 ```
 
 The double check matters:
 
-- `!globalThis.__bunny` — cold start.
-- `!ConnectionManager.getDefault()` — Vite re-evaluated `connection/ConnectionManager.ts` (or `model/Model.ts`); the cached singleton points at a stale module's pool. Re-running `configureBunny` writes the connection onto the live classes AND refreshes the cached singleton.
+- `!globalThis.__orm` — cold start.
+- `!ConnectionManager.getDefault()` — Vite re-evaluated `connection/ConnectionManager.ts` (or `model/Model.ts`); the cached singleton points at a stale module's pool. Re-running `configureOrm` writes the connection onto the live classes AND refreshes the cached singleton.
 
 Then import the module from server code:
 
 ```ts
-import "$lib/server/bunny";
+import "$lib/server/orm";
 ```
 
 or:
 
 ```ts
-import bunny from "$lib/server/bunny";
+import orm from "$lib/server/orm";
 ```
 
-Do not call `configureBunny()` directly inside `hooks.server.ts`, route modules, or actions. Those files are re-evaluated during dev reloads; centralize the bootstrap in `src/lib/server/bunny.ts` with the guard above.
+Do not call `configureOrm()` directly inside `hooks.server.ts`, route modules, or actions. Those files are re-evaluated during dev reloads; centralize the bootstrap in `src/lib/server/orm.ts` with the guard above.
 
 ## Environment variables (CLI only)
 
-When no `bunny.config.ts` exists, the CLI falls back to env vars:
+When no `orm.config.ts` exists, the CLI falls back to env vars:
 
 ```bash
 export DATABASE_URL="sqlite://app.db"

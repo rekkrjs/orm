@@ -2,8 +2,8 @@
 import { SQL } from "bun";
 import { Connection } from "../src/connection/Connection.js";
 import { ConnectionManager } from "../src/connection/ConnectionManager.js";
-import { configureBunny } from "../src/config/BunnyConfig.js";
-import type { BunnyConfig } from "../src/config/BunnyConfig.js";
+import { configureOrm } from "../src/config/OrmConfig.js";
+import type { OrmConfig } from "../src/config/OrmConfig.js";
 import { MigrationCreator } from "../src/migration/MigrationCreator.js";
 import { TypeGenerator } from "../src/typegen/TypeGenerator.js";
 import { existsSync } from "fs";
@@ -24,7 +24,7 @@ import { parseSignatureName } from "../src/commands/SignatureParser.js";
 import { registerOrmCommands } from "../src/cli/index.js";
 import { relayStdoutToStderr } from "../src/cli/StdoutContract.js";
 import { getFlagValue, parsePositiveInteger, readFlag } from "../src/cli/flags.js";
-import { buildBunnyConfigTemplate } from "../src/cli/configTemplate.js";
+import { buildOrmConfigTemplate } from "../src/cli/configTemplate.js";
 import {
   BelongsTo,
   BelongsToMany,
@@ -70,9 +70,9 @@ function parseEnvPathSetting(value?: string): string | string[] | undefined {
   return paths.length === 1 ? paths[0] : paths;
 }
 
-function hasLocalBunnyConfig(): boolean {
-  const tsConfigPath = join(process.cwd(), "bunny.config.ts");
-  const jsConfigPath = join(process.cwd(), "bunny.config.js");
+function hasLocalOrmConfig(): boolean {
+  const tsConfigPath = join(process.cwd(), "orm.config.ts");
+  const jsConfigPath = join(process.cwd(), "orm.config.js");
   return existsSync(tsConfigPath) || existsSync(jsConfigPath);
 }
 
@@ -81,7 +81,7 @@ function isInteractiveTerminal(): boolean {
 }
 
 function resolveReplTmpRoot(): string {
-  return process.env.BUNNY_REPL_TMPDIR || process.env.TMPDIR || process.env.TEMP || process.env.TMP || "/tmp";
+  return process.env.ORM_REPL_TMPDIR || process.env.TMPDIR || process.env.TEMP || process.env.TMP || "/tmp";
 }
 
 async function promptYesNo(question: string, defaultYes = true): Promise<boolean> {
@@ -124,7 +124,7 @@ async function buildInitTemplateFromPrompts(): Promise<string> {
   const enableCache = await promptYesNo("Add cache section?", false);
   const enableLogs = await promptYesNo("Enable SQL logging section?", false);
 
-  return buildBunnyConfigTemplate({
+  return buildOrmConfigTemplate({
     databaseUrl,
     migrationsPath,
     seedersPath,
@@ -140,15 +140,15 @@ async function buildInitTemplateFromPrompts(): Promise<string> {
 
 async function runInitCommand(rawArgs: string[]): Promise<number> {
   const force = rawArgs.includes("--force") || rawArgs.includes("-f");
-  const tsConfigPath = join(process.cwd(), "bunny.config.ts");
-  const jsConfigPath = join(process.cwd(), "bunny.config.js");
+  const tsConfigPath = join(process.cwd(), "orm.config.ts");
+  const jsConfigPath = join(process.cwd(), "orm.config.js");
   const tsExists = existsSync(tsConfigPath);
   const jsExists = existsSync(jsConfigPath);
 
   if ((tsExists || jsExists) && !force) {
     const existing = tsExists ? tsConfigPath : jsConfigPath;
     console.error(`${styleText("red", "Config already exists:", { stream: process.stderr })} ${existing}`);
-    console.error("Use `bunny init --force` to overwrite `bunny.config.ts`.");
+    console.error("Use `orm init --force` to overwrite `orm.config.ts`.");
     return 1;
   }
 
@@ -179,15 +179,15 @@ async function walkJobFiles(dir: string): Promise<string[]> {
   return files;
 }
 
-async function createReplBootstrap(config: BunnyConfig, dir: string): Promise<string> {
+async function createReplBootstrap(config: OrmConfig, dir: string): Promise<string> {
   const bootstrapPath = join(dir, "bootstrap.ts");
   const modelRoots = normalizePathList(
     typeof config.modelsPath === "object" && !Array.isArray(config.modelsPath)
       ? ([config.modelsPath.landlord, config.modelsPath.tenant].filter(Boolean) as string[]).flat()
       : config.modelsPath || config.typeDeclarationModelsDir
   );
-  const tsConfigPath = join(process.cwd(), "bunny.config.ts");
-  const jsConfigPath = join(process.cwd(), "bunny.config.js");
+  const tsConfigPath = join(process.cwd(), "orm.config.ts");
+  const jsConfigPath = join(process.cwd(), "orm.config.js");
   const configPath = existsSync(tsConfigPath) ? tsConfigPath : existsSync(jsConfigPath) ? jsConfigPath : null;
   const source = `
     import {
@@ -225,9 +225,9 @@ async function createReplBootstrap(config: BunnyConfig, dir: string): Promise<st
       ValidationError,
       Validator,
       collect,
-      configureBunny,
+      configureOrm,
       rule
-    } from "@bunnykit/orm";
+    } from "@rekkr/orm";
     import { existsSync } from "fs";
     import { readdir } from "fs/promises";
     import { basename, extname, join, resolve } from "path";
@@ -236,8 +236,8 @@ async function createReplBootstrap(config: BunnyConfig, dir: string): Promise<st
     const configPath = ${JSON.stringify(configPath)};
     const configModule = configPath ? await import(pathToFileURL(configPath).href) : null;
     const replConfig = configModule ? (configModule.default || configModule) : ${JSON.stringify(config)};
-    const bunny = configureBunny(replConfig);
-    const connection = bunny.connection;
+    const orm = configureOrm(replConfig);
+    const connection = orm.connection;
 
     // The REPL is a single long-lived interactive session: idle gaps between
     // commands are expected and the user pins a tenant explicitly via
@@ -376,10 +376,10 @@ async function createReplBootstrap(config: BunnyConfig, dir: string): Promise<st
       Schema,
       TenantContext,
       collect,
-      configureBunny,
+      configureOrm,
       db: connection,
       connection,
-      bunny,
+      orm,
       config: replConfig,
       Models: loadedModels,
       useTenant,
@@ -387,27 +387,27 @@ async function createReplBootstrap(config: BunnyConfig, dir: string): Promise<st
       tenant,
     });
 
-    console.log(\`Bunny REPL ready. Loaded \${Object.keys(loadedModels).length} model classes from modelsPath.\`);
+    console.log(\`ORM REPL ready. Loaded \${Object.keys(loadedModels).length} model classes from modelsPath.\`);
   `;
   await writeFile(bootstrapPath, source, "utf-8");
   return bootstrapPath;
 }
 
-async function runRepl(config: BunnyConfig, replArgs: string[]): Promise<number> {
+async function runRepl(config: OrmConfig, replArgs: string[]): Promise<number> {
   const tmpRoot = resolveReplTmpRoot();
   await mkdir(tmpRoot, { recursive: true });
-  await using tmpDir = await mkdtempDisposable(join(tmpRoot, "bunny-repl-"));
+  await using tmpDir = await mkdtempDisposable(join(tmpRoot, "orm-repl-"));
   const bootstrapPath = await createReplBootstrap(config, tmpDir.path);
   // The transpiler cache must outlive the disposable bootstrap dir so repeated
   // REPL sessions reuse it instead of transpiling the ORM from scratch.
-  const cachePath = join(tmpRoot, "bunny-repl-cache");
+  const cachePath = join(tmpRoot, "orm-repl-cache");
   await mkdir(cachePath, { recursive: true });
   await using terminal = new Bun.Terminal({
     cols: process.stdout.columns || 80,
     rows: process.stdout.rows || 24,
     data(_terminal, data) {
       const text = Buffer.from(data).toString("binary");
-      const rewritten = text.replace(/\x1b\[2K> /g, "\x1b[2Kbunny> ");
+      const rewritten = text.replace(/\x1b\[2K> /g, "\x1b[2Korm> ");
       process.stdout.write(Buffer.from(rewritten, "binary"));
     },
   });
@@ -503,7 +503,7 @@ function failWithConfigError(err: unknown): never {
   process.exit(1);
 }
 
-async function loadExplicitConfig(path: string): Promise<BunnyConfig> {
+async function loadExplicitConfig(path: string): Promise<OrmConfig> {
   const resolved = resolve(process.cwd(), path);
   if (!existsSync(resolved)) {
     throw new Error(`Config file not found: ${resolved}`);
@@ -513,19 +513,19 @@ async function loadExplicitConfig(path: string): Promise<BunnyConfig> {
   if (!config || typeof config !== "object") {
     throw new Error(`${resolved} does not export a configuration object.`);
   }
-  return config as BunnyConfig;
+  return config as OrmConfig;
 }
 
-async function loadConfig(allowFallback = false, explicitPath?: string): Promise<BunnyConfig> {
+async function loadConfig(allowFallback = false, explicitPath?: string): Promise<OrmConfig> {
   if (explicitPath) return await loadExplicitConfig(explicitPath);
 
-  const configPath = join(process.cwd(), "bunny.config.ts");
+  const configPath = join(process.cwd(), "orm.config.ts");
   if (existsSync(configPath)) {
     const mod = await import(configPath);
     return mod.default || mod;
   }
 
-  const jsConfigPath = join(process.cwd(), "bunny.config.js");
+  const jsConfigPath = join(process.cwd(), "orm.config.js");
   if (existsSync(jsConfigPath)) {
     const mod = await import(jsConfigPath);
     return mod.default || mod;
@@ -547,7 +547,7 @@ async function loadConfig(allowFallback = false, explicitPath?: string): Promise
     if (!Connection.SUPPORTED_DRIVERS.includes(driver)) {
       throw new Error(
         `DB_CONNECTION=${driver} is not a supported driver. Use one of: ${Connection.SUPPORTED_DRIVERS.join(", ")}, ` +
-          `or point bunny at your application's config with --config <path>.`
+          `or point orm at your application's config with --config <path>.`
       );
     }
     return {
@@ -576,7 +576,7 @@ async function loadConfig(allowFallback = false, explicitPath?: string): Promise
   }
 
   throw new Error(
-    "No database configuration found. Create bunny.config.ts or set DATABASE_URL / DB_CONNECTION environment variables."
+    "No database configuration found. Create orm.config.ts or set DATABASE_URL / DB_CONNECTION environment variables."
   );
 }
 
@@ -589,8 +589,8 @@ async function main() {
       process.exit(1);
     }
   })();
-  // `bunny run foo` is the documented spelling for application commands.
-  // Keep direct `bunny foo` dispatch for backwards compatibility.
+  // `orm run foo` is the documented spelling for application commands.
+  // Keep direct `orm foo` dispatch for backwards compatibility.
   const args    = rawArgs[0] === "run" ? rawArgs.slice(1) : rawArgs;
   const command = args[0];
   const isInit = command === "init";
@@ -626,7 +626,7 @@ async function main() {
     { name: "types:generate",   sig: "types:generate {dir?} {--landlord} {--tenant=}",            desc: "Generate TypeScript model types from DB schema" },
     { name: "queue:install",    sig: "queue:install {dir?} {--models=}",                          desc: "Generate the jobs and failed_jobs migration and optional models" },
     { name: "queue",            sig: "queue {--queue=} {--workers=}",                             desc: "Start the background job worker" },
-    { name: "init",             sig: "init {--force} {-f}",                                       desc: "Create a bunny.config.ts file" },
+    { name: "init",             sig: "init {--force} {-f}",                                       desc: "Create an orm.config.ts file" },
     { name: "repl",             sig: "repl",                                                      desc: "Start an interactive REPL" },
   ];
 
@@ -634,9 +634,9 @@ async function main() {
   const isTopHelp = !command || command === "--help" || command === "-h";
 
   function printStaticHelp() {
-    console.log("\nUsage: bunny [--config <path>] <command> [options]\n");
-    console.log(`Run ${styleText("yellow", "bunny <command> --help")} for command-specific usage.`);
-    console.log(`${styleText("yellow", "--config <path>")} loads that module instead of ./bunny.config.ts.\n`);
+    console.log("\nUsage: orm [--config <path>] <command> [options]\n");
+    console.log(`Run ${styleText("yellow", "orm <command> --help")} for command-specific usage.`);
+    console.log(`${styleText("yellow", "--config <path>")} loads that module instead of ./orm.config.ts.\n`);
     console.log("Core commands:\n");
     for (const { name, desc } of [...CORE_COMMANDS].sort((a, b) => a.name.localeCompare(b.name))) {
       const color = (name === "queue" || name === "repl") ? "green" : "yellow";
@@ -647,7 +647,7 @@ async function main() {
 
   function printStaticCommandHelp(meta: (typeof CORE_COMMANDS)[number]) {
     console.log(`\n${styleText("bold", meta.desc)}\n`);
-    console.log(`${styleText("bold", "Usage:")}  bunny ${styleText("yellow", meta.sig)}\n`);
+    console.log(`${styleText("bold", "Usage:")}  orm ${styleText("yellow", meta.sig)}\n`);
     const tokens = meta.sig.match(/\{[^}]+\}/g) ?? [];
     const opts   = tokens.filter((t) => t.startsWith("{--"));
     if (opts.length > 0) {
@@ -670,7 +670,7 @@ async function main() {
     return;
   }
 
-  // REPL runs before configureBunny (uses in-memory SQLite fallback)
+  // REPL runs before configureOrm (uses in-memory SQLite fallback)
   if (command === "repl") {
     const config = await loadConfig(true, configPath);
     process.exit(await runRepl(config, args.slice(1)));
@@ -682,7 +682,7 @@ async function main() {
   }
 
   // Load config — if it fails and the user asked for help, show static fallback
-  let config: BunnyConfig;
+  let config: OrmConfig;
   try {
     config = await loadConfig(false, configPath);
   } catch (err) {
@@ -694,11 +694,11 @@ async function main() {
     const missingConfig = err instanceof Error
       && err.message.includes("No database configuration found")
       && !configPath
-      && !hasLocalBunnyConfig();
+      && !hasLocalOrmConfig();
     if (missingConfig) {
-      console.error(styleText("red", "No bunny.config.ts found.", { stream: process.stderr }));
+      console.error(styleText("red", "No orm.config.ts found.", { stream: process.stderr }));
       if (process.stdin.isTTY && process.stdout.isTTY) {
-        const shouldInit = await promptYesNo("Initialize bunny.config.ts now?", true);
+        const shouldInit = await promptYesNo("Initialize orm.config.ts now?", true);
         if (shouldInit) {
           const code = await runInitCommand([]);
           if (code === 0) {
@@ -707,7 +707,7 @@ async function main() {
           process.exit(code);
         }
       }
-      console.error("Run `bunny init` to create a starter config.");
+      console.error("Run `orm init` to create a starter config.");
       process.exit(1);
     }
     // A config that does not load is the user's problem, not a crash: say what
@@ -720,7 +720,7 @@ async function main() {
   // file that would not load.
   let connection: Connection;
   try {
-    ({ connection } = configureBunny(config));
+    ({ connection } = configureOrm(config));
   } catch (err) {
     failWithConfigError(err);
   }
@@ -864,7 +864,7 @@ async function main() {
     // No command or --help: list all registered commands
     if (!command || command === "--help" || command === "-h") {
       const commands = listCommands().sort((a, b) => parseSignatureName(a.signature).localeCompare(parseSignatureName(b.signature)));
-      console.log("\nUsage: bunny <command> [options]\n");
+      console.log("\nUsage: orm <command> [options]\n");
       if (commands.length === 0) {
         console.log("No commands registered.");
       } else {
@@ -888,7 +888,7 @@ async function main() {
     const entry = resolveCommand(command);
     if (!entry) {
       console.error(`${styleText("red", "Unknown command:", { stream: process.stderr })} ${command}`);
-      console.error(`Run ${styleText("yellow", "bunny --help", { stream: process.stderr })} to list available commands.`);
+      console.error(`Run ${styleText("yellow", "orm --help", { stream: process.stderr })} to list available commands.`);
       process.exit(1);
     }
 
@@ -896,7 +896,7 @@ async function main() {
       await new CommandRunner().run(entry, args.slice(1));
     } catch (err) {
       console.error(`${styleText("red", "Error:", { stream: process.stderr })} ${err instanceof Error ? err.message : String(err)}`);
-      console.error(`\nRun ${styleText("yellow", `bunny ${command} --help`, { stream: process.stderr })} for usage.`);
+      console.error(`\nRun ${styleText("yellow", `orm ${command} --help`, { stream: process.stderr })} for usage.`);
       process.exit(1);
     }
   } finally {

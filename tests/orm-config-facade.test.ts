@@ -1,7 +1,7 @@
 import { expect, test, describe, beforeAll, afterAll } from "bun:test";
 import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
-import { ConnectionManager, configureBunny, Schema } from "../src/index.js";
+import { ConnectionManager, configureOrm, Schema } from "../src/index.js";
 import { cleanupSqliteFile } from "./helpers.js";
 
 const MIGRATIONS_DIR = join(process.cwd(), "tests", "temp_bcf_migrations");
@@ -12,7 +12,7 @@ async function writeMigration(dir: string, name: string, body: string): Promise<
   await writeFile(join(dir, name), body, "utf-8");
 }
 
-describe("configureBunny facade", () => {
+describe("configureOrm facade", () => {
   beforeAll(async () => {
     await mkdir(MIGRATIONS_DIR, { recursive: true });
     await mkdir(TENANT_MIGRATIONS_DIR, { recursive: true });
@@ -69,8 +69,8 @@ export default class WidgetSeeder extends Seeder {
     await rm(SEEDERS_DIR, { recursive: true, force: true });
   });
 
-  test("configureBunny closes the previous default connection before replacing it", async () => {
-    const first = configureBunny({
+  test("configureOrm closes the previous default connection before replacing it", async () => {
+    const first = configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
@@ -82,7 +82,7 @@ export default class WidgetSeeder extends Seeder {
       await originalClose();
     };
 
-    configureBunny({
+    configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
@@ -92,82 +92,82 @@ export default class WidgetSeeder extends Seeder {
   });
 
   test("migrate() runs landlord migrations from config.migrationsPath", async () => {
-    const bunny = configureBunny({
+    const orm = configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
       seedersPath: SEEDERS_DIR,
     });
 
-    await bunny.migrate();
+    await orm.migrate();
 
     expect(await Schema.hasTable("bcf_widgets")).toBe(true);
     expect(await Schema.hasTable("migrations")).toBe(true);
   });
 
   test("migrator() exposes underlying instance", async () => {
-    const bunny = configureBunny({
+    const orm = configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
 
-    const migrator = bunny.migrator();
+    const migrator = orm.migrator();
     await migrator.run();
     const status = await migrator.status();
     expect(status.length).toBeGreaterThan(0);
   });
 
   test("seed() runs seeders from config.seedersPath", async () => {
-    const bunny = configureBunny({
+    const orm = configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
       seedersPath: SEEDERS_DIR,
     });
 
-    await bunny.migrate();
-    await bunny.seed();
+    await orm.migrate();
+    await orm.seed();
 
-    const rows = await bunny.connection.query("SELECT COUNT(*) as c FROM bcf_widgets");
+    const rows = await orm.connection.query("SELECT COUNT(*) as c FROM bcf_widgets");
     expect(Number(rows[0].c)).toBe(2);
   });
 
   test("seed() throws when seedersPath missing", async () => {
-    const bunny = configureBunny({
+    const orm = configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
-    expect(bunny.seed()).rejects.toThrow(/seedersPath/);
+    expect(orm.seed()).rejects.toThrow(/seedersPath/);
   });
 
   test("rollback() reverses last batch", async () => {
-    const bunny = configureBunny({
+    const orm = configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
 
-    await bunny.migrate();
+    await orm.migrate();
     expect(await Schema.hasTable("bcf_widgets")).toBe(true);
 
-    await bunny.rollback();
+    await orm.rollback();
     expect(await Schema.hasTable("bcf_widgets")).toBe(false);
   });
 
   test("fresh() drops all + re-runs", async () => {
-    const bunny = configureBunny({
+    const orm = configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
 
-    await bunny.migrate();
-    await bunny.connection.run("INSERT INTO bcf_widgets (name) VALUES ('keep-me')");
+    await orm.migrate();
+    await orm.connection.run("INSERT INTO bcf_widgets (name) VALUES ('keep-me')");
 
-    await bunny.fresh();
+    await orm.fresh();
 
-    const rows = await bunny.connection.query("SELECT COUNT(*) as c FROM bcf_widgets");
+    const rows = await orm.connection.query("SELECT COUNT(*) as c FROM bcf_widgets");
     expect(Number(rows[0].c)).toBe(0);
   });
 
   test("migrate('tenant') uses config.migrations.tenant path", async () => {
-    const bunny = configureBunny({
+    const orm = configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrations: {
         landlord: MIGRATIONS_DIR,
@@ -175,34 +175,34 @@ export default class WidgetSeeder extends Seeder {
       },
     });
 
-    await bunny.migrate("landlord");
-    await bunny.migrate("tenant");
+    await orm.migrate("landlord");
+    await orm.migrate("tenant");
 
     expect(await Schema.hasTable("bcf_widgets")).toBe(true);
     expect(await Schema.hasTable("bcf_gadgets")).toBe(true);
   });
 
   test("migrate() throws when scope path not configured", async () => {
-    const bunny = configureBunny({
+    const orm = configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrations: { landlord: MIGRATIONS_DIR },
     });
-    expect(bunny.migrate("tenant")).rejects.toThrow(/tenant/);
+    expect(orm.migrate("tenant")).rejects.toThrow(/tenant/);
   });
 
   test("overrides pass through to Migrator", async () => {
-    const bunny = configureBunny({
+    const orm = configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
 
-    const migrator = bunny.migrator("landlord", { lock: false });
+    const migrator = orm.migrator("landlord", { lock: false });
     expect(migrator).toBeDefined();
     await migrator.run();
   });
 
   test("createIfMissing is a no-op for SQLite (no error)", async () => {
-    const bunny = configureBunny({
+    const orm = configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrations: {
         landlord: MIGRATIONS_DIR,
@@ -210,14 +210,14 @@ export default class WidgetSeeder extends Seeder {
       },
     });
 
-    await bunny.migrate();
+    await orm.migrate();
     expect(await Schema.hasTable("bcf_widgets")).toBe(true);
   });
 
   test("createIfMissing creates SQLite file on disk if missing", async () => {
     const dbPath = join(process.cwd(), "tests", `temp_bcf_${Date.now()}.sqlite`);
 
-    const bunny = configureBunny({
+    const orm = configureOrm({
       connection: { url: `sqlite://${dbPath}` },
       migrations: {
         landlord: MIGRATIONS_DIR,
@@ -226,12 +226,12 @@ export default class WidgetSeeder extends Seeder {
     });
 
     try {
-      await bunny.migrate();
+      await orm.migrate();
       expect(await Schema.hasTable("bcf_widgets")).toBe(true);
       const file = Bun.file(dbPath);
       expect(await file.exists()).toBe(true);
     } finally {
-      await bunny.connection.close();
+      await orm.connection.close();
       await cleanupSqliteFile(dbPath);
     }
   });

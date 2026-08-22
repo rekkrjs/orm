@@ -4,17 +4,17 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { makeQueueInstallCommand } from "../src/cli/QueueInstallCommand.js";
 import { CommandRunner } from "../src/commands/CommandRunner.js";
-import type { BunnyConfig } from "../src/config/BunnyConfig.js";
+import type { OrmConfig } from "../src/config/OrmConfig.js";
 
 const dirs: string[] = [];
 
 async function tempDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "bunny-queue-install-"));
+  const dir = await mkdtemp(join(tmpdir(), "orm-queue-install-"));
   dirs.push(dir);
   return dir;
 }
 
-async function runInstall(config: BunnyConfig, migrationDir: string, modelsDir: string) {
+async function runInstall(config: OrmConfig, migrationDir: string, modelsDir: string) {
   const CommandClass = makeQueueInstallCommand(config);
   await new CommandRunner().run(CommandClass as any, [migrationDir, `--models=${modelsDir}`]);
 }
@@ -34,7 +34,7 @@ describe("queue:install", () => {
     const migrationDir = await tempDir();
     const modelsDir = await tempDir();
 
-    await runInstall({ connection: { url: "sqlite://:memory:" } } as BunnyConfig, migrationDir, modelsDir);
+    await runInstall({ connection: { url: "sqlite://:memory:" } } as OrmConfig, migrationDir, modelsDir);
 
     const migration = await readOnly(migrationDir);
     expect(migration).toContain('Schema.create("jobs"');
@@ -49,7 +49,7 @@ describe("queue:install", () => {
     const config = {
       connection: { url: "sqlite://:memory:" },
       queue: { table: "background_jobs", failedTable: "dead_letter_jobs" },
-    } as BunnyConfig;
+    } as OrmConfig;
 
     await runInstall(config, migrationDir, modelsDir);
 

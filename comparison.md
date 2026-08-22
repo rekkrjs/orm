@@ -1,6 +1,6 @@
-# Laravel vs `@bunnykit/orm`
+# Laravel vs `@rekkr/orm`
 
-| Feature                  | Laravel style                                                                             | `@bunnykit/orm` style                                                                  |
+| Feature                  | Laravel style                                                                             | `@rekkr/orm` style                                                                  |
 | ------------------------ | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Runtime                  | Full PHP framework with Eloquent, Artisan, and Blade around it                            | Bun-only ORM built on `Bun.SQL`                                                        |
 | Package shape            | Application framework plus ORM                                                            | ORM package focused on models, query builder, schema, migrations, and CLI              |
@@ -28,14 +28,14 @@
 | Query debug helpers      | `toSql()`, `dump()`, `dd()`                                                               | Same helpers, plus typed builders and `explain()`                                      |
 | Streaming large sets     | `chunk`, `cursor`, `lazy`, `each`                                                         | `chunk`, `cursor`, `lazy`, `each`                                                      |
 | Pagination               | `paginate()` returns a paginator object with `data` collection                            | `paginate()` returns a paginator object with `data: Collection<T>`                     |
-| Migrations               | `artisan migrate`, migration classes, `Schema` facade                                     | `bun run bunny migrate`, migration classes, `Schema`                                   |
+| Migrations               | `artisan migrate`, migration classes, `Schema` facade                                     | `bun run orm migrate`, migration classes, `Schema`                                   |
 | Migration variants       | `migrate:rollback`, `migrate:reset`, `migrate:refresh`, `migrate:fresh`, `migrate:status` | Same CLI commands                                                                      |
 | Migration storage        | `migrations` table                                                                        | `migrations` table, auto-created on first run                                          |
 | Schema dumps             | `schema:dump`, `schema:load` workflows                                                    | `schema:dump` and `schema:squash`                                                      |
-| Seeders                  | `artisan db:seed`, seeder classes                                                         | `bun run bunny seed`, seeder classes and paths                                         |
+| Seeders                  | `artisan db:seed`, seeder classes                                                         | `bun run orm seed`, seeder classes and paths                                         |
 | Factories                | Model factories and factory states                                                        | Lightweight factories with `Factory` / `factory()`                                     |
 | Observers                | `creating`, `created`, `updating`, `updated`, etc.                                        | `ObserverRegistry` with the same lifecycle events                                      |
-| REPL / shell             | `php artisan tinker`                                                                      | `bunny repl`                                                                           |
+| REPL / shell             | `php artisan tinker`                                                                      | `orm repl`                                                                           |
 | REPL globals             | Laravel helpers and resolved app state                                                    | `Model`, `Schema`, `Connection`, `Collection`, `collect`, `Models`, `db`               |
 | Database support         | MySQL, PostgreSQL, SQLite via PDO drivers                                                 | SQLite, MySQL, PostgreSQL via Bun connections                                          |
 | Transactions             | Connection / database transactions, nested savepoints                                     | Built-in `Connection.transaction()` and manual transaction support                     |

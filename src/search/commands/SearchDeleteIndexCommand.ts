@@ -1,10 +1,10 @@
 import { Command } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { Search } from "../SearchManager.js";
 import { resolveSearchableModel } from "./resolveSearchableModel.js";
 import { runWithTenant } from "./runWithTenant.js";
 
-export function makeSearchDeleteIndexCommand(config: BunnyConfig) {
+export function makeSearchDeleteIndexCommand(config: OrmConfig) {
   return class extends Command.define("search:delete-index {model : Model class name} {--force : Skip confirmation} {--tenant= : Run under a tenant context}") {
     static description = "Delete the search index for a model (destructive).";
 

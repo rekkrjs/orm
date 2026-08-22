@@ -3,7 +3,7 @@
 Models are TypeScript classes that map to a single database table. They give you typed attribute access, CRUD helpers, query scopes, casts, accessors, soft deletes, and lifecycle events — all the pieces you'd expect from an Eloquent-style ORM.
 
 ```ts
-import { Model } from "@bunnykit/orm";
+import { Model } from "@rekkr/orm";
 ```
 
 ## Defining a model
@@ -15,7 +15,7 @@ There are two ways to declare a model. They differ only in how attribute types r
 Pass an attribute interface and the table name. The returned base class has every attribute, every column name in `where()`, and every relation name in `with()` fully typed:
 
 ```ts
-import { Model } from "@bunnykit/orm";
+import { Model } from "@rekkr/orm";
 
 interface ProductAttributes {
   id: number;
@@ -102,7 +102,7 @@ names. Model writes, `dateColumns()`, `schema()`, `replicate()`, `latest()`, and
 `oldest()` use these getters, so a model may override either the property or its
 getter. Names must be non-empty and different.
 
-Ordinary JavaScript static inheritance applies. A Bunny base model can set both
+Ordinary JavaScript static inheritance applies. An ORM base model can set both
 names once, and subclasses may override either name independently:
 
 ```ts
@@ -118,7 +118,7 @@ class ImportedRecord extends CamelModel {
 }
 ```
 
-Set `static override timestamps = false` when Bunny must not manage timestamp
+Set `static override timestamps = false` when ORM must not manage timestamp
 fields. Inactive timestamp settings are not validated during ordinary model use
 or model-derived schema generation; explicit timestamp APIs such as the public
 getters, `latest()`, and `replicate()` still validate the names they need.
@@ -126,7 +126,7 @@ getters, `latest()`, and `replicate()` still validate the names they need.
 setting afterward.
 
 Valdyr applications keep Valdyr's direct `extends Model` requirement for static
-analysis; Bunny's support for inherited settings does not introduce an
+analysis; ORM's support for inherited settings does not introduce an
 application `BaseModel` convention there.
 
 ## Schema Resolution (PostgreSQL tenancy)
@@ -140,7 +140,7 @@ When using schema-per-tenant tenancy, models resolve table names in this order:
 Example:
 
 ```ts
-import { Model, TenantContext } from "@bunnykit/orm";
+import { Model, TenantContext } from "@rekkr/orm";
 
 class Plan extends Model.define<{ id: number; name: string }>("plans") {
   static modelSchema = "public"; // landlord/shared
@@ -218,7 +218,7 @@ strings too (`"12345678901234567890.12"`): once a value has entered a JavaScript
 schema builder's decimal type to `REAL`; use a `TEXT` column with the decimal
 cast, or integer minor units, when SQLite storage must remain exact.
 
-JSON casts are mutable. Bunny compares the serialized cached value during dirty
+JSON casts are mutable. ORM compares the serialized cached value during dirty
 tracking, so changing `user.settings.theme` in place is detected by `isDirty()`
 and persisted by `save()`; assigning a whole replacement object also works.
 JSON numbers still obey JavaScript's numeric precision. Store identifiers and
@@ -235,7 +235,7 @@ other integers beyond `Number.MAX_SAFE_INTEGER` as JSON strings.
 Implement `CastsAttributes` for any transformation a built-in cast can't express:
 
 ```ts
-import type { CastsAttributes, Model } from "@bunnykit/orm";
+import type { CastsAttributes, Model } from "@rekkr/orm";
 
 class UppercaseCast implements CastsAttributes {
   get(_model: Model, _key: string, value: unknown) {
@@ -255,7 +255,7 @@ class Product extends Model {
 
 When a custom cast writes to a `DATE`, `DATETIME`, or `TIMESTAMP` column, its
 `set()` method must return a `Date`, not a preformatted or ISO date string. This
-lets Bunny apply the correct database-specific serialization and, on MySQL,
+lets ORM apply the correct database-specific serialization and, on MySQL,
 verify the session's UTC requirement without mistaking ordinary text for a date.
 
 You can also add casts at runtime to one instance only:
@@ -296,7 +296,7 @@ found.name;             // "ALICE" — accessor ran on get
 Annotate `static accessors` with `AccessorMap<TAttrs, TModel>` so the callback parameters are fully typed — including `model` as `this` class:
 
 ```ts
-import { Model, type AccessorMap } from "@bunnykit/orm";
+import { Model, type AccessorMap } from "@rekkr/orm";
 
 interface UserAttrs {
   id: number;
@@ -730,7 +730,7 @@ users.json("id", "name", "posts.title")
 ### Appended attributes
 
 Use `static appends` to include native getters in serialized output. Because the
-getter is a real TypeScript member, no separate `declare` or Bunny-specific
+getter is a real TypeScript member, no separate `declare` or ORM-specific
 accessor is needed:
 
 ```ts
@@ -799,7 +799,7 @@ await User.onlyTrashed().where("inactive", true).forceDelete(); // bulk permanen
 Static methods named `scope{Name}` register a chainable scope:
 
 ```ts
-import type { Builder } from "@bunnykit/orm";
+import type { Builder } from "@rekkr/orm";
 
 class User extends Model {
   static scopeActive(query: Builder<User>) {

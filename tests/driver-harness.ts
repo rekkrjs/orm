@@ -26,7 +26,7 @@ export interface DriverContext {
 }
 
 function uniqueNamespace(): string {
-  return `bunny_test_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
+  return `orm_test_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export async function createDriverContext(driver: ServerDriver): Promise<DriverContext> {
@@ -50,7 +50,7 @@ export async function createDriverContext(driver: ServerDriver): Promise<DriverC
     const target = new URL(url);
     target.pathname = `/${namespace}`;
     connection = new Connection({ url: target.toString(), max: 1 });
-    // Bunny stores UTC and refuses a session that is not. One session (max: 1)
+    // ORM stores UTC and refuses a session that is not. One session (max: 1)
     // is what makes a SET stick — it reaches a single pooled connection.
     await connection.run("SET time_zone = '+00:00'");
   } else {

@@ -1,5 +1,5 @@
 import { registerCommand } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { makeSearchImportCommand } from "./SearchImportCommand.js";
 import { makeSearchFlushCommand } from "./SearchFlushCommand.js";
 import { makeSearchReimportCommand } from "./SearchReimportCommand.js";
@@ -28,7 +28,7 @@ export { makeSearchVerifyCommand } from "./SearchVerifyCommand.js";
 export { makeSearchReindexCommand } from "./SearchReindexCommand.js";
 export { makeMakeSearchableCommand } from "./MakeSearchableCommand.js";
 
-export function registerSearchCommands(config: BunnyConfig): void {
+export function registerSearchCommands(config: OrmConfig): void {
   registerCommand(makeSearchImportCommand(config));
   registerCommand(makeSearchReimportCommand(config));
   registerCommand(makeSearchFlushCommand(config));

@@ -3,7 +3,7 @@ import { existsSync } from "fs";
 import { basename, extname, join, resolve } from "path";
 import { pathToFileURL } from "url";
 import { normalizePathList } from "../../utils.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import type { ModelConstructor } from "../../model/Model.js";
 import type { SearchableModelConstructor } from "../Searchable.js";
 
@@ -25,7 +25,7 @@ async function walkModelFiles(dir: string): Promise<string[]> {
   return out;
 }
 
-function modelPathRoots(config: BunnyConfig): string[] {
+function modelPathRoots(config: OrmConfig): string[] {
   const mp = config.modelsPath;
   if (!mp) return [];
   if (typeof mp === "string" || Array.isArray(mp)) return normalizePathList(mp);
@@ -35,7 +35,7 @@ function modelPathRoots(config: BunnyConfig): string[] {
   return combined;
 }
 
-async function loadSearchableModelMap(config: BunnyConfig): Promise<Map<string, SearchableModelConstructor>> {
+async function loadSearchableModelMap(config: OrmConfig): Promise<Map<string, SearchableModelConstructor>> {
   const roots = modelPathRoots(config);
   const loaded = new Map<string, SearchableModelConstructor>();
   const register = (name: string | undefined, ctor: unknown) => {
@@ -66,13 +66,13 @@ async function loadSearchableModelMap(config: BunnyConfig): Promise<Map<string, 
   return loaded;
 }
 
-export async function loadSearchableModels(config: BunnyConfig): Promise<SearchableModelConstructor[]> {
+export async function loadSearchableModels(config: OrmConfig): Promise<SearchableModelConstructor[]> {
   const loaded = await loadSearchableModelMap(config);
   return [...loaded.values()];
 }
 
 export async function resolveSearchableModel(
-  config: BunnyConfig,
+  config: OrmConfig,
   name: string,
 ): Promise<SearchableModelConstructor | undefined> {
   const loaded = await loadSearchableModelMap(config);

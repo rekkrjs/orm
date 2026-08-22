@@ -1,43 +1,43 @@
 # Library Usage
 
-You can run every CLI command from your own code — migrations, seeders, schema dumps, and tenant-aware operations. The fastest path is the `configureBunny()` facade, which reuses your `bunny.config.ts` so the CLI and your runtime stay in sync. Drop down to `Migrator` / `SeederRunner` / `Connection` directly when you need fine-grained control.
+You can run every CLI command from your own code — migrations, seeders, schema dumps, and tenant-aware operations. The fastest path is the `configureOrm()` facade, which reuses your `orm.config.ts` so the CLI and your runtime stay in sync. Drop down to `Migrator` / `SeederRunner` / `Connection` directly when you need fine-grained control.
 
 ```ts
-import { configureBunny, Connection, Migrator, SeederRunner, DB } from "@bunnykit/orm";
+import { configureOrm, Connection, Migrator, SeederRunner, DB } from "@rekkr/orm";
 ```
 
-## `configureBunny()` facade
+## `configureOrm()` facade
 
 Call once at application startup. The function constructs a `Connection`, registers it as the default, wires up tenancy if configured, and returns a small object of helpers:
 
 ```ts
 // src/app.ts
-import { configureBunny } from "@bunnykit/orm";
-import config from "../bunny.config";
+import { configureOrm } from "@rekkr/orm";
+import config from "../orm.config";
 
-const bunny = configureBunny(config);
+const orm = configureOrm(config);
 
-bunny.config;        // the original BunnyConfig you passed in
-bunny.connection;    // the constructed default Connection
+orm.config;        // the original OrmConfig you passed in
+orm.connection;    // the constructed default Connection
 ```
 
 ### Migrations
 
 ```ts
-await bunny.migrate();                                  // landlord scope (or single migrationsPath)
-await bunny.migrate("tenant");                          // tenant scope
-await bunny.migrate("landlord", { createIfMissing: true });  // override migrator options
-await bunny.rollback();                                 // rollback last batch
-await bunny.rollback(3);                                // rollback 3 batches
-await bunny.rollback(1, "tenant");                      // rollback tenant scope
-await bunny.fresh();                                    // drop + re-migrate
-await bunny.fresh("tenant");                            // drop + re-migrate tenant scope
+await orm.migrate();                                  // landlord scope (or single migrationsPath)
+await orm.migrate("tenant");                          // tenant scope
+await orm.migrate("landlord", { createIfMissing: true });  // override migrator options
+await orm.rollback();                                 // rollback last batch
+await orm.rollback(3);                                // rollback 3 batches
+await orm.rollback(1, "tenant");                      // rollback tenant scope
+await orm.fresh();                                    // drop + re-migrate
+await orm.fresh("tenant");                            // drop + re-migrate tenant scope
 ```
 
 Need methods the shortcuts don't expose (`status`, `reset`, `refresh`, `dumpSchema`)? Grab the underlying `Migrator`:
 
 ```ts
-const migrator = bunny.migrator("tenant");
+const migrator = orm.migrator("tenant");
 const status = await migrator.status();
 await migrator.refresh();
 await migrator.dumpSchema("./database/schema.sql");
@@ -46,10 +46,10 @@ await migrator.dumpSchema("./database/schema.sql");
 ### Seeders
 
 ```ts
-await bunny.seed();                                     // run config.seedersPath
+await orm.seed();                                     // run config.seedersPath
 
 // Or full SeederRunner API
-const seeder = bunny.seeder();
+const seeder = orm.seeder();
 await seeder.runFile("./database/seeders/UserSeeder.ts");
 await seeder.runTarget("AdminSeeder", "./database/seeders");
 ```
@@ -59,11 +59,11 @@ await seeder.runTarget("AdminSeeder", "./database/seeders");
 Inside `DB.tenant()`, the facade picks up the tenant's connection automatically — migrations and seeders run against the tenant's database or schema:
 
 ```ts
-import { DB } from "@bunnykit/orm";
+import { DB } from "@rekkr/orm";
 
 await DB.tenant("acme", async () => {
-  await bunny.migrate("tenant");
-  await bunny.seed();
+  await orm.migrate("tenant");
+  await orm.seed();
 });
 ```
 
@@ -72,20 +72,20 @@ Combined with `migrations.createIfMissing`, this is how you provision a brand-ne
 ```ts
 async function onboardTenant(tenantId: string) {
   await DB.tenant(tenantId, async () => {
-    await bunny.migrate("tenant");  // creates schema, runs migrations, generates types
-    await bunny.seed();             // populates defaults
+    await orm.migrate("tenant");  // creates schema, runs migrations, generates types
+    await orm.seed();             // populates defaults
   });
 }
 ```
 
 ## Bare-metal usage
 
-For one-off scripts, embedded use cases, or environments where you don't want to depend on `bunny.config.ts`, drop straight to the building blocks.
+For one-off scripts, embedded use cases, or environments where you don't want to depend on `orm.config.ts`, drop straight to the building blocks.
 
 ### Manual connection + migrator
 
 ```ts
-import { Connection, Migrator, MigrationCreator } from "@bunnykit/orm";
+import { Connection, Migrator, MigrationCreator } from "@rekkr/orm";
 
 const connection = new Connection({ url: "sqlite://app.db" });
 
@@ -116,7 +116,7 @@ new Migrator(
 ### Manual seeders
 
 ```ts
-import { Connection, SeederRunner } from "@bunnykit/orm";
+import { Connection, SeederRunner } from "@rekkr/orm";
 import UserSeeder from "./database/seeders/UserSeeder";
 
 const connection = new Connection({ url: "sqlite://app.db" });
@@ -135,14 +135,14 @@ Seeder runs are atomic — if any seeder throws, the entire run is rolled back.
 When you just need a database handle, skip the facade entirely:
 
 ```ts
-import { Connection, Model, Schema } from "@bunnykit/orm";
+import { Connection, Model, Schema } from "@rekkr/orm";
 
 const connection = new Connection({ url: "sqlite://:memory:" });
 Model.setConnection(connection);
 Schema.setConnection(connection);
 ```
 
-You're then free to use models, the schema builder, and `DB.table(...)` without `configureBunny()`.
+You're then free to use models, the schema builder, and `DB.table(...)` without `configureOrm()`.
 
 ## Embedding in scripts
 
@@ -150,10 +150,10 @@ A common pattern is a maintenance script that runs outside the app process — s
 
 ```ts
 // scripts/archive-old-orders.ts
-import { configureBunny, DB } from "@bunnykit/orm";
-import config from "../bunny.config";
+import { configureOrm, DB } from "@rekkr/orm";
+import config from "../orm.config";
 
-const bunny = configureBunny(config);
+const orm = configureOrm(config);
 
 const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
@@ -163,14 +163,14 @@ const archived = await DB.table("orders")
   .update({ archived_at: new Date().toISOString() });
 
 console.log(`Archived ${archived} orders.`);
-await bunny.connection.close();
+await orm.connection.close();
 ```
 
-Always close the connection at the end of a script (`bunny.connection.close()`) — otherwise the process hangs waiting for the pool to drain.
+Always close the connection at the end of a script (`orm.connection.close()`) — otherwise the process hangs waiting for the pool to drain.
 
 ## Where to next
 
-- [Configuration](./configuration.md) — every `BunnyConfig` field the facade reads.
+- [Configuration](./configuration.md) — every `OrmConfig` field the facade reads.
 - [Migrations](./migrations.md) — `Migrator` API, multi-tenant scopes, schema dumps.
 - [Seeders](./seeders.md) — writing reusable seeders and factories.
 - [Query Builder — `DB` facade](./query-builder.md#the-db-facade) — `DB.table`, `DB.tenant`, `DB.raw`.

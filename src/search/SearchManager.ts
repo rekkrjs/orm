@@ -62,7 +62,7 @@ interface BaseSearchConfig {
   /**
    * Source of tenant ids for batch operations (`Search.indexesForAllTenants`,
    * `search:list-indexes --all-tenants`). Typically wired from
-   * `BunnyConfig.tenancy.listTenants` at configure time.
+   * `OrmConfig.tenancy.listTenants` at configure time.
    */
   listTenants?: () => string[] | Promise<string[]>;
 }
@@ -319,7 +319,7 @@ export const Search = {
 
   engine(): SearchEngine {
     if (!currentConfig) {
-      throw new Error("Search not configured. Pass `search` to configureBunny() or call Search.configure().");
+      throw new Error("Search not configured. Pass `search` to configureOrm() or call Search.configure().");
     }
     return currentConfig.engine;
   },
@@ -383,7 +383,7 @@ export const Search = {
 
   /**
    * Resolve the scoped index name for every tenant returned by
-   * `tenancy.listTenants` (configured on `configureBunny`). Includes the
+   * `tenancy.listTenants` (configured on `configureOrm`). Includes the
    * landlord variant when `includeLandlord` is true.
    */
   async indexesForAllTenants(

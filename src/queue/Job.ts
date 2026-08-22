@@ -42,7 +42,7 @@ export function registerJobDriver(name: string, d: QueueDriver): void {
 }
 
 export function getJobDriver(): QueueDriver {
-  if (!driver) throw new Error("Queue not configured. Call configureBunny() with a queue config first.");
+  if (!driver) throw new Error("Queue not configured. Call configureOrm() with a queue config first.");
   return driver;
 }
 
@@ -83,7 +83,7 @@ export function resolveJob(name: string): JobConstructor | undefined {
 export abstract class DispatchableJob {
   /**
    * Target queue. Undefined by default so the queue configured via
-   * `configureBunny({ queue: { defaultQueue } })` wins; set it to pin a job to
+   * `configureOrm({ queue: { defaultQueue } })` wins; set it to pin a job to
    * a specific queue regardless of config.
    */
   static queue?: string;

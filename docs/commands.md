@@ -2,12 +2,12 @@
 
 Artisan-style CLI commands for application tasks — database maintenance, sending notifications, generating reports, or anything you'd otherwise run as a one-off script.
 
-Commands are registered from `commandsPath` and run with `bunny run <name>`.
+Commands are registered from `commandsPath` and run with `orm run <name>`.
 
 ## Configuration
 
 ```ts
-// bunny.config.ts
+// orm.config.ts
 export default {
   connection: { url: process.env.DATABASE_URL },
   commands: {
@@ -24,8 +24,8 @@ Two styles are supported — pick whichever you prefer.
 
 ```ts
 // app/commands/ReportOverdueCommand.ts
-import { Command } from "@bunnykit/orm/commands";
-import { TenantContext } from "@bunnykit/orm";
+import { Command } from "@rekkr/orm/commands";
+import { TenantContext } from "@rekkr/orm";
 import Invoice from "../models/Invoice";
 
 export default class ReportOverdueCommand extends Command.define(
@@ -59,15 +59,15 @@ export default class ReportOverdueCommand extends Command.define(
 Run it:
 
 ```sh
-bunny run report:overdue acme
-bunny run report:overdue acme --limit=10
+orm run report:overdue acme
+orm run report:overdue acme --limit=10
 ```
 
 ### Function-based
 
 ```ts
 // app/commands/send-welcome-email.ts
-import { defineCommand } from "@bunnykit/orm/commands";
+import { defineCommand } from "@rekkr/orm/commands";
 
 export default defineCommand({
   signature: "email:send {user} {--queue=default} {--force}",
@@ -145,10 +145,10 @@ this.info(admissions.json("id", "first_name", "last_name"));
 ## Global flags
 
 `--config <path>` may appear before any command and loads that module as the
-Bunny config instead of `./bunny.config.ts`:
+ORM config instead of `./orm.config.ts`:
 
 ```bash
-bunny --config config/database.ts migrate
+orm --config config/database.ts migrate
 ```
 
 It is stripped from the arguments before the command parses them, so a command
@@ -157,30 +157,30 @@ never has to declare it.
 ## Running Commands
 
 ```sh
-bunny run email:send alice@example.com
-bunny run email:send alice@example.com --queue=emails --force
-bunny run email:send --help    # show usage + options
-bunny run                      # list all registered commands
+orm run email:send alice@example.com
+orm run email:send alice@example.com --queue=emails --force
+orm run email:send --help    # show usage + options
+orm run                      # list all registered commands
 ```
 
 ## Built-in Generators
 
 ```sh
-bunny make:model User
-bunny make:migration create_users_table
-bunny make:job SendWelcomeEmail
-bunny make:policy AnnouncementPolicy
-bunny make:policy AnnouncementPolicy --model=Announcement
+orm make:model User
+orm make:migration create_users_table
+orm make:job SendWelcomeEmail
+orm make:policy AnnouncementPolicy
+orm make:policy AnnouncementPolicy --model=Announcement
 ```
 
-`make:policy` writes to `--dir` when provided, otherwise to `policyPath` from `bunny.config.ts`, falling back to `./app/policies`.
+`make:policy` writes to `--dir` when provided, otherwise to `policyPath` from `orm.config.ts`, falling back to `./app/policies`.
 
 ## Registering Commands Manually
 
 Auto-discovery via `commandsPath` is the default. To register manually (e.g. in app code or tests):
 
 ```ts
-import { registerCommand } from "@bunnykit/orm/commands";
+import { registerCommand } from "@rekkr/orm/commands";
 import { SendWelcomeEmailCommand } from "./app/commands/SendWelcomeEmailCommand";
 
 registerCommand(SendWelcomeEmailCommand);
@@ -189,7 +189,7 @@ registerCommand(SendWelcomeEmailCommand);
 ## Running Commands Programmatically
 
 ```ts
-import { CommandRunner, resolveCommand } from "@bunnykit/orm/commands";
+import { CommandRunner, resolveCommand } from "@rekkr/orm/commands";
 
 const entry = resolveCommand("email:send");
 if (entry) {
@@ -201,6 +201,6 @@ if (entry) {
 
 | | Commands | Queue Jobs |
 |---|----------|-----------|
-| Triggered by | CLI (`bunny run`) or app code | `Queue.dispatch()` / `Job.dispatch()` |
+| Triggered by | CLI (`orm run`) or app code | `Queue.dispatch()` / `Job.dispatch()` |
 | Execution | Synchronous, foreground | Async, background worker |
 | Use case | Admin tasks, maintenance | Background work, retries |

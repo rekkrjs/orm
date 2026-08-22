@@ -2,10 +2,10 @@
 
 The query builder is a chainable, type-safe wrapper around SQL. Every model exposes it through static methods (`User.where(...)`, `Post.with(...)`). You can also use it directly without a model through the [`DB` facade](#the-db-facade) — handy for ad-hoc table access, reporting views, and pivot tables that don't warrant their own class.
 
-Everything in this document works the same against SQLite, MySQL, and PostgreSQL — Bunny translates to the right dialect.
+Everything in this document works the same against SQLite, MySQL, and PostgreSQL — ORM translates to the right dialect.
 
 ```ts
-import { User, Post, DB } from "@bunnykit/orm";
+import { User, Post, DB } from "@rekkr/orm";
 ```
 
 ## Quick reference
@@ -32,7 +32,7 @@ Most chains follow the same shape: filter, eager-load, order, then terminate wit
 - Read-only endpoints and scripts that need raw row shapes.
 
 ```ts
-import { DB } from "@bunnykit/orm";
+import { DB } from "@rekkr/orm";
 
 const rows = await DB.table("users")
   .where("active", true)
@@ -81,7 +81,7 @@ Omit the generic for `Record<string, any>` rows.
 When you operate against multiple databases (primary + analytics, read replica, archive), register them and route queries explicitly:
 
 ```ts
-import { Connection, ConnectionManager } from "@bunnykit/orm";
+import { Connection, ConnectionManager } from "@rekkr/orm";
 
 ConnectionManager.add("analytics", new Connection({ url: "postgres://analytics-db" }));
 
@@ -107,7 +107,7 @@ Works with all three tenancy strategies (database-per-tenant, schema-per-tenant,
 **Context switching.** Tenant scope is tracked with `AsyncLocalStorage`, so it propagates across `await` boundaries and behaves predictably under nesting and concurrency:
 
 ```ts
-import { TenantContext } from "@bunnykit/orm";
+import { TenantContext } from "@rekkr/orm";
 
 // Nested contexts override the outer scope and restore on unwind.
 await DB.tenant("acme", async () => {
@@ -235,7 +235,7 @@ User.whereNotExists("SELECT 1 FROM bans WHERE bans.user_id = users.id");
 
 ### Date parts
 
-Cross-database — Bunny emits the right `EXTRACT`, `DATE_FORMAT`, or `strftime` per driver:
+Cross-database — ORM emits the right `EXTRACT`, `DATE_FORMAT`, or `strftime` per driver:
 
 ```ts
 Event.whereDate("happened_at", "2024-01-01");
@@ -346,9 +346,9 @@ class Folder extends Model.define<FolderAttrs>("folders") {
 const tree = await Folder.descendants(1).getTree();
 ```
 
-That is the shortest path. Bunny infers the tree column from the self-referencing `hasMany`, builds a recursive CTE, adds a `depth` attribute, hydrates `Folder` models, and nests children using the matching relation name.
+That is the shortest path. ORM infers the tree column from the self-referencing `hasMany`, builds a recursive CTE, adds a `depth` attribute, hydrates `Folder` models, and nests children using the matching relation name.
 
-Because `items()` points `Folder -> Folder` through `parent_id`, Bunny knows the tree column is `parent_id` and can infer the nested relation name as `items`.
+Because `items()` points `Folder -> Folder` through `parent_id`, ORM knows the tree column is `parent_id` and can infer the nested relation name as `items`.
 
 If you already know the parent pointer column, the lower-level API is still available:
 
@@ -787,7 +787,7 @@ await User.withWhereHas("posts", (q) => q.where("published", true)).get();
 To catch accidental N+1 queries during development, enable lazy-load prevention globally:
 
 ```ts
-import { Model } from "@bunnykit/orm";
+import { Model } from "@rekkr/orm";
 Model.preventLazyLoading = true;
 ```
 

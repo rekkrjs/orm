@@ -1,10 +1,10 @@
 import { Command } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { Search } from "../SearchManager.js";
 import { resolveSearchableModel } from "./resolveSearchableModel.js";
 import { runWithTenant } from "./runWithTenant.js";
 
-export function makeSearchFlushCommand(config: BunnyConfig) {
+export function makeSearchFlushCommand(config: OrmConfig) {
   return class extends Command.define("search:flush {model : Model class name} {--tenant= : Run under a tenant context}") {
     static description = "Remove all records from the search index for a model.";
 

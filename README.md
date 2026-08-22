@@ -1,10 +1,9 @@
-# Bunny
-
+# ORM
 
 > **Bun-only package.** Install with:
 >
 > ```bash
-> bun add @bunnykit/orm
+> bun add @rekkr/orm
 > ```
 >
 > npm, yarn, pnpm, and Node.js runtime usage are not supported.
@@ -18,20 +17,20 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 - 🔥 **Bun-native** — Built directly on top of `bun:sql`
 - 🪶 **Zero runtime dependencies** — No package lock-in beyond Bun itself
 - 📦 **Multi-database** — SQLite, MySQL, and PostgreSQL support
-- 🔷 **Fully Typed** — `Model.define<T>()` gives attribute access, typed `with()` autocomplete, and typed eager-load results with zero codegen
+- 🔷 **Fully Typed** — Generate declarations for plain `extends Model` classes with typed attributes, queries, relations, and eager loads
 - 🏗️ **Schema Builder** — Programmatic table creation, indexes, foreign keys
 - 🔍 **Query Builder** — Chainable `where`, `join`, `orderBy`, `groupBy`, date filters, conditional building, etc.
 - 🧠 **Tagged Cache** — Redis-backed cache facade, query `remember()`, and exact tag invalidation
 - 📣 **Events** — Application-level event dispatcher with function listeners and class handlers
-- 🐇 **Queue Jobs** — Database- and Redis-backed background job queue with named queues, retries, delays, and a `bunny queue` worker
-- 🛠️ **Commands** — Artisan-style CLI commands with a signature DSL, argument/option parsing, and `bunny run`
+- 📨 **Queue Jobs** — Database- and Redis-backed background job queue with named queues, retries, delays, and an `orm queue` worker
+- 🛠️ **Commands** — Artisan-style CLI commands with a signature DSL, argument/option parsing, and `orm run`
 - 🧬 **Eloquent-style Models** — Property attributes, defaults, casts, dirty tracking, soft deletes, scopes, find-or-fail, first-or-create
 - 🧺 **Collections** — Laravel-style helpers for multi-record query results
 - 🔗 **Relations** — Standard, many-to-many, polymorphic, through, one-of-many, and relation queries
 - 👁️ **Observers** — Lifecycle hooks (`creating`, `created`, `updating`, `updated`, etc.)
 - 🚀 **Migrations & CLI** — Create, run, reset, refresh, and inspect migrations from the command line
 - 🌱 **Seeders & Factories** — Run all seeders or target one seeder by name/file, plus lightweight model factories
-- 💬 **REPL** — Inspect models and run queries interactively with `bunny repl`
+- 💬 **REPL** — Inspect models and run queries interactively with `orm repl`
 - ⚡ **Streaming** — `chunk`, `chunkById`, `cursor`, `each`, `eachById`, and `lazy` for memory-efficient large dataset processing
 - 🏢 **Multi-tenant** — Database-per-tenant, schema-per-tenant, and RLS strategies with `DB.tenant()` and `TenantContext`
 
@@ -40,7 +39,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 ## Installation
 
 ```bash
-bun add @bunnykit/orm
+bun add @rekkr/orm
 ```
 
 See [Installation](./docs/installation.md) for details.
@@ -49,26 +48,23 @@ See [Installation](./docs/installation.md) for details.
 
 ## Quickstart
 
-Define a model with `Model.define<T>()` to get full IntelliSense on attributes, query builder columns, and eager-load results:
+Extend `Model` directly. Table names follow conventions (`User` → `users`),
+while `fillable` controls which attributes may be mass-assigned:
 
 ```ts
-import { Model } from "@bunnykit/orm";
+import { Model } from "@rekkr/orm";
 
-interface UserAttributes {
-  id: number;
-  name: string;
-  email: string | null;
-  created_at: string;
-  updated_at: string;
-}
+class User extends Model {
+  static override fillable = ["name", "email"];
 
-class User extends Model.define<UserAttributes>("users") {
   posts() {
     return this.hasMany(Post);
   }
 }
 
-class Post extends Model.define<{ id: number; user_id: number; title: string }>("posts") {
+class Post extends Model {
+  static override fillable = ["user_id", "title"];
+
   author() {
     return this.belongsTo(User);
   }
@@ -78,16 +74,10 @@ class Post extends Model.define<{ id: number; user_id: number; title: string }>(
 Tables with camelCase timestamps can configure the model and migration directly:
 
 ```ts
-import { Model, Schema } from "@bunnykit/orm";
+import { Model, Schema } from "@rekkr/orm";
 
-interface CamelUserAttributes {
-  id: number;
-  name: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-class CamelUser extends Model.define<CamelUserAttributes>("camel_users") {
+class CamelUser extends Model {
+  static override fillable = ["name"];
   static override createdAtColumn = "createdAt";
   static override updatedAtColumn = "updatedAt";
 }
@@ -103,35 +93,47 @@ Native getters can be serialized with `appends` without duplicating them in
 `static accessors`:
 
 ```ts
-class User extends Model.define<{ firstName: string; lastName: string }>("users") {
+class User extends Model {
+  static override fillable = ["firstName", "lastName"];
   static override appends = ["fullName"];
 
   get fullName(): string {
-    return `${this.firstName} ${this.lastName}`.trim();
+    return `${this.getAttribute("firstName")} ${this.getAttribute("lastName")}`.trim();
   }
 }
 ```
 
-Point the ORM at a database and run a query:
+Create the shared configuration used by both the CLI and your application:
 
 ```ts
-import { Connection, Model } from "@bunnykit/orm";
+// orm.config.ts
+import type { OrmConfig } from "@rekkr/orm";
 
-Model.setConnection(new Connection({ url: "sqlite://app.db" }));
+const config: OrmConfig = {
+  connection: { url: "sqlite://app.db" },
+};
 
-const users = await User.where("email", "alice@example.com")
-  .with("posts")
-  .get();
+export default config;
+```
 
-for (const user of users) {
-  console.log(user.name, user.posts.length);
-}
+Configure ORM once at application startup, then query your models:
+
+```ts
+import { configureOrm } from "@rekkr/orm";
+import config from "./orm.config";
+
+configureOrm(config);
+
+const user = await User.where("email", "alice@example.com").firstOrFail();
+const posts = await user.posts().get();
+
+console.log(user.getAttribute("name"), posts.length);
 ```
 
 Or use the `DB` facade for ad-hoc table access without a model:
 
 ```ts
-import { DB } from "@bunnykit/orm";
+import { DB } from "@rekkr/orm";
 
 const rows = await DB.table("audit_logs")
   .where("event", "login")
@@ -178,15 +180,15 @@ See the [Quickstart guide](./docs/quickstart.md) for the full walkthrough.
 
 | Topic | Summary |
 |---|---|
-| [TypeScript](./docs/typescript.md) | `Model.define<T>()`, typed builders, scope and accessor typing. |
+| [TypeScript](./docs/typescript.md) | Plain model declarations, generated attributes, typed builders, scopes, and accessors. |
 | [Type Generation](./docs/type-generation.md) | Generate attribute interfaces from your database schema. |
 
 ### Background Processing
 
 | Topic | Summary |
 |---|---|
-| [Queue Jobs](./docs/queue.md) | Dispatch jobs to named queues, run workers with `bunny queue`, retries, delays, failed-job tracking, database and Redis drivers. |
-| [Commands](./docs/commands.md) | Artisan-style CLI commands with signature DSL, argument/option parsing, output helpers, and `bunny run`. |
+| [Queue Jobs](./docs/queue.md) | Dispatch jobs to named queues, run workers with `orm queue`, retries, delays, failed-job tracking, database and Redis drivers. |
+| [Commands](./docs/commands.md) | Artisan-style CLI commands with signature DSL, argument/option parsing, output helpers, and `orm run`. |
 
 ### Advanced
 
@@ -196,7 +198,7 @@ See the [Quickstart guide](./docs/quickstart.md) for the full walkthrough.
 | [Policies](./docs/policies.md) | Register model/resource policies, use `can` / `authorize`, and enforce access in RouteBuilder. |
 | [Observers](./docs/observers.md) | Lifecycle hooks for `creating`, `updating`, `deleting`, and more. |
 | [Events](./docs/events.md) | Application-level events with function listeners, class handlers, and temporary subscriptions. |
-| [Library Usage](./docs/library-usage.md) | Programmatic API via `configureBunny()`. |
+| [Library Usage](./docs/library-usage.md) | Programmatic API via `configureOrm()`. |
 | [Testing](./docs/testing.md) | In-memory SQLite and transactional test isolation. |
 
 The full index lives at [docs/README.md](./docs/README.md).
@@ -206,3 +208,5 @@ The full index lives at [docs/README.md](./docs/README.md).
 ## License
 
 MIT
+
+> This project is a fork of [Bunny](https://github.com/bunnykit/orm).

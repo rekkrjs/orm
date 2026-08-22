@@ -2,7 +2,7 @@ import { Command } from "../commands/Command.js";
 import { normalizePathList } from "../utils.js";
 import { mkdir, writeFile, access } from "fs/promises";
 import { join } from "path";
-import type { BunnyConfig } from "../config/BunnyConfig.js";
+import type { OrmConfig } from "../config/OrmConfig.js";
 
 function toClassName(name: string): string {
   return name
@@ -44,7 +44,7 @@ async function exists(path: string): Promise<boolean> {
   return access(path).then(() => true).catch(() => false);
 }
 
-export function makeMakePolicyCommand(config: BunnyConfig) {
+export function makeMakePolicyCommand(config: OrmConfig) {
   return class extends Command.define("make:policy {name : Policy class name} {--model= : Related model class name} {--dir= : Directory to create the policy in}") {
     static description = "Create a new policy file.";
 

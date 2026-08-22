@@ -1,9 +1,9 @@
 import { Command } from "../commands/Command.js";
 import { buildMigrator, getDefaultMigrationsPath } from "./MigrationHelpers.js";
 import type { Connection } from "../connection/Connection.js";
-import type { BunnyConfig } from "../config/BunnyConfig.js";
+import type { OrmConfig } from "../config/OrmConfig.js";
 
-export function makeSchemaDumpCommand(config: BunnyConfig, connection: Connection) {
+export function makeSchemaDumpCommand(config: OrmConfig, connection: Connection) {
   return class extends Command.define("schema:dump {path? : Output file path}") {
     static description = "Dump the current database schema to a SQL file.";
     async handle() {

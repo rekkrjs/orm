@@ -1,6 +1,6 @@
 # Relationships
 
-Relationships describe how rows in one table connect to rows in another. Bunny supports the full Eloquent vocabulary — `hasOne`, `hasMany`, `belongsTo`, `belongsToMany` (many-to-many with a pivot), `hasManyThrough` / `hasOneThrough`, polymorphic relations (`morphTo`, `morphOne`, `morphMany`, `morphToMany`, `morphedByMany`), and one-of-many variants like `latestOfMany`.
+Relationships describe how rows in one table connect to rows in another. ORM supports the full Eloquent vocabulary — `hasOne`, `hasMany`, `belongsTo`, `belongsToMany` (many-to-many with a pivot), `hasManyThrough` / `hasOneThrough`, polymorphic relations (`morphTo`, `morphOne`, `morphMany`, `morphToMany`, `morphedByMany`), and one-of-many variants like `latestOfMany`.
 
 A relation is a method on a model class. The method describes the relationship; calling it returns a builder you can chain or terminate just like any other [query builder](./query-builder.md):
 
@@ -300,9 +300,9 @@ class Role extends Model {
 const roles = await user.roles().get(); // Collection<Role>
 ```
 
-Bunny infers the pivot table name by sorting model names alphabetically: `role_user` for `Role` + `User`.
+ORM infers the pivot table name by sorting model names alphabetically: `role_user` for `Role` + `User`.
 
-You can also pass a pivot model as the second argument. In that form Bunny uses the pivot model's table name and still infers the pivot keys from the parent and related model names:
+You can also pass a pivot model as the second argument. In that form ORM uses the pivot model's table name and still infers the pivot keys from the parent and related model names:
 
 ```ts
 class Section extends Model {
@@ -408,7 +408,7 @@ await post
   .saveMany([new Tag({ name: "Ignored 3" }), new Tag({ name: "Ignored 4" })]);
 ```
 
-The constrained fields do not appear in IntelliSense for the create helpers, because Bunny fills them from the relation itself.
+The constrained fields do not appear in IntelliSense for the create helpers, because ORM fills them from the relation itself.
 
 ### Updating Existing Pivot Rows
 
@@ -844,7 +844,7 @@ Assumptions for IntelliSense:
 ## Polymorphic Relations
 
 ```ts
-import { Model, MorphMap } from "@bunnykit/orm";
+import { Model, MorphMap } from "@rekkr/orm";
 
 // Schema
 await Schema.create("comments", (t) => {
@@ -973,7 +973,7 @@ Assumptions for IntelliSense:
 - `whereHasMorph()` and `whereDoesntHaveMorph()` callbacks are typed to the related model query, so builder methods are available there instead. `whereMorphRelation()` accepts the same concrete types and an inline column condition.
 - `whereMorphedTo()`, `orWhereMorphedTo()`, and `whereNotMorphedTo()` only accept typed `morphTo` relation names. Passing an instance filters by both morph type and ID; passing a model class or morph type string filters by type.
 - `loadMorph()` is available on `Model` instances and collections, and the morph relation name should be one of the model's typed morph relations.
-- Fixed relation fields stay out of write-input IntelliSense when Bunny injects them from the relation itself.
+- Fixed relation fields stay out of write-input IntelliSense when ORM injects them from the relation itself.
 
 ## Customizing Morph Type
 

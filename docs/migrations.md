@@ -1,9 +1,9 @@
 # Migrations
 
-Migrations are versioned, ordered scripts that change your database schema. They go beside your code in git, run in lockstep with deploys, and roll back cleanly when something goes wrong. Bunny's migrator handles ordering, batching, locking, multi-tenant fan-out, and (optionally) auto-creates missing databases and schemas before running.
+Migrations are versioned, ordered scripts that change your database schema. They go beside your code in git, run in lockstep with deploys, and roll back cleanly when something goes wrong. ORM's migrator handles ordering, batching, locking, multi-tenant fan-out, and (optionally) auto-creates missing databases and schemas before running.
 
 ```ts
-import { Migration, Migrator, Schema } from "@bunnykit/orm";
+import { Migration, Migrator, Schema } from "@rekkr/orm";
 ```
 
 See [Schema Builder](./schema-builder.md) for the full vocabulary you use inside migration bodies.
@@ -14,7 +14,7 @@ A migration is a class extending `Migration` with `up()` and `down()` methods. `
 
 ```ts
 // database/migrations/20260101000000_create_users_table.ts
-import { Migration, Schema } from "@bunnykit/orm";
+import { Migration, Schema } from "@rekkr/orm";
 
 export default class CreateUsersTable extends Migration {
   async up() {
@@ -35,10 +35,10 @@ export default class CreateUsersTable extends Migration {
 Scaffold a new file with the CLI:
 
 ```bash
-bunx bunny migrate:make CreateUsersTable
+bunx orm migrate:make CreateUsersTable
 # → ./database/migrations/20260101000000_create_users_table.ts
 
-bunx bunny migrate:make AddBioToUsers ./database/migrations
+bunx orm migrate:make AddBioToUsers ./database/migrations
 ```
 
 The timestamp prefix dictates run order, so always create new migrations via the CLI rather than hand-writing the filename.
@@ -47,25 +47,25 @@ The timestamp prefix dictates run order, so always create new migrations via the
 
 | Command | What it does |
 |---|---|
-| `bunny migrate:make <Name> [dir]` | Scaffold a new migration file. |
-| `bunny migrate` | Run all pending migrations. |
-| `bunny migrate:rollback [--step=N]` | Reverse the last batch, or the last `N` batches. |
-| `bunny migrate:reset` | Roll back every migration. |
-| `bunny migrate:refresh` | `reset` + `migrate`. |
-| `bunny migrate:fresh` | Drop every table + `migrate`. |
-| `bunny migrate:status` | Report of ran / pending migrations, with the batch each ran in. |
-| `bunny schema:dump <path>` | Dump current schema to a SQL file. |
-| `bunny schema:squash <path>` | Dump schema *and* mark configured migrations as ran. |
+| `orm migrate:make <Name> [dir]` | Scaffold a new migration file. |
+| `orm migrate` | Run all pending migrations. |
+| `orm migrate:rollback [--step=N]` | Reverse the last batch, or the last `N` batches. |
+| `orm migrate:reset` | Roll back every migration. |
+| `orm migrate:refresh` | `reset` + `migrate`. |
+| `orm migrate:fresh` | Drop every table + `migrate`. |
+| `orm migrate:status` | Report of ran / pending migrations, with the batch each ran in. |
+| `orm schema:dump <path>` | Dump current schema to a SQL file. |
+| `orm schema:squash <path>` | Dump schema *and* mark configured migrations as ran. |
 
-Each command honors `migrationsPath` (single path) or `migrations.landlord` / `migrations.tenant` (grouped) from `bunny.config.ts`. See [Configuration](./configuration.md#migrationspath-vs-migrations).
+Each command honors `migrationsPath` (single path) or `migrations.landlord` / `migrations.tenant` (grouped) from `orm.config.ts`. See [Configuration](./configuration.md#migrationspath-vs-migrations).
 
 ### `--config <path>`
 
 A global flag, valid before any command, that loads a specific config module
-instead of looking for `./bunny.config.ts`:
+instead of looking for `./orm.config.ts`:
 
 ```bash
-bunny --config config/database.ts migrate
+orm --config config/database.ts migrate
 ```
 
 Use it when the application already owns its database configuration and you do
@@ -77,11 +77,11 @@ its `default` export (or the module itself) is used as the config.
 Type generation does **not** run after migrations by default. Pass `--types` to regenerate model type declarations once the migration finishes:
 
 ```bash
-bunny migrate --types
-bunny migrate:fresh --types
-bunny migrate:rollback --types
-bunny migrate:refresh --types
-bunny migrate:reset --types
+orm migrate --types
+orm migrate:fresh --types
+orm migrate:rollback --types
+orm migrate:refresh --types
+orm migrate:reset --types
 ```
 
 Without the flag the schema changes apply but no types are emitted — keeping plain `migrate` fast and side-effect-free. Use `--types` in development (or a post-migrate step) when you want declarations refreshed. See [Type Generation](./type-generation.md).
@@ -103,13 +103,13 @@ the contract is the same in all of them:
   means "nothing to migrate", never "something went wrong".
 
 ```bash
-$ bunny migrate --json
+$ orm migrate --json
 {"applied":["database/migrations/20260101000000_create_users_table.ts"]}
 
-$ bunny migrate:rollback --step=2 --json
+$ orm migrate:rollback --step=2 --json
 {"rolledBack":["database/migrations/20260101000000_create_users_table.ts"]}
 
-$ bunny migrate:status --json
+$ orm migrate:status --json
 {"migrations":[{"migration":"database/migrations/20260101000000_create_users_table.ts","status":"Ran","tenant":null,"batch":1,"checksum":"…","storedChecksum":"…"}]}
 ```
 
@@ -127,7 +127,7 @@ covers the whole run rather than one per tenant.
 batches, in reverse order of application:
 
 ```bash
-bunny migrate:rollback --step=2
+orm migrate:rollback --step=2
 ```
 
 `--steps=` is accepted as an alias. Anything that is not a positive whole number
@@ -140,7 +140,7 @@ was recorded for it, because such a file is neither pending nor faithfully
 applied:
 
 ```console
-$ bunny migrate
+$ orm migrate
  Error: 1 migration file has changed since it ran: database/migrations/20260101000000_create_users_table.ts. …
 $ echo $?
 1
@@ -152,7 +152,7 @@ migration back and re-apply it, or to add a new migration.
 
 ## Batches and `migrations` table
 
-Bunny records every applied migration in a `migrations` table (auto-created on first run). The table tracks:
+ORM records every applied migration in a `migrations` table (auto-created on first run). The table tracks:
 
 - `migration` — the file name.
 - `tenant` — the tenant id, or `null` for landlord migrations.
@@ -166,7 +166,7 @@ Bunny records every applied migration in a `migrations` table (auto-created on f
 When the target database or schema does not exist yet, the migrator can create them automatically:
 
 ```ts
-// bunny.config.ts
+// orm.config.ts
 export default {
   connection: { url: process.env.DATABASE_URL! },
   migrations: {
@@ -188,7 +188,7 @@ The shortcut `createIfMissing: true` enables both. For granular control use the 
 Inside `DB.tenant()`, the migrator picks up the tenant's qualified connection automatically, so a missing tenant schema is created before tenant migrations run:
 
 ```ts
-await DB.tenant("acme", () => bunny.migrate("tenant"));
+await DB.tenant("acme", () => orm.migrate("tenant"));
 // → creates schema "tenant_acme" if absent, then runs tenant migrations under it
 ```
 
@@ -197,7 +197,7 @@ await DB.tenant("acme", () => bunny.migrate("tenant"));
 For apps with separate landlord and tenant migrations, group them:
 
 ```ts
-// bunny.config.ts
+// orm.config.ts
 export default {
   connection: { url: process.env.LANDLORD_DATABASE_URL! },
   migrations: {
@@ -216,38 +216,38 @@ export default {
 };
 ```
 
-With grouped migrations, `bunny migrate` runs landlord migrations first, then tenant migrations for every tenant returned by `listTenants()`. Rollbacks run in reverse — tenants first, then landlord.
+With grouped migrations, `orm migrate` runs landlord migrations first, then tenant migrations for every tenant returned by `listTenants()`. Rollbacks run in reverse — tenants first, then landlord.
 
 Target individual scopes from the CLI:
 
 ```bash
-bunny migrate                       # default: landlord then all tenants
-bunny migrate --landlord
-bunny migrate --tenants
-bunny migrate --tenant acme
-bunny migrate:rollback --tenant acme
-bunny migrate:refresh --tenant acme
-bunny migrate:fresh   --tenant acme
-bunny migrate:status  --tenant acme
+orm migrate                       # default: landlord then all tenants
+orm migrate --landlord
+orm migrate --tenants
+orm migrate --tenant acme
+orm migrate:rollback --tenant acme
+orm migrate:refresh --tenant acme
+orm migrate:fresh   --tenant acme
+orm migrate:status  --tenant acme
 ```
 
 See [Configuration — Tenancy](./configuration.md#tenancy) for resolver setup.
 
 ## Programmatic use
 
-### `configureBunny()` facade (recommended)
+### `configureOrm()` facade (recommended)
 
 ```ts
-import { configureBunny } from "@bunnykit/orm";
-import config from "../bunny.config";
+import { configureOrm } from "@rekkr/orm";
+import config from "../orm.config";
 
-const bunny = configureBunny(config);
+const orm = configureOrm(config);
 
-await bunny.migrate();              // landlord
-await bunny.migrate("tenant");      // tenant scope
-await bunny.migrate("landlord", { createIfMissing: true });
-await bunny.rollback(2);
-await bunny.fresh();
+await orm.migrate();              // landlord
+await orm.migrate("tenant");      // tenant scope
+await orm.migrate("landlord", { createIfMissing: true });
+await orm.rollback(2);
+await orm.fresh();
 ```
 
 See [Library Usage](./library-usage.md) for the full facade reference.
@@ -255,7 +255,7 @@ See [Library Usage](./library-usage.md) for the full facade reference.
 ### `Migrator` directly
 
 ```ts
-import { Migrator } from "@bunnykit/orm";
+import { Migrator } from "@rekkr/orm";
 
 const migrator = new Migrator(connection, "./database/migrations");
 
@@ -282,7 +282,7 @@ await migrator.squash("./database/schema.sql");
 ## Migration events
 
 ```ts
-import { Migrator } from "@bunnykit/orm";
+import { Migrator } from "@rekkr/orm";
 
 Migrator.on("migrating", ({ migration, batch }) => {
   console.log(`Starting ${migration} (batch ${batch})`);
@@ -329,10 +329,10 @@ Set `lock: false` only in development — never on production deploys.
 
 ## Auto type generation
 
-If `typesOutDir` is set in your config, attribute interface declarations are regenerated automatically after every `migrate` and `migrate:rollback`. With `modelsPath`, Bunny writes a `types/` directory beside each model root:
+If `typesOutDir` is set in your config, attribute interface declarations are regenerated automatically after every `migrate` and `migrate:rollback`. With `modelsPath`, ORM writes a `types/` directory beside each model root:
 
 ```bash
-bunx bunny migrate
+bunx orm migrate
 # → Migrated: 20260101000000_create_users_table.ts
 # → Regenerated types in ./src/models/types
 ```
@@ -341,7 +341,7 @@ See [Type Generation](./type-generation.md) for what is emitted and how IntelliS
 
 ## Common pitfalls
 
-- **Editing a migration after it has run.** Bunny stores a checksum per migration. Changing a file's contents after it has been applied breaks the assumption that `up()` already produced the recorded schema, so `migrate` stops and says which files drifted rather than reporting "Nothing to migrate." over a schema that no longer matches. Add a new migration instead, or pass `--allow-changed` to proceed deliberately.
+- **Editing a migration after it has run.** ORM stores a checksum per migration. Changing a file's contents after it has been applied breaks the assumption that `up()` already produced the recorded schema, so `migrate` stops and says which files drifted rather than reporting "Nothing to migrate." over a schema that no longer matches. Add a new migration instead, or pass `--allow-changed` to proceed deliberately.
 - **Missing `down()`.** Tools and dev workflows assume `down()` is the inverse of `up()`. Skipping it makes `rollback` unsafe. If a change is truly irreversible, throw with a clear message inside `down()`.
 - **Non-idempotent `up()`.** If `up()` calls `Schema.table()` to add a column that already exists (e.g. from a fresh dump-and-reload), the migration fails. Use `Schema.hasColumn()` guards in long-running projects.
 - **Running migrations without `createIfMissing` on a fresh DB.** You'll see "database does not exist" / "schema does not exist" errors. Enable `createIfMissing` or create the target manually first.
@@ -351,5 +351,5 @@ See [Type Generation](./type-generation.md) for what is emitted and how IntelliS
 
 - [Schema Builder](./schema-builder.md) — the full set of column, index, and foreign key helpers you use inside `up()`.
 - [Configuration](./configuration.md#migrationspath-vs-migrations) — how `migrationsPath` and `migrations.{landlord,tenant}` are resolved.
-- [Library Usage](./library-usage.md) — running migrations from app code with the `configureBunny()` facade.
+- [Library Usage](./library-usage.md) — running migrations from app code with the `configureOrm()` facade.
 - [Type Generation](./type-generation.md) — what auto-regenerates after each migration.

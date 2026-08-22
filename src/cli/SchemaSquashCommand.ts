@@ -1,9 +1,9 @@
 import { Command } from "../commands/Command.js";
 import { buildMigrator, getDefaultMigrationsPath } from "./MigrationHelpers.js";
 import type { Connection } from "../connection/Connection.js";
-import type { BunnyConfig } from "../config/BunnyConfig.js";
+import type { OrmConfig } from "../config/OrmConfig.js";
 
-export function makeSchemaSquashCommand(config: BunnyConfig, connection: Connection) {
+export function makeSchemaSquashCommand(config: OrmConfig, connection: Connection) {
   return class extends Command.define("schema:squash {path? : Schema file path to squash from}") {
     static description = "Dump the schema and mark all migrations as run.";
     async handle() {

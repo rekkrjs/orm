@@ -3,8 +3,8 @@ import { join } from "path";
 
 export class MigrationCreator {
   async create(name: string, path: string): Promise<string> {
-    const stub = `import { Migration } from "@bunnykit/orm";
-import { Schema } from "@bunnykit/orm";
+    const stub = `import { Migration } from "@rekkr/orm";
+import { Schema } from "@rekkr/orm";
 
 export default class ${this.toClassName(name)} extends Migration {
   async up(): Promise<void> {

@@ -1,23 +1,23 @@
 # Cache
 
-Bunny includes an explicit, opt-in cache layer for application payloads and selected query results. It supports exact tag invalidation, which is useful for reference data such as curricula, subjects, grade levels, terms, admissions lookup payloads, and other shared read-heavy data.
+ORM includes an explicit, opt-in cache layer for application payloads and selected query results. It supports exact tag invalidation, which is useful for reference data such as curricula, subjects, grade levels, terms, admissions lookup payloads, and other shared read-heavy data.
 
 The cache API can be used with or without the ORM:
 
 ```ts
-import { Cache, MemoryCacheStore, RedisCacheStore } from "@bunnykit/orm/cache";
+import { Cache, MemoryCacheStore, RedisCacheStore } from "@rekkr/orm/cache";
 ```
 
 ## Setup
 
 ### Runtime configuration
 
-When you configure Bunny at application startup, add a `cache` block:
+When you configure ORM at application startup, add a `cache` block:
 
 ```ts
-import { configureBunny } from "@bunnykit/orm";
+import { configureOrm } from "@rekkr/orm";
 
-configureBunny({
+configureOrm({
   connection: { url: process.env.DATABASE_URL! },
   cache: {
     prefix: "app:",
@@ -26,11 +26,11 @@ configureBunny({
 });
 ```
 
-If `cache.store` is omitted, Bunny uses Bun's native Redis client:
+If `cache.store` is omitted, ORM uses Bun's native Redis client:
 
 ```ts
 import { redis } from "bun";
-import { RedisCacheStore } from "@bunnykit/orm/cache";
+import { RedisCacheStore } from "@rekkr/orm/cache";
 
 cache: {
   store: new RedisCacheStore(redis),
@@ -44,7 +44,7 @@ Bun's default Redis client reads `REDIS_URL` from the environment. If it is not 
 Use `Cache.configure()` when you want the cache outside a configured ORM application, such as a worker or small utility module:
 
 ```ts
-import { Cache, RedisCacheStore } from "@bunnykit/orm/cache";
+import { Cache, RedisCacheStore } from "@rekkr/orm/cache";
 import { redis } from "bun";
 
 Cache.configure({
@@ -57,7 +57,7 @@ Cache.configure({
 For tests and local non-Redis usage, use the memory store:
 
 ```ts
-import { Cache, MemoryCacheStore } from "@bunnykit/orm/cache";
+import { Cache, MemoryCacheStore } from "@rekkr/orm/cache";
 
 Cache.configure({
   store: new MemoryCacheStore(),
@@ -71,7 +71,7 @@ Cache.configure({
 You can plug in any cache backend by implementing `CacheStore`:
 
 ```ts
-import type { CacheRememberOptions, CacheStore } from "@bunnykit/orm/cache";
+import type { CacheRememberOptions, CacheStore } from "@rekkr/orm/cache";
 
 class MyCacheStore implements CacheStore {
   async get<T = unknown>(key: string): Promise<T | null> {
@@ -107,13 +107,13 @@ class MyCacheStore implements CacheStore {
 }
 ```
 
-Then pass the store to `configureBunny()`:
+Then pass the store to `configureOrm()`:
 
 ```ts
-import { configureBunny } from "@bunnykit/orm";
+import { configureOrm } from "@rekkr/orm";
 import { MyCacheStore } from "./MyCacheStore";
 
-configureBunny({
+configureOrm({
   connection: { url: process.env.DATABASE_URL! },
   cache: {
     store: new MyCacheStore(),
@@ -126,7 +126,7 @@ configureBunny({
 Or configure it directly for standalone usage:
 
 ```ts
-import { Cache } from "@bunnykit/orm/cache";
+import { Cache } from "@rekkr/orm/cache";
 import { MyCacheStore } from "./MyCacheStore";
 
 Cache.configure({
@@ -141,7 +141,7 @@ Custom stores receive keys and tags after the facade prefix has been applied. St
 Use `Cache.remember()` for composed payloads where one cached value depends on several tables or models:
 
 ```ts
-import { Cache } from "@bunnykit/orm/cache";
+import { Cache } from "@rekkr/orm/cache";
 
 const countries = await Cache.remember("countries", async () => {
   return buildCountryList();
@@ -159,7 +159,7 @@ const payload = await Cache.remember(
 );
 ```
 
-If the value is already cached, a resolver callback is not called and a direct value is not written. If there is a miss, Bunny stores the returned or provided value as JSON.
+If the value is already cached, a resolver callback is not called and a direct value is not written. If there is a miss, ORM stores the returned or provided value as JSON.
 
 You can also use lower-level operations:
 
@@ -177,7 +177,7 @@ await Cache.flush();
 
 ## Tagged Invalidation
 
-Tags are exact strings. Bunny does not perform wildcard or prefix tag matching.
+Tags are exact strings. ORM does not perform wildcard or prefix tag matching.
 
 ```ts
 await Cache.forgetTag(`tenant:${tenantId}:subjects`);
@@ -208,8 +208,8 @@ Recommended tenant-scoped tags:
 Use observers to invalidate exact tags when models change:
 
 ```ts
-import { Observer } from "@bunnykit/orm";
-import { Cache } from "@bunnykit/orm/cache";
+import { Observer } from "@rekkr/orm";
+import { Cache } from "@rekkr/orm/cache";
 
 class CurriculumObserver extends Observer<Curriculum> {
   saved(model: Curriculum) {
@@ -235,8 +235,8 @@ CurriculumObserver.observe(Curriculum);
 You can also isolate cache invalidation in a dedicated observer that watches every model affecting the same read cache. This keeps cache logic separate from domain observers that send notifications, write audits, or enforce business rules:
 
 ```ts
-import { Observer } from "@bunnykit/orm";
-import { Cache } from "@bunnykit/orm/cache";
+import { Observer } from "@rekkr/orm";
+import { Cache } from "@rekkr/orm/cache";
 import Category from "./models/Category";
 import Product from "./models/Product";
 import ProductPrice from "./models/ProductPrice";
@@ -270,7 +270,7 @@ CatalogCacheObserver.observe([Category, Product, ProductPrice]);
 
 ## Query Caching
 
-Query caching is always explicit. Bunny only caches a query when you call `remember()`.
+Query caching is always explicit. ORM only caches a query when you call `remember()`.
 
 For reusable read paths, a static helper on the model is the cleanest pattern:
 
@@ -297,9 +297,9 @@ const curricula = await Curriculum
   .get();
 ```
 
-Cached query rows are stored before model hydration. On cache hits, Bunny hydrates models normally, so casts, accessors, collections, and model instances behave the same as a database-backed read.
+Cached query rows are stored before model hydration. On cache hits, ORM hydrates models normally, so casts, accessors, collections, and model instances behave the same as a database-backed read.
 
-When the cached builder includes eager loads, Bunny caches the full hydrated model graph:
+When the cached builder includes eager loads, ORM caches the full hydrated model graph:
 
 ```ts
 const periods = await EnrollmentPeriod
@@ -327,7 +327,7 @@ const subjects = await Subject
 
 ## Safety Rules
 
-Bunny intentionally keeps query caching narrow:
+ORM intentionally keeps query caching narrow:
 
 - Queries are cached only after an explicit `remember(key, ttl?)`.
 - Cache keys are application-defined.
@@ -353,10 +353,10 @@ await Cache.set("subjects", [], { tags: ["subjects"] });
 // Stored as key "school:subjects" and tag "school:subjects".
 ```
 
-`RedisCacheStore` also has its own namespace prefix for Redis keys. By default it writes values and tag sets under a `bunny:` namespace:
+`RedisCacheStore` also has its own namespace prefix for Redis keys. By default it writes values and tag sets under a `orm:` namespace:
 
 ```ts
-new RedisCacheStore(redis, { prefix: "bunny:" });
+new RedisCacheStore(redis, { prefix: "orm:" });
 ```
 
 In most applications, use the facade prefix for app or tenant namespacing and leave the Redis store prefix as the package namespace.

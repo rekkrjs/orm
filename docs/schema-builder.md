@@ -5,7 +5,7 @@ The schema builder defines tables, columns, indexes, and foreign keys in TypeScr
 `Schema` is a static class. You typically call it from inside [Migration](./migrations.md) files, but it works anywhere a `Connection` is set.
 
 ```ts
-import { Schema } from "@bunnykit/orm";
+import { Schema } from "@rekkr/orm";
 ```
 
 ## Creating tables
@@ -212,7 +212,7 @@ table.rememberToken();     // adds nullable remember_token VARCHAR(100)
 ```
 
 `timestamps()` accepts exactly zero arguments or two non-empty, different column
-names. The zero-argument form creates Bunny's defaults; the two-argument form
+names. The zero-argument form creates ORM's defaults; the two-argument form
 matches models that configure `createdAtColumn` and `updatedAtColumn`.
 `softDeletes()` remains independent and always creates `deleted_at`.
 
@@ -449,7 +449,7 @@ These are useful for idempotent setup scripts and for one-shot maintenance work 
 
 ## Postgres schemas
 
-PostgreSQL has named schemas separate from databases. Bunny treats them as first-class:
+PostgreSQL has named schemas separate from databases. ORM treats them as first-class:
 
 ```ts
 await Schema.createSchema("tenant_acme");
@@ -461,6 +461,6 @@ When you set `connection.schema` (or use a tenant resolver), every `Schema.creat
 ## Driver caveats
 
 - **SQLite** can not change column types in place. The schema builder issues `ALTER TABLE` where SQLite supports it and falls back to a `create + copy + drop + rename` recipe for unsupported operations.
-- **SQLite exact numbers:** its `INTEGER`/`REAL` values and Bun's SQLite decoder use JavaScript numbers, so values beyond `Number.MAX_SAFE_INTEGER` and arbitrary-precision decimals are not exact. Store large IDs/decimals as `TEXT`, or store money as integer minor units. Changing `decimal()` globally to text would break numeric ordering and aggregates, so Bunny does not do that implicitly.
+- **SQLite exact numbers:** its `INTEGER`/`REAL` values and Bun's SQLite decoder use JavaScript numbers, so values beyond `Number.MAX_SAFE_INTEGER` and arbitrary-precision decimals are not exact. Store large IDs/decimals as `TEXT`, or store money as integer minor units. Changing `decimal()` globally to text would break numeric ordering and aggregates, so ORM does not do that implicitly.
 - **MySQL** unique-key indexes have a 191-character limit on `utf8mb4`. Use `string("col", 191)` for unique columns.
 - **PostgreSQL** is the only driver that supports `jsonb`, named `schema` qualification, and timezone-aware `timestamp`.

@@ -1,10 +1,10 @@
 import { Command } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { Search } from "../SearchManager.js";
 import { loadSearchableModels, resolveSearchableModel } from "./resolveSearchableModel.js";
 import { runWithTenant } from "./runWithTenant.js";
 
-export function makeSearchSyncIndexSettingsCommand(config: BunnyConfig) {
+export function makeSearchSyncIndexSettingsCommand(config: OrmConfig) {
   return class extends Command.define("search:sync-index-settings {model? : Model class name (all if omitted)} {--tenant= : Run under a tenant context}") {
     static description = "Push per-model search index settings to the engine.";
 

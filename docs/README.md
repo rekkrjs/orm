@@ -1,4 +1,4 @@
-# Bunny ORM Documentation
+# ORM Documentation
 
 An Eloquent-inspired ORM for Bun with zero runtime dependencies, full TypeScript typing, and first-class multi-tenant support.
 
@@ -8,8 +8,8 @@ If you are new here, start with [Installation](./installation.md), then walk thr
 
 | Topic | What you will learn |
 |---|---|
-| [Installation](./installation.md) | How to add `@bunnykit/orm` to a Bun project. |
-| [Configuration](./configuration.md) | Every field on `bunny.config.ts` — connection, tenancy, migrations, seeders, type generation. |
+| [Installation](./installation.md) | How to add `@rekkr/orm` to a Bun project. |
+| [Configuration](./configuration.md) | Every field on `orm.config.ts` — connection, tenancy, migrations, seeders, type generation. |
 | [Quickstart](./quickstart.md) | End-to-end walkthrough: install → config → migration → model → query. |
 
 ## Database
@@ -43,8 +43,8 @@ If you are new here, start with [Installation](./installation.md), then walk thr
 
 | Topic | What you will learn |
 |---|---|
-| [Queue Jobs](./queue.md) | Dispatch jobs to named queues, run workers with `bunny queue`, retries, delays, failed-job tracking, database and Redis drivers. |
-| [Commands](./commands.md) | Define and run CLI commands with `bunny run`, signature DSL, argument/option parsing, output helpers. |
+| [Queue Jobs](./queue.md) | Dispatch jobs to named queues, run workers with `orm queue`, retries, delays, failed-job tracking, database and Redis drivers. |
+| [Commands](./commands.md) | Define and run CLI commands with `orm run`, signature DSL, argument/option parsing, output helpers. |
 
 ## Advanced
 
@@ -54,5 +54,5 @@ If you are new here, start with [Installation](./installation.md), then walk thr
 | [Policies](./policies.md) | Register model/resource policies, use `can` / `authorize`, and enforce access in RouteBuilder. |
 | [Observers](./observers.md) | Lifecycle hooks for `creating`, `created`, `updating`, `deleting`, and more. |
 | [Events](./events.md) | Application-level events with function listeners, class handlers, and temporary subscriptions. |
-| [Library Usage](./library-usage.md) | Run migrations and seeders programmatically from app code using the `configureBunny()` facade. |
+| [Library Usage](./library-usage.md) | Run migrations and seeders programmatically from app code using the `configureOrm()` facade. |
 | [Testing](./testing.md) | In-memory SQLite, transactional test isolation, integration patterns. |

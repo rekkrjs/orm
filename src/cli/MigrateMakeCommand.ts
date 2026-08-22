@@ -2,9 +2,9 @@ import { Command } from "../commands/Command.js";
 import { MigrationCreator } from "../migration/MigrationCreator.js";
 import { normalizePathList } from "../utils.js";
 import { getDefaultMigrationsPath } from "./MigrationHelpers.js";
-import type { BunnyConfig } from "../config/BunnyConfig.js";
+import type { OrmConfig } from "../config/OrmConfig.js";
 
-export function makeMigrateMakeCommand(config: BunnyConfig) {
+export function makeMigrateMakeCommand(config: OrmConfig) {
   return class extends Command.define("migrate:make {name : Migration name} {dir? : Output directory}") {
     static description = "Create a new migration file.";
     async handle() {

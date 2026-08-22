@@ -45,8 +45,8 @@ main().catch((error) => { console.error(error); process.exit(1); });
 
 describe.serial("Bun MySQL event-loop workaround", () => {
   runIfMySql("a script that floats its promise still finishes its work", async () => {
-    const table = `bunny_eventloop_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
-    const directory = await mkdtemp(join(tmpdir(), "bunny-eventloop-"));
+    const table = `orm_eventloop_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
+    const directory = await mkdtemp(join(tmpdir(), "orm-eventloop-"));
     const file = join(directory, "child.ts");
     await writeFile(file, childScript(mysqlUrl!, table));
 

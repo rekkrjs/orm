@@ -68,7 +68,7 @@ without a red test.
 
 After an Elysia release closes the upstream issue, delete the `defineProperty`
 line and the test that pins it, then confirm in a consuming app that a
-controller returning a Bunny collection still emits the request ID, every global
+controller returning an ORM collection still emits the request ID, every global
 security header, the response status and cookies. If it does, remove the
 workaround and this record together.
 
@@ -76,7 +76,7 @@ Note the consuming side has its own workaround for the same bug: `prueba`
 converts collections with `Array.from(collection, serializeUser)` before
 returning them. That conversion is redundant once this change ships and can be
 removed first, as an independent way to confirm the fix here works — `prueba`
-pins the ORM by git ref (`github:gerardp/orm#v0.9.0`), so it needs that ref
+pins the ORM by git ref (`github:rekkrjs/orm#v0.9.0`), so it needs that ref
 bumped to pick this up.
 
 Verify with:

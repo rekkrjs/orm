@@ -1,6 +1,6 @@
 # Queue Jobs
 
-Background job processing backed by your database. Jobs are dispatched to named queues and processed by a long-running worker started with `bunny queue`.
+Background job processing backed by your database. Jobs are dispatched to named queues and processed by a long-running worker started with `orm queue`.
 
 ## Concepts
 
@@ -8,7 +8,7 @@ Background job processing backed by your database. Jobs are dispatched to named 
 |------|---------|
 | **Job** | A class with a `handle()` method. Constructor args are the job's payload. |
 | **Queue** | A named channel (e.g. `default`, `emails`, `critical`). Jobs route to one queue. |
-| **Worker** | The `bunny queue` process that polls the DB and runs jobs. |
+| **Worker** | The `orm queue` process that polls the DB and runs jobs. |
 | **Driver** | The storage backend. `DatabaseQueueDriver` is the only built-in driver. |
 
 Queue jobs are for **background work** (sending email, generating reports, syncing data). They are distinct from [Events](./events.md), which are synchronous in-process notifications.
@@ -16,7 +16,7 @@ Queue jobs are for **background work** (sending email, generating reports, synci
 ## Configuration
 
 ```ts
-// bunny.config.ts
+// orm.config.ts
 export default {
   connection: { url: process.env.DATABASE_URL },
   queue: {
@@ -30,12 +30,12 @@ export default {
 };
 ```
 
-`configureBunny()` sets up the queue driver automatically when `config.queue` is present.
+`configureOrm()` sets up the queue driver automatically when `config.queue` is present.
 
 ## Defining a Job
 
 ```ts
-import { DispatchableJob } from "@bunnykit/orm/queue";
+import { DispatchableJob } from "@rekkr/orm/queue";
 
 export class SendWelcomeEmail extends DispatchableJob {
   static queue = "emails";    // optional; defaults to config.queue.defaultQueue
@@ -60,7 +60,7 @@ Constructor arguments must be JSON-serializable (strings, numbers, arrays, plain
 The preferred form is instance dispatch — construct the job and pass it to `Queue.dispatch()`:
 
 ```ts
-import { Queue } from "@bunnykit/orm/queue";
+import { Queue } from "@rekkr/orm/queue";
 
 await Queue.dispatch(new SendWelcomeEmail(user.id));
 
@@ -84,9 +84,9 @@ await Queue.dispatch(SendWelcomeEmail, [user.id], { maxAttempts: 5 });
 ## Running the Worker
 
 ```sh
-bunny queue                          # use config defaults
-bunny queue --queue emails           # process one queue
-bunny queue --queue emails --workers 4  # 4 concurrent slots
+orm queue                          # use config defaults
+orm queue --queue emails           # process one queue
+orm queue --queue emails --workers 4  # 4 concurrent slots
 ```
 
 The worker is a long-running process. It polls the database, reserves a job, runs `handle()`, then marks it complete or schedules a retry.
@@ -103,7 +103,7 @@ The worker is a long-running process. It polls the database, reserves a job, run
 
 ## Database Tables
 
-`bunny queue` creates these tables on startup if they do not exist.
+`orm queue` creates these tables on startup if they do not exist.
 
 ### `jobs`
 
@@ -136,7 +136,7 @@ Use `RedisQueueDriver` for a Redis-backed queue. Requires Bun's built-in Redis c
 
 ```ts
 import { redis } from "bun";
-import { RedisQueueDriver, Queue } from "@bunnykit/orm/queue";
+import { RedisQueueDriver, Queue } from "@rekkr/orm/queue";
 
 const driver = new RedisQueueDriver(redis, { prefix: "myapp:queue:" });
 Queue.configure(driver, "default");
@@ -158,7 +158,7 @@ Queue.configure(driver, "default");
 
 ```ts
 new RedisQueueDriver(redisClient, {
-  prefix: "myapp:queue:",  // default: "bunny:queue:"
+  prefix: "myapp:queue:",  // default: "orm:queue:"
 })
 ```
 
@@ -169,7 +169,7 @@ new RedisQueueDriver(redisClient, {
 Implement the `QueueDriver` interface to add another backend:
 
 ```ts
-import type { QueueDriver, JobRecord } from "@bunnykit/orm/queue";
+import type { QueueDriver, JobRecord } from "@rekkr/orm/queue";
 
 class MyDriver implements QueueDriver {
   async migrate() {}
@@ -181,7 +181,7 @@ class MyDriver implements QueueDriver {
   async size(queue?) { /* ... */ }
 }
 
-import { Queue } from "@bunnykit/orm/queue";
+import { Queue } from "@rekkr/orm/queue";
 Queue.configure(new MyDriver(), "default");
 ```
 

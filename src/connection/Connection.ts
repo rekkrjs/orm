@@ -333,9 +333,9 @@ export class Connection {
       if (hasDate) await this.assertMysqlUtc(driver, this.dedicated || !!this.reservedDriver);
       await this.keepEventLoopAlive(() => driver.unsafe(sqlString, normalizedBindings));
       const rows = await this.keepEventLoopAlive(
-        () => driver.unsafe("SELECT LAST_INSERT_ID() AS bunny_insert_id")
+        () => driver.unsafe("SELECT LAST_INSERT_ID() AS orm_insert_id")
       ) as any[];
-      return rows[0]?.bunny_insert_id ?? null;
+      return rows[0]?.orm_insert_id ?? null;
     };
 
     await this.ensureSqliteDefaults();
@@ -390,7 +390,7 @@ export class Connection {
   }
 
   /**
-   * Bunny renders dates in UTC. MySQL reads a datetime literal in the session's
+   * ORM renders dates in UTC. MySQL reads a datetime literal in the session's
    * time zone, so on a session that is not UTC a TIMESTAMP column silently
    * stores a different instant than the one handed to it — and a DATETIME
    * column disagrees with it. An explicit offset in the literal fixes TIMESTAMP
@@ -409,7 +409,7 @@ export class Connection {
     }
     throw new Error(
       `MySQL session time zone is ${offset > 0 ? "+" : ""}${(offset / 3600).toFixed(2)}h from UTC. ` +
-        `Bunny stores dates in UTC, and a TIMESTAMP column would keep a different instant than the one you wrote. ` +
+        `ORM stores dates in UTC, and a TIMESTAMP column would keep a different instant than the one you wrote. ` +
         `Set the server or connection to time_zone = '+00:00'.`
     );
   }
@@ -491,7 +491,7 @@ export class Connection {
       return;
     }
 
-    await this.keepEventLoopAlive(() => this.getDriver().unsafe(`SAVEPOINT bunny_trans_${++this.savepointId}`));
+    await this.keepEventLoopAlive(() => this.getDriver().unsafe(`SAVEPOINT orm_trans_${++this.savepointId}`));
     this.transactionDepth++;
   }
 
@@ -545,7 +545,7 @@ export class Connection {
         this.releaseReservedDriver();
       }
     } else {
-      await this.keepEventLoopAlive(() => this.getDriver().unsafe(`RELEASE SAVEPOINT bunny_trans_${this.savepointId--}`));
+      await this.keepEventLoopAlive(() => this.getDriver().unsafe(`RELEASE SAVEPOINT orm_trans_${this.savepointId--}`));
       this.transactionDepth--;
     }
   }
@@ -562,8 +562,8 @@ export class Connection {
         this.releaseReservedDriver();
       }
     } else {
-      await this.keepEventLoopAlive(() => this.getDriver().unsafe(`ROLLBACK TO SAVEPOINT bunny_trans_${this.savepointId}`));
-      await this.keepEventLoopAlive(() => this.getDriver().unsafe(`RELEASE SAVEPOINT bunny_trans_${this.savepointId--}`));
+      await this.keepEventLoopAlive(() => this.getDriver().unsafe(`ROLLBACK TO SAVEPOINT orm_trans_${this.savepointId}`));
+      await this.keepEventLoopAlive(() => this.getDriver().unsafe(`RELEASE SAVEPOINT orm_trans_${this.savepointId--}`));
       this.transactionDepth--;
     }
   }
@@ -604,7 +604,7 @@ export class Connection {
           this.releaseReservedDriver();
         }
       }
-      const savepointName = `bunny_trans_${++this.savepointId}`;
+      const savepointName = `orm_trans_${++this.savepointId}`;
       await this.keepEventLoopAlive(() => this.getDriver().unsafe(`SAVEPOINT ${savepointName}`));
       this.transactionDepth++;
       try {

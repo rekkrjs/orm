@@ -1,5 +1,5 @@
 import { Command } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { Search } from "../SearchManager.js";
 import { resolveSearchableModel } from "./resolveSearchableModel.js";
 import { importModel, resolveChunkSize } from "./importHelper.js";
@@ -9,7 +9,7 @@ import { runWithTenant } from "./runWithTenant.js";
  * Zero-downtime reindex: build a fresh `*_next` index, swap with the live
  * one, then drop the old. Requires an engine with `swapIndexes()` (Meili).
  */
-export function makeSearchReindexCommand(config: BunnyConfig) {
+export function makeSearchReindexCommand(config: OrmConfig) {
   return class extends Command.define(
     "search:reindex {model : Model class name} " +
     "{--chunk= : Rows per batch} " +

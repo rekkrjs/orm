@@ -20,7 +20,7 @@ beforeAll(async () => {
 });
 
 // A namespace of its own per run, so a suite can never sweep another's keys.
-const prefix = `bunny_test_${process.pid}_${Math.random().toString(36).slice(2, 8)}:`;
+const prefix = `orm_test_${process.pid}_${Math.random().toString(36).slice(2, 8)}:`;
 
 async function flushNamespace(): Promise<void> {
   if (!client) return;

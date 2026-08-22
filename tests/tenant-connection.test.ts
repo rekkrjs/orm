@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { configureBunny, Connection, ConnectionManager, Model, Schema, TenantContext } from "../src/index.js";
+import { configureOrm, Connection, ConnectionManager, Model, Schema, TenantContext } from "../src/index.js";
 
 class TenantUser extends Model {
   static table = "tenant_users";
@@ -217,9 +217,9 @@ describe("tenant connection switching", () => {
     await expect(ConnectionManager.resolveTenant("acme")).rejects.toThrow("Invalid schema name");
   });
 
-  test("configureBunny registers the default connection and tenant resolver", async () => {
+  test("configureOrm registers the default connection and tenant resolver", async () => {
     const acme = await createTenantDb("Acme");
-    const { connection } = configureBunny({
+    const { connection } = configureOrm({
       connection: { url: "sqlite://:memory:" },
       tenancy: {
         resolveTenant: (tenantId) => ({
@@ -240,7 +240,7 @@ describe("tenant connection switching", () => {
   });
 
   test("resolves tenants from a landlord database and routes to multiple sqlite tenants", async () => {
-    configureBunny({
+    configureOrm({
       connection: { url: "sqlite://:memory:" },
       tenancy: {
         resolveTenant: async (tenantSlug) => {

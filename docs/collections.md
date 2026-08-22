@@ -3,7 +3,7 @@
 `Collection<T>` is what every multi-row query returns. It extends the native `Array`, so any `Array` method (`map`, `filter`, `reduce`, `slice`, `forEach`, ...) works on it. On top of that, it adds Laravel-style helpers for grouping, pluck-by-key, aggregates, and post-retrieval relation loading.
 
 ```ts
-import { collect, Collection } from "@bunnykit/orm";
+import { collect, Collection } from "@rekkr/orm";
 ```
 
 ## Where Collections come from

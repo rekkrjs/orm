@@ -7,7 +7,7 @@ Policies provide model/resource authorization checks similar to Laravel Gate/Pol
 Register once at server startup:
 
 ```ts
-import { registerPolicy } from "@bunnykit/orm/policies";
+import { registerPolicy } from "@rekkr/orm/policies";
 import User from "$models/user";
 
 class UserPolicy {
@@ -38,7 +38,7 @@ registerPolicy(User, UserPolicy);
 Batch registration:
 
 ```ts
-import { registerPolicies } from "@bunnykit/orm/policies";
+import { registerPolicies } from "@rekkr/orm/policies";
 
 registerPolicies({
   User: UserPolicy,
@@ -57,7 +57,7 @@ Policy methods may return:
 ## Using Policies Directly
 
 ```ts
-import { can, authorize } from "@bunnykit/orm/policies";
+import { can, authorize } from "@rekkr/orm/policies";
 
 const allowed = await can(user, "update", announcement);
 await authorize(user, "update", announcement); // throws on deny
@@ -75,7 +75,7 @@ Use `.can(...)` after binding:
 
 ```ts
 import type { PageServerLoad } from "./$types";
-import { route } from "@bunnykit/orm/sveltekit";
+import { route } from "@rekkr/orm/sveltekit";
 import Announcement from "$models/announcement";
 
 export const load: PageServerLoad = route()
@@ -115,13 +115,13 @@ await event.locals.user.authorize("access", new BillingModule());
 Create policy files:
 
 ```sh
-bunny make:policy UserPolicy
-bunny make:policy UserPolicy --model=User
-bunny make:policy UserPolicy --dir=./app/policies
+orm make:policy UserPolicy
+orm make:policy UserPolicy --model=User
+orm make:policy UserPolicy --dir=./app/policies
 ```
 
 Default output directory:
 
 1. `--dir`
-2. `policyPath` from `bunny.config.ts`
+2. `policyPath` from `orm.config.ts`
 3. `./app/policies`

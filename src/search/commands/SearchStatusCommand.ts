@@ -1,5 +1,5 @@
 import { Command } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { Search } from "../SearchManager.js";
 import { loadSearchableModels } from "./resolveSearchableModel.js";
 
@@ -12,7 +12,7 @@ function formatBytes(n: number): string {
   return `${v.toFixed(2)} ${units[i]}`;
 }
 
-export function makeSearchStatusCommand(config: BunnyConfig) {
+export function makeSearchStatusCommand(config: OrmConfig) {
   return class extends Command.define("search:status") {
     static description = "Show search engine health and list configured indexes.";
 

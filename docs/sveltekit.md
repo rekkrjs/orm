@@ -1,8 +1,8 @@
 # SvelteKit Helper
 
-Use the SvelteKit helper to bind route params to Bunny models and (for actions) validate incoming form/request data.
+Use the SvelteKit helper to bind route params to ORM models and (for actions) validate incoming form/request data.
 
-> **Server-only.** Bunny links against `bun:sql`, so every import of it — this
+> **Server-only.** ORM links against `bun:sql`, so every import of it — this
 > helper included — belongs in a server module: `+page.server.ts`, `+server.ts`,
 > `hooks.server.ts`, or `$lib/server/`. Importing it from client code fails the
 > build. If you install from git, see the Vite note in
@@ -11,7 +11,7 @@ Use the SvelteKit helper to bind route params to Bunny models and (for actions) 
 Import:
 
 ```ts
-import { configureSvelteKit, route } from "@bunnykit/orm/sveltekit";
+import { configureSvelteKit, route } from "@rekkr/orm/sveltekit";
 ```
 
 ## One-time setup (recommended)
@@ -21,7 +21,7 @@ When using linked/local packages, configure SvelteKit helpers once so `route()` 
 ```ts
 // src/hooks.server.ts
 import { error, fail } from "@sveltejs/kit";
-import { configureSvelteKit, extendLocalsUser } from "@bunnykit/orm/sveltekit";
+import { configureSvelteKit, extendLocalsUser } from "@rekkr/orm/sveltekit";
 
 configureSvelteKit({ error, fail });
 ```
@@ -33,7 +33,7 @@ If you assign `event.locals.user` in hooks, extend it immediately so policy help
 ```ts
 // src/hooks.server.ts
 import type { Handle } from "@sveltejs/kit";
-import { extendLocalsUser } from "@bunnykit/orm/sveltekit";
+import { extendLocalsUser } from "@rekkr/orm/sveltekit";
 
 export const handle: Handle = async ({ event, resolve }) => {
   // your auth logic:
@@ -49,7 +49,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 
 ```ts
 import type { PageServerLoad } from "./$types";
-import { route } from "@bunnykit/orm/sveltekit";
+import { route } from "@rekkr/orm/sveltekit";
 import Branch from "$lib/server/models/Branch";
 import Payroll from "$lib/server/models/Payroll";
 
@@ -88,8 +88,8 @@ fail(422, { issues, values });
 
 ```ts
 import type { Actions } from "./$types";
-import { route } from "@bunnykit/orm/sveltekit";
-import { Validator, rule } from "@bunnykit/orm/validation";
+import { route } from "@rekkr/orm/sveltekit";
+import { Validator, rule } from "@rekkr/orm/validation";
 import Branch from "$lib/server/models/Branch";
 
 const PostSchema = Validator.schema({
@@ -123,8 +123,8 @@ Use `.request()` for `RequestHandler` routes in `+server.ts`.
 
 ```ts
 import type { RequestHandler } from "./$types";
-import { route } from "@bunnykit/orm/sveltekit";
-import { Validator, rule } from "@bunnykit/orm/validation";
+import { route } from "@rekkr/orm/sveltekit";
+import { Validator, rule } from "@rekkr/orm/validation";
 import Branch from "$lib/server/models/Branch";
 
 const BodySchema = Validator.schema({
@@ -203,7 +203,7 @@ type Flash = FlashMessage | FlashMessage[] | null;
 You can use the same flash behavior directly:
 
 ```ts
-import { flash } from "@bunnykit/orm/sveltekit";
+import { flash } from "@rekkr/orm/sveltekit";
 
 // set
 flash(event, "Successfully saved.");
@@ -236,7 +236,7 @@ If a param is missing or no record is found, the helper throws a SvelteKit 404 e
 Register a model policy once, then enforce abilities in the route builder.
 
 ```ts
-import { registerPolicy } from "@bunnykit/orm/policies";
+import { registerPolicy } from "@rekkr/orm/policies";
 import Announcement from "$lib/server/models/Announcement";
 
 class AnnouncementPolicy {

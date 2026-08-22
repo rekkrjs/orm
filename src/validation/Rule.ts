@@ -311,7 +311,7 @@ export class RuleBuilder<TValue = unknown, TPresence extends Presence = "require
   get "~standard"(): StandardSchemaV1<unknown, TValue>["~standard"] {
     return {
       version: 1,
-      vendor: "bunnykit",
+      vendor: "rekkr",
       validate: (value: unknown) => this.validateRootValue(value),
     };
   }

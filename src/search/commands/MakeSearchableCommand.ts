@@ -3,7 +3,7 @@ import { normalizePathList } from "../../utils.js";
 import { getModelPaths } from "../../cli/MigrationHelpers.js";
 import { mkdir, writeFile, access } from "fs/promises";
 import { join } from "path";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 
 function toClassName(name: string): string {
   return name
@@ -19,8 +19,8 @@ function snakeCase(s: string): string {
 function buildStub(className: string): string {
   const table = snakeCase(className) + "s";
   return [
-    `import { Model } from "@bunnykit/orm";`,
-    `import { Search } from "@bunnykit/orm/search";`,
+    `import { Model } from "@rekkr/orm";`,
+    `import { Search } from "@rekkr/orm/search";`,
     ``,
     `export interface ${className}Attributes {`,
     `  id: number;`,
@@ -54,7 +54,7 @@ async function exists(path: string): Promise<boolean> {
   return access(path).then(() => true).catch(() => false);
 }
 
-export function makeMakeSearchableCommand(config: BunnyConfig) {
+export function makeMakeSearchableCommand(config: OrmConfig) {
   return class extends Command.define(
     "make:searchable {name : Model class name} {--dir= : Directory to create the model in}",
   ) {

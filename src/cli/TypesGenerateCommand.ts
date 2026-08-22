@@ -8,9 +8,9 @@ import { writeFile } from "fs/promises";
 import { join } from "path";
 import { parseTargetFromOptions, getModelPaths, getScopeExclusions } from "./MigrationHelpers.js";
 import type { Connection } from "../connection/Connection.js";
-import type { BunnyConfig } from "../config/BunnyConfig.js";
+import type { OrmConfig } from "../config/OrmConfig.js";
 
-export function makeTypesGenerateCommand(config: BunnyConfig, connection: Connection) {
+export function makeTypesGenerateCommand(config: OrmConfig, connection: Connection) {
   return class extends Command.define("types:generate {dir? : Output directory for generated types} {--landlord : Generate types for landlord models} {--tenant= : Generate types for a specific tenant}") {
     static description = "Generate TypeScript model type declarations from the database schema.";
 
@@ -69,7 +69,7 @@ export function makeTypesGenerateCommand(config: BunnyConfig, connection: Connec
 
       if (tenantBranchApplies) {
         if (!config.tenancy?.resolveTenant) {
-          throw new Error("Tenant type generation requires tenancy.resolveTenant() in bunny.config.ts.");
+          throw new Error("Tenant type generation requires tenancy.resolveTenant() in orm.config.ts.");
         }
         ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
 
@@ -80,7 +80,7 @@ export function makeTypesGenerateCommand(config: BunnyConfig, connection: Connec
             : undefined;
 
         if (!tenantId) {
-          throw new Error("Tenant type generation requires either --tenant <id> or tenancy.listTenants() in bunny.config.ts.");
+          throw new Error("Tenant type generation requires either --tenant <id> or tenancy.listTenants() in orm.config.ts.");
         }
 
         await TenantContext.run(tenantId, async () => {

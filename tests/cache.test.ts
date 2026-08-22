@@ -1,5 +1,5 @@
 import { expect, test, describe } from "bun:test";
-import { Builder, Cache, MemoryCacheStore, Model, Observer, ObserverRegistry, RedisCacheStore, Schema, configureBunny } from "../src/index.js";
+import { Builder, Cache, MemoryCacheStore, Model, Observer, ObserverRegistry, RedisCacheStore, Schema, configureOrm } from "../src/index.js";
 import type { CacheRememberOptions, CacheStore } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
@@ -134,8 +134,8 @@ describe("Cache stores", () => {
     const store = new RedisCacheStore(redis as any);
 
     await store.set("ttl", { ok: true }, { ttl: 60, tags: ["tagged"] });
-    expect(redis.calls).toContainEqual(["set", "bunny:cache:ttl", JSON.stringify({ ok: true }), "EX", 60]);
-    expect(redis.calls).toContainEqual(["sadd", "bunny:tag:tagged", "bunny:cache:ttl"]);
+    expect(redis.calls).toContainEqual(["set", "orm:cache:ttl", JSON.stringify({ ok: true }), "EX", 60]);
+    expect(redis.calls).toContainEqual(["sadd", "orm:tag:tagged", "orm:cache:ttl"]);
 
     await exerciseStore(store);
   });
@@ -208,15 +208,15 @@ describe("Cache stores", () => {
 
     expect(redis.calls).toContainEqual([
       "set",
-      "bunny:cache:default-ttl",
+      "orm:cache:default-ttl",
       JSON.stringify("value"),
       "EX",
       45,
     ]);
   });
 
-  test("configureBunny installs Redis by default when cache config is present", () => {
-    configureBunny({
+  test("configureOrm installs Redis by default when cache config is present", () => {
+    configureOrm({
       connection: { url: "sqlite://:memory:" },
       cache: {},
     });
@@ -224,9 +224,9 @@ describe("Cache stores", () => {
     expect(Cache.getStore()).toBeInstanceOf(RedisCacheStore);
   });
 
-  test("configureBunny accepts a custom cache store", async () => {
+  test("configureOrm accepts a custom cache store", async () => {
     const store = new CustomCacheStore();
-    configureBunny({
+    configureOrm({
       connection: { url: "sqlite://:memory:" },
       cache: { store, prefix: "tenant:" },
     });

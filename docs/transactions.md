@@ -2,14 +2,14 @@
 
 A transaction groups a series of database operations so they either all succeed or all roll back. Use one whenever a single logical change requires more than one write — transferring money, copying related rows, or persisting a model with its dependents.
 
-Bunny exposes transactions on the `Connection`. Models reach the connection through `Model.getConnection()`, or via the facade returned by `configureBunny()`.
+ORM exposes transactions on the `Connection`. Models reach the connection through `Model.getConnection()`, or via the facade returned by `configureOrm()`.
 
 ## The callback form (recommended)
 
 `connection.transaction(callback)` opens a transaction, calls your callback, and commits on success. If the callback throws, the transaction is rolled back and the error propagates out:
 
 ```ts
-import { Model } from "@bunnykit/orm";
+import { Model } from "@rekkr/orm";
 import User from "./models/User";
 import Wallet from "./models/Wallet";
 
@@ -34,7 +34,7 @@ The `tx` argument is a `Connection` scoped to the transaction. Any models or bui
 
 ## Nested transactions (savepoints)
 
-Bunny tracks transaction depth and uses savepoints for nested calls. The outer transaction commits or rolls back the whole stack; an inner failure rolls back only the inner savepoint:
+ORM tracks transaction depth and uses savepoints for nested calls. The outer transaction commits or rolls back the whole stack; an inner failure rolls back only the inner savepoint:
 
 ```ts
 await connection.transaction(async () => {

@@ -16,7 +16,7 @@ describe("Concurrent migrators", () => {
 import { Migration, Schema } from "../../src/index.js";
 export default class CreateWidgets extends Migration {
   async up(): Promise<void> {
-    const gate = (globalThis as any)[Symbol.for("bunny.test.migrationGate")];
+    const gate = (globalThis as any)[Symbol.for("orm.test.migrationGate")];
     if (gate) await gate();
     await Schema.create("concurrent_widgets", (table) => {
       table.increments("id");
@@ -69,7 +69,7 @@ export default class CreateWidgets extends Migration {
     let arrivals = 0;
     let openGate!: () => void;
     const gate = new Promise<void>((resolve) => { openGate = resolve; });
-    (globalThis as any)[Symbol.for("bunny.test.migrationGate")] = async () => {
+    (globalThis as any)[Symbol.for("orm.test.migrationGate")] = async () => {
       arrivals++;
       if (arrivals === migrators.length) openGate();
       await gate;
@@ -77,7 +77,7 @@ export default class CreateWidgets extends Migration {
     try {
       await Promise.all(migrators.map((migrator) => migrator.run()));
     } finally {
-      delete (globalThis as any)[Symbol.for("bunny.test.migrationGate")];
+      delete (globalThis as any)[Symbol.for("orm.test.migrationGate")];
     }
 
     for (const connection of [first, second]) {

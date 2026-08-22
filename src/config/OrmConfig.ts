@@ -23,7 +23,7 @@ export interface ModelsPath {
   tenant?: string | string[];
 }
 
-export interface BunnyConfig {
+export interface OrmConfig {
   connection: ConnectionConfig;
   migrationsPath?: string | string[];
   seedersPath?: string | string[];
@@ -91,8 +91,8 @@ export interface BunnyConfig {
   search?: SearchConfig;
 }
 
-export interface ConfiguredBunny {
-  config: BunnyConfig;
+export interface ConfiguredOrm {
+  config: OrmConfig;
   connection: Connection;
   migrator(scope?: "landlord" | "tenant", overrides?: MigratorOptions): Migrator;
   seeder(): SeederRunner;
@@ -102,14 +102,14 @@ export interface ConfiguredBunny {
   seed(): Promise<void>;
 }
 
-function resolveMigrationPath(config: BunnyConfig, scope: "landlord" | "tenant"): string | string[] {
+function resolveMigrationPath(config: OrmConfig, scope: "landlord" | "tenant"): string | string[] {
   const grouped = config.migrations?.[scope];
   if (grouped) return grouped;
   if (config.migrationsPath) return config.migrationsPath;
   throw new Error(`No migration path configured for scope "${scope}".`);
 }
 
-export function configureBunny(config: BunnyConfig): ConfiguredBunny {
+export function configureOrm(config: OrmConfig): ConfiguredOrm {
   // Snapshot the previous default BEFORE we touch anything else, so we can
   // tear it down AFTER the new defaults are installed. Calling closeAll() up
   // front would synchronously clear defaultConnection and tenantResolver

@@ -1,10 +1,10 @@
 import { Command } from "../../commands/Command.js";
-import type { BunnyConfig } from "../../config/BunnyConfig.js";
+import type { OrmConfig } from "../../config/OrmConfig.js";
 import { Search } from "../SearchManager.js";
 import { resolveSearchableModel } from "./resolveSearchableModel.js";
 import { runWithTenant } from "./runWithTenant.js";
 
-export function makeSearchFtsRebuildCommand(config: BunnyConfig) {
+export function makeSearchFtsRebuildCommand(config: OrmConfig) {
   return class extends Command.define("search:fts:rebuild {model : Model class name} {--tenant= : Run under a tenant context}") {
     static description = "Run FTS rebuild to repopulate the index from the source content table.";
 

@@ -1,12 +1,12 @@
 /**
- * Renders the `bunny.config.ts` written by `bunny init`.
+ * Renders the `orm.config.ts` written by `orm init`.
  *
  * Every value that comes from a prompt is emitted with JSON.stringify rather
  * than interpolated: an answer containing a quote would break the generated
  * file, and one containing `${...}` would be evaluated as a template expression
  * the moment the config is imported.
  */
-export function buildBunnyConfigTemplate(opts: {
+export function buildOrmConfigTemplate(opts: {
   databaseUrl: string;
   migrationsPath: string;
   seedersPath: string;
@@ -19,9 +19,9 @@ export function buildBunnyConfigTemplate(opts: {
   commandsPath: string;
 }): string {
   const lines: string[] = [
-    `import type { BunnyConfig } from "@bunnykit/orm";`,
+    `import type { OrmConfig } from "@rekkr/orm";`,
     "",
-    "const config: BunnyConfig = {",
+    "const config: OrmConfig = {",
     "  connection: {",
     "    // Update this to your database URL.",
     '    // Examples: "sqlite://./database/app.db", "postgres://user:pass@localhost:5432/app"',
@@ -90,7 +90,7 @@ export function buildBunnyConfigTemplate(opts: {
     lines.push(
       "  cache: {",
       "    // Default is Redis cache store from Bun's Redis client.",
-      "    prefix: \"bunny:\",",
+      "    prefix: \"orm:\",",
       "    defaultTtl: 3600,",
       "  },",
     );

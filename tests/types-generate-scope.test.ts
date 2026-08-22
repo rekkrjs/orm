@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { Connection, Schema } from "../src/index.js";
 import { makeTypesGenerateCommand } from "../src/cli/TypesGenerateCommand.js";
-import type { BunnyConfig } from "../src/config/BunnyConfig.js";
+import type { OrmConfig } from "../src/config/OrmConfig.js";
 
 const cleanup: Array<() => Promise<void>> = [];
 
@@ -13,14 +13,14 @@ afterEach(async () => {
 });
 
 async function project(): Promise<{ root: string; models: string; out: string }> {
-  const root = await mkdtemp(join(tmpdir(), "bunny-typegen-"));
+  const root = await mkdtemp(join(tmpdir(), "orm-typegen-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
   const models = join(root, "models");
   const out = join(root, "out");
   await mkdir(models, { recursive: true });
   await writeFile(
     join(models, "Widget.ts"),
-    'import { Model } from "@bunnykit/orm";\nexport class Widget extends Model.define<{ id: number }>("widgets") {}\n',
+    'import { Model } from "@rekkr/orm";\nexport class Widget extends Model.define<{ id: number }>("widgets") {}\n',
   );
   return { root, models, out };
 }
@@ -34,7 +34,7 @@ async function connect(): Promise<Connection> {
 }
 
 /** Instantiate the command directly so handle() errors surface instead of being printed. */
-async function runHandle(config: BunnyConfig, connection: Connection, dir: string, options: Record<string, any> = {}) {
+async function runHandle(config: OrmConfig, connection: Connection, dir: string, options: Record<string, any> = {}) {
   const CommandClass = makeTypesGenerateCommand(config, connection) as any;
   const instance = new CommandClass();
   instance._parsedArgs = { dir };
@@ -50,7 +50,7 @@ describe("types:generate scope selection", () => {
     // No tenancy config at all — the documented default invocation for a
     // single-database project. This used to throw "requires resolveTenant()"
     // after the landlord files had already been written.
-    const config = { connection: { url: "sqlite://:memory:" }, modelsPath: models } as unknown as BunnyConfig;
+    const config = { connection: { url: "sqlite://:memory:" }, modelsPath: models } as unknown as OrmConfig;
     await expect(runHandle(config, connection, out)).resolves.toBeUndefined();
   });
 
@@ -58,7 +58,7 @@ describe("types:generate scope selection", () => {
     const { models, out } = await project();
     const connection = await connect();
 
-    const config = { connection: { url: "sqlite://:memory:" }, modelsPath: [models] } as unknown as BunnyConfig;
+    const config = { connection: { url: "sqlite://:memory:" }, modelsPath: [models] } as unknown as OrmConfig;
     await expect(runHandle(config, connection, out)).resolves.toBeUndefined();
   });
 
@@ -69,7 +69,7 @@ describe("types:generate scope selection", () => {
     const config = {
       connection: { url: "sqlite://:memory:" },
       modelsPath: { landlord: models, tenant: models },
-    } as unknown as BunnyConfig;
+    } as unknown as OrmConfig;
 
     await expect(runHandle(config, connection, out)).rejects.toThrow(/resolveTenant/);
   });
@@ -78,7 +78,7 @@ describe("types:generate scope selection", () => {
     const { models, out } = await project();
     const connection = await connect();
 
-    const config = { connection: { url: "sqlite://:memory:" }, modelsPath: models } as unknown as BunnyConfig;
+    const config = { connection: { url: "sqlite://:memory:" }, modelsPath: models } as unknown as OrmConfig;
     await expect(runHandle(config, connection, out, { tenant: "acme" })).rejects.toThrow(/resolveTenant/);
   });
 });

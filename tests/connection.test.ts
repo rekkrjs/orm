@@ -275,8 +275,8 @@ describe("Connection", () => {
     expect(calls).toEqual([
       "RESERVE",
       "BEGIN",
-      "SAVEPOINT bunny_trans_1",
-      "RELEASE SAVEPOINT bunny_trans_1",
+      "SAVEPOINT orm_trans_1",
+      "RELEASE SAVEPOINT orm_trans_1",
       "COMMIT",
       "RELEASE",
     ]);
@@ -304,7 +304,7 @@ describe("Connection", () => {
       await tx.commit();
     });
 
-    expect(calls).toEqual(["BEGIN_BLOCK", "SAVEPOINT bunny_trans_1", "RELEASE SAVEPOINT bunny_trans_1"]);
+    expect(calls).toEqual(["BEGIN_BLOCK", "SAVEPOINT orm_trans_1", "RELEASE SAVEPOINT orm_trans_1"]);
   });
 
   test("starts transactions directly on dedicated search_path connections", async () => {
