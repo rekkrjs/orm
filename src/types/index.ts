@@ -35,7 +35,7 @@ export interface ColumnDefinition {
   unique: boolean;
   index: boolean;
   unsigned: boolean;
-  values?: string[]; // for enum
+  values?: readonly string[];
   comment?: string;
   defaultUuid?: boolean;
   after?: string;

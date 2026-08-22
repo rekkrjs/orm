@@ -208,8 +208,32 @@ user.settings.theme;       // "dark" (parsed JSON)
 | `string` | Reads / writes as a string |
 | `date`, `datetime` | Reads as `Date`, stores ISO string from `Date` input |
 | `json`, `array`, `object` | Stores JSON string, reads parsed value |
-| `enum` | Stores `.value` of enum members |
 | `base64` | Base64-encoded on write, decoded on read. Encoding, not encryption |
+
+### Backed enum casts
+
+Use a backed enum descriptor when an attribute has a fixed set of string values:
+
+```ts
+import { Model, backedEnum, type EnumValue } from "@rekkr/orm";
+
+export const PublicationState = backedEnum({
+  Draft: "draft",
+  Published: "published",
+});
+
+export type PublicationState = EnumValue<typeof PublicationState>;
+
+class Article extends Model {
+  static casts = {
+    state: PublicationState,
+  };
+}
+```
+
+Descriptor constants are primitive strings. Reads, writes, bulk model operations,
+and hydration reject values outside the descriptor. The legacy `"enum"` string
+cast is not supported because it declares no allowed values.
 
 `decimal:N` deliberately returns a string. Pass exact database decimals as
 strings too (`"12345678901234567890.12"`): once a value has entered a JavaScript

@@ -143,13 +143,25 @@ values as strings inside JSON documents.
 |---|---|
 | `uuid(name)` | `UUID` (Postgres native, `CHAR(36)` elsewhere) |
 | `binary(name)` | `BLOB` / `BYTEA` |
-| `enum(name, ["a","b"])` | Native `ENUM` on MySQL/Postgres; `TEXT` + check elsewhere |
+| `enum(name, ["a","b"])` | Native `ENUM` on MySQL; `VARCHAR(255)` + `CHECK` on Postgres; `TEXT` + `CHECK` on SQLite |
 
 ```ts
 table.uuid("public_id").unique();
 table.uuid("id").primary(); // primary keys are indexed automatically
 table.enum("status", ["draft", "published", "archived"]).default("draft");
 ```
+
+Enum values must be unique strings between 1 and 255 characters, without NUL
+characters or trailing spaces. Defaults must be one of the declared values, or
+`null` on a nullable column. Changing an existing enum with `.change()` is
+rejected because no portable implementation exists across the supported
+databases.
+
+MySQL retains its native `ENUM` comparison rules; no binary collation is
+imposed. Model casts created with `backedEnum()` still validate exact strings.
+Enum members that require hexadecimal rendering use an `utf8mb4` column so
+backslashes and Unicode survive independently of the session SQL mode and
+database charset.
 
 Do not add `.index()` or `.unique()` to the same column when it is already the primary key. The database creates the primary-key index for:
 

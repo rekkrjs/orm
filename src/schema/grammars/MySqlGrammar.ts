@@ -1,8 +1,35 @@
 import { Grammar } from "./Grammar.js";
 import type { ColumnDefinition } from "../../types/index.js";
+import { SchemaRawExpression } from "../RawExpression.js";
 
 export class MySqlGrammar extends Grammar {
   protected wrappers = { prefix: "`", suffix: "`" };
+
+  private needsHexLiteral(value: string): boolean {
+    return /[\\\0\x1a]/.test(value);
+  }
+
+  private getStringLiteral(value: string, declareUtf8 = false): string {
+    if (this.needsHexLiteral(value)) {
+      const literal = `X'${Buffer.from(value, "utf8").toString("hex")}'`;
+      return declareUtf8 ? `_utf8mb4 ${literal}` : literal;
+    }
+    return super.getDefaultValue(value);
+  }
+
+  protected getColumnDefault(column: ColumnDefinition): string {
+    const json = column.type === "json" || column.type === "jsonb";
+    const value = json && column.default !== null &&
+      !(column.default instanceof SchemaRawExpression) && typeof column.default !== "string"
+      ? JSON.stringify(column.default)
+      : column.default;
+    if (typeof value === "string" && this.needsHexLiteral(value)) {
+      return json
+        ? `CONVERT(${this.getStringLiteral(value)} USING utf8mb4)`
+        : this.getStringLiteral(value, true);
+    }
+    return super.getColumnDefault(column);
+  }
 
   protected getType(column: ColumnDefinition): string {
     switch (column.type) {
@@ -48,8 +75,13 @@ export class MySqlGrammar extends Grammar {
         return "BLOB";
       case "uuid":
         return "CHAR(36)";
-      case "enum":
-        return `ENUM('${(column.values || []).join("','")}')`;
+      case "enum": {
+        const values = column.values!;
+        const type = `ENUM(${values.map((value) => this.getStringLiteral(value)).join(", ")})`;
+        return values.some((value) => this.needsHexLiteral(value))
+          ? `${type} CHARACTER SET utf8mb4`
+          : type;
+      }
       default:
         return "TEXT";
     }
@@ -88,6 +120,7 @@ export class MySqlGrammar extends Grammar {
   }
 
   compileAdd(blueprint: any, table: string): string[] {
+    blueprint.validate();
     return blueprint.columns.map((column: ColumnDefinition) => {
       let sql = `ALTER TABLE ${this.wrap(table)} ADD COLUMN ${this.getColumn(blueprint, column)}`;
       if (column.after) sql += ` AFTER ${this.wrap(column.after)}`;
@@ -105,6 +138,7 @@ export class MySqlGrammar extends Grammar {
   }
 
   compileChange(table: string, column: ColumnDefinition): string {
+    this.assertPortableChange(column);
     return `ALTER TABLE ${this.wrap(table)} MODIFY COLUMN ${this.getColumn({} as any, column)}`;
   }
 

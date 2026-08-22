@@ -206,6 +206,45 @@ describe.serial("MySQL native contracts", () => {
     expect(await Schema.hasForeignKey("mysql_contract_children", ["parent_id"], connection)).toBe(false);
   });
 
+  run("round-trips enum and default backslashes with NO_BACKSLASH_ESCAPES", async () => {
+    const connection = context.connection;
+    const [session] = await connection.query("SELECT @@SESSION.sql_mode AS sql_mode");
+    const [database] = await connection.query(
+      "SELECT default_character_set_name AS charset, default_collation_name AS collation " +
+        "FROM information_schema.schemata WHERE schema_name = DATABASE()",
+    );
+    if (!database) throw new Error("MySQL did not report the current database charset.");
+    Connection.assertSafeIdentifier(database.charset, "database charset");
+    Connection.assertSafeIdentifier(database.collation, "database collation");
+
+    try {
+      await connection.run(
+        `ALTER DATABASE \`${context.namespace}\` CHARACTER SET latin1 COLLATE latin1_swedish_ci`,
+      );
+      await connection.run("SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'");
+      await Schema.create("mysql_enum_paths", (table) => {
+        table.id();
+        table.enum("value", ["é\\path", "x\\' OR 1=1 #"]).default("é\\path");
+        table.string("path").default("é\\path");
+        table.json("payload").default({ path: "é\\b" });
+      }, connection);
+
+      await connection.run("INSERT INTO `mysql_enum_paths` (`value`) VALUES (?)", ["x\\' OR 1=1 #"]);
+      await connection.run("INSERT INTO `mysql_enum_paths` (`id`) VALUES (?)", [2]);
+
+      expect(await connection.query("SELECT `value`, `path`, `payload` FROM `mysql_enum_paths` ORDER BY `id`"))
+        .toEqual([
+          { value: "x\\' OR 1=1 #", path: "é\\path", payload: { path: "é\\b" } },
+          { value: "é\\path", path: "é\\path", payload: { path: "é\\b" } },
+        ]);
+    } finally {
+      await connection.run("SET SESSION sql_mode = ?", [session?.sql_mode ?? ""]);
+      await connection.run(
+        `ALTER DATABASE \`${context.namespace}\` CHARACTER SET ${database.charset} COLLATE ${database.collation}`,
+      );
+    }
+  });
+
   run("paginates stable duplicate sort keys and serializes concurrent upserts", async () => {
     const connection = context.connection;
     await Schema.create("mysql_page_items", (table) => {

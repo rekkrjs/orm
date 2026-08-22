@@ -46,6 +46,7 @@ export abstract class Grammar {
   }
 
   protected getColumns(blueprint: Blueprint): string[] {
+    blueprint.validate();
     return blueprint.columns.map((col) => this.getColumn(blueprint, col));
   }
 
@@ -113,6 +114,21 @@ export abstract class Grammar {
       ? JSON.stringify(column.default)
       : column.default;
     return this.getDefaultValue(value);
+  }
+
+  protected compileEnumCheck(column: ColumnDefinition): string {
+    if (column.type !== "enum") return "";
+    const values = column.values!.map((value) => this.getDefaultValue(value)).join(", ");
+    return ` CHECK (${this.wrap(column.name)} IN (${values}))`;
+  }
+
+  protected assertPortableChange(column: ColumnDefinition): void {
+    if (column.type === "enum") {
+      throw new Error(
+        `Changing enum column "${column.name}" is not supported portably. ` +
+          "Use an explicit driver-supported schema operation in a new migration.",
+      );
+    }
   }
 
   compileIndexes(blueprint: Blueprint, table: string): string[] {

@@ -79,6 +79,7 @@ export class PostgresGrammar extends Grammar {
     else if (column.default !== undefined) sql += ` DEFAULT ${this.getColumnDefault(column)}`;
     if (column.autoIncrement) sql += this.modifyAutoIncrement(column);
     if (column.primary) sql += " PRIMARY KEY";
+    sql += this.compileEnumCheck(column);
     return sql;
   }
 
@@ -91,6 +92,7 @@ export class PostgresGrammar extends Grammar {
   }
 
   compileChange(table: string, column: ColumnDefinition): string[] {
+    this.assertPortableChange(column);
     const statements = [
       `ALTER TABLE ${this.wrap(table)} ALTER COLUMN ${this.wrap(column.name)} TYPE ${this.getType(column)}`,
       `ALTER TABLE ${this.wrap(table)} ALTER COLUMN ${this.wrap(column.name)} ${column.nullable ? "DROP" : "SET"} NOT NULL`,

@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.0 - 2026-08-22
+
+### Added
+
+- Added immutable `backedEnum()` descriptors and the `BackedEnumDefinition` and
+  `EnumValue` types for validated string-backed model attributes.
+- Enum columns now emit enforced `CHECK` constraints on SQLite and PostgreSQL;
+  MySQL continues to use its native `ENUM` type with safely rendered values.
+
+### Changed
+
+- **Breaking:** The legacy `"enum"` string cast is no longer accepted because it
+  declares no allowed values. Use a `backedEnum({...})` descriptor directly in
+  `static casts`.
+- Enum schema definitions reject invalid values, unrepresentable portable
+  members, and defaults; `.change()` is explicitly unsupported until a portable
+  alteration strategy exists.
+
 ## 1.0.0 - 2026-08-22
 
 ### Changed

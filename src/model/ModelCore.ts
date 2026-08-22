@@ -24,6 +24,12 @@ import type {
 } from "./ModelBase.js";
 import { formatDecimal, snakeCase } from "../utils.js";
 import { MassAssignmentError } from "./MassAssignmentError.js";
+import {
+  assertBackedEnumValue as assertEnumValue,
+  assertDeclaredEnumCast,
+  isBackedEnumDefinition,
+  type BackedEnumDefinition,
+} from "./BackedEnum.js";
 
 /**
  * The old `encrypted` cast only Base64-encoded values, so it read as a security
@@ -473,16 +479,21 @@ export class ModelCore<T extends Record<string, any> = any> {
   getAttribute<K extends keyof T>(key: K): T[K];
   getAttribute(key: string): any;
   getAttribute(key: string | keyof T): any {
+    const cast = this.getCastDefinition(key as string);
+    const value = (this.$attributes as any)[key];
+    const backedEnum = isBackedEnumDefinition(cast);
+    if (backedEnum && Object.hasOwn(this.$attributes, key) && value !== null) {
+      this.assertBackedEnumValue(key as string, value, cast);
+    }
     const accessors = (Object.getPrototypeOf(this).constructor as any).accessors || {};
     if (key in accessors && accessors[key as string].get) {
-      return accessors[key as string].get!((this.$attributes as any)[key], this.$attributes as any, this);
+      return accessors[key as string].get!(value, this.$attributes as any, this);
     }
-    if (Object.prototype.hasOwnProperty.call(this.$castCache, key as string)) {
+    if (!backedEnum && Object.prototype.hasOwnProperty.call(this.$castCache, key as string)) {
       return this.$castCache[key as string];
     }
-    const value = (this.$attributes as any)[key];
-    const casted = this.castAttribute(key as string, value);
-    if (this.getCastDefinition(key as string) && value !== null && value !== undefined) {
+    const casted = backedEnum ? value : this.castAttribute(key as string, value);
+    if (cast && !backedEnum && value !== null && value !== undefined) {
       this.$castCache[key as string] = casted;
     }
     return casted;
@@ -491,13 +502,15 @@ export class ModelCore<T extends Record<string, any> = any> {
   setAttribute<K extends keyof T>(key: K, value: T[K]): void;
   setAttribute(key: string, value: any): void;
   setAttribute(key: string | keyof T, value: any): void {
+    this.validateBackedEnumAttribute(key as string, value);
     const accessors = (Object.getPrototypeOf(this).constructor as any).accessors || {};
+    let serialized: any;
     if (key in accessors && accessors[key as string].set) {
-      (this.$attributes as any)[key] = accessors[key as string].set!(value, this.$attributes as any, this);
-      delete this.$castCache[key as string];
-      return;
+      serialized = accessors[key as string].set!(value, this.$attributes as any, this);
+      this.validateBackedEnumAttribute(key as string, serialized);
+    } else {
+      serialized = this.serializeCastAttribute(key as string, value);
     }
-    const serialized = this.serializeCastAttribute(key as string, value);
     const original = (this.$original as any)[key];
     if (original !== serialized) {
       (this.$dirtyKeys ??= new Set()).add(key as string);
@@ -510,7 +523,14 @@ export class ModelCore<T extends Record<string, any> = any> {
 
   castAttribute(key: string, value: any): any {
     const cast = this.getCastDefinition(key);
-    if (!cast || value === null || value === undefined) return value;
+    if (!cast) return value;
+    if (value === null) return value;
+    if (isBackedEnumDefinition(cast)) {
+      if (value === undefined && !Object.hasOwn(this.$attributes, key)) return value;
+      this.assertBackedEnumValue(key, value, cast);
+      return value;
+    }
+    if (value === undefined) return value;
     const custom = this.resolveCustomCast(cast);
     if (custom) return custom.get(this, key, value, this.$attributes);
     const [type, argument] = String(cast).split(":");
@@ -539,8 +559,6 @@ export class ModelCore<T extends Record<string, any> = any> {
         return typeof value === "string" ? JSON.parse(value) : value;
       case "object":
         return typeof value === "string" ? JSON.parse(value) : value;
-      case "enum":
-        return value;
       case "base64":
         return typeof value === "string" ? Buffer.from(value, "base64").toString("utf8") : value;
       case "encrypted":
@@ -552,7 +570,13 @@ export class ModelCore<T extends Record<string, any> = any> {
 
   serializeCastAttribute(key: string, value: any): any {
     const cast = this.getCastDefinition(key);
-    if (!cast || value === null || value === undefined) return value;
+    if (!cast) return value;
+    if (value === null) return value;
+    if (isBackedEnumDefinition(cast)) {
+      this.assertBackedEnumValue(key, value, cast);
+      return value;
+    }
+    if (value === undefined) return value;
     const custom = this.resolveCustomCast(cast);
     if (custom) return custom.set(this, key, value, this.$attributes);
     const [type, argument] = String(cast).split(":");
@@ -578,8 +602,6 @@ export class ModelCore<T extends Record<string, any> = any> {
       case "array":
       case "object":
         return typeof value === "string" ? value : JSON.stringify(value);
-      case "enum":
-        return typeof value === "object" && "value" in value ? value.value : value;
       case "base64":
         return Buffer.from(String(value), "utf8").toString("base64");
       case "encrypted":
@@ -598,14 +620,45 @@ export class ModelCore<T extends Record<string, any> = any> {
   }
 
   protected getCastDefinition(key: string): CastDefinition | undefined {
-    return this.$mergedCasts[key];
+    const cast = this.$mergedCasts[key];
+    assertDeclaredEnumCast(cast);
+    return cast;
   }
 
   protected resolveCustomCast(cast: CastDefinition): CastsAttributes | null {
     if (typeof cast === "string") return null;
+    if (isBackedEnumDefinition(cast)) return null;
     if (typeof cast === "function") return new cast();
     if (typeof cast.get === "function" && typeof cast.set === "function") return cast;
     return null;
+  }
+
+  protected validateBackedEnumAttribute(key: string, value: unknown): void {
+    const cast = this.getCastDefinition(key);
+    if (isBackedEnumDefinition(cast) && value !== null) {
+      this.assertBackedEnumValue(key, value, cast);
+    }
+  }
+
+  protected validateBackedEnumAttributes(
+    attributes: Record<string, unknown> = this.$attributes,
+  ): void {
+    for (const [key, cast] of Object.entries(this.$mergedCasts)) {
+      if (!Object.hasOwn(attributes, key)) continue;
+      assertDeclaredEnumCast(cast);
+      const value = attributes[key];
+      if (isBackedEnumDefinition(cast) && value !== null) {
+        this.assertBackedEnumValue(key, value, cast);
+      }
+    }
+  }
+
+  protected assertBackedEnumValue(
+    key: string,
+    value: unknown,
+    definition: BackedEnumDefinition,
+  ): asserts value is string {
+    assertEnumValue(definition, value, this.getModelConstructor().name, key);
   }
 
   /**

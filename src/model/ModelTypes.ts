@@ -1,5 +1,6 @@
 import type { Connection } from "../connection/Connection.js";
 import type { Builder } from "../query/Builder.js";
+import type { BackedEnumDefinition } from "./BackedEnum.js";
 
 export type ModelConstructor<T = any> = (new (...args: any[]) => T) & Omit<any, "prototype">;
 export type GlobalScope = (builder: Builder<any>, model: ModelConstructor) => void;
@@ -158,6 +159,7 @@ export interface SaveOptions {
 
 export type CastDefinition =
   | string
+  | BackedEnumDefinition
   | CastsAttributes
   | (new (...args: any[]) => CastsAttributes);
 

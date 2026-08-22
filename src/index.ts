@@ -54,6 +54,9 @@ export type {
 } from "./model/Model.js";
 export { ModelNotFoundError } from "./model/ModelNotFoundError.js";
 export { MassAssignmentError } from "./model/MassAssignmentError.js";
+export { backedEnum } from "./model/BackedEnum.js";
+export type { BackedEnumDefinition, EnumValue } from "./model/BackedEnum.js";
+export { InvalidEnumValueError } from "./model/InvalidEnumValueError.js";
 export { Observer, ObserverRegistry, type ObserverContract } from "./model/Observer.js";
 export { MorphMap } from "./model/MorphMap.js";
 export { MorphTo, MorphOne, MorphMany, MorphToMany } from "./model/MorphRelations.js";

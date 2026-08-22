@@ -60,6 +60,7 @@ export class SQLiteGrammar extends Grammar {
     if (!column.nullable) sql += " NOT NULL";
     if (column.defaultUuid) sql += this.modifyDefaultUuid(column);
     else if (column.default !== undefined) sql += ` DEFAULT ${this.getColumnDefault(column)}`;
+    sql += this.compileEnumCheck(column);
     return sql;
   }
 
@@ -72,7 +73,8 @@ export class SQLiteGrammar extends Grammar {
     return columns.map((col) => `ALTER TABLE ${this.wrap(table)} DROP COLUMN ${this.wrap(col)}`);
   }
 
-  compileChange(_table: string, _column: ColumnDefinition): string | string[] {
+  compileChange(_table: string, column: ColumnDefinition): string | string[] {
+    this.assertPortableChange(column);
     throw new Error("Changing existing columns is not supported by the SQLite grammar.");
   }
 

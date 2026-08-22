@@ -8,6 +8,11 @@ import { findRelationMethod, HasMany, Model as BaseModel } from "../model/Model.
 import { ObserverRegistry } from "../model/Observer.js";
 import { ModelNotFoundError } from "../model/ModelNotFoundError.js";
 import { IdentityMap } from "../model/IdentityMap.js";
+import {
+  assertBackedEnumValue,
+  assertDeclaredEnumCast,
+  isBackedEnumDefinition,
+} from "../model/BackedEnum.js";
 import { Collection, type CollectionJson } from "../support/Collection.js";
 
 /**
@@ -2646,7 +2651,34 @@ export class Builder<T = Record<string, any>, TResult = T> {
     ) as ModelAttributeInput<T>;
   }
 
+  private validateModelBackedEnums(record: ModelAttributeInput<T>): void {
+    const model = this.model as any;
+    if (!model) return;
+
+    for (const [attribute, cast] of Object.entries(model.casts ?? {})) {
+      if (!Object.hasOwn(record, attribute)) continue;
+      assertDeclaredEnumCast(cast);
+      if (!isBackedEnumDefinition(cast)) continue;
+      const value = (record as any)[attribute];
+      if (value !== null) assertBackedEnumValue(cast, value, model.name, attribute);
+    }
+  }
+
+  private validateModelBackedEnumIncrement(column: ModelColumn<T>, amount: number): void {
+    const model = this.model as any;
+    if (!model) return;
+
+    const attribute = resultFieldFor(String(column));
+    const cast = model.casts?.[attribute];
+    assertDeclaredEnumCast(cast);
+    if (isBackedEnumDefinition(cast)) {
+      assertBackedEnumValue(cast, amount, model.name, attribute);
+    }
+  }
+
   private definedRecords(data: ModelAttributeInput<T> | ModelAttributeInput<T>[]): ModelAttributeInput<T>[] {
+    const records = Array.isArray(data) ? data : [data];
+    for (const record of records) this.validateModelBackedEnums(record);
     const serialized = this.serializeDriverValues(data);
     return (Array.isArray(serialized) ? serialized : [serialized]).map((record) => this.definedRecord(record));
   }
@@ -2935,6 +2967,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
     if (typeof amount !== "number" || !Number.isFinite(amount)) {
       throw new Error("Increment amount must be a finite number.");
     }
+    this.validateModelBackedEnumIncrement(column, amount);
     extra = this.definedRecords(extra)[0]!;
     const limited = this.limitValue !== undefined;
     if (limited && !this.model) {

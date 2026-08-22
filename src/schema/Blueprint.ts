@@ -24,6 +24,14 @@ function referentialAction(action: string): ReferentialAction {
   return normalized;
 }
 
+function describeSchemaValue(value: unknown): string {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (value === null) return "NULL";
+  const type = typeof value;
+  const article = type === "object" || type === "undefined" ? "an" : "a";
+  return `${article} ${type} value`;
+}
+
 export class ForeignKeyBuilder {
   fk: ForeignKeyDefinition;
   blueprint: Blueprint;
@@ -240,9 +248,10 @@ export class Blueprint {
     return this.uuid(name);
   }
 
-  enum(name: string, values: string[]): this {
+  enum(name: string, values: readonly string[]): this {
+    const validated = this.validateEnumValues(name, values);
     this.addColumn("enum", name);
-    this.currentColumn!.values = values;
+    this.currentColumn!.values = validated;
     return this;
   }
 
@@ -252,12 +261,22 @@ export class Blueprint {
   }
 
   default(value: any): this {
-    if (this.currentColumn) this.currentColumn.default = value;
+    if (this.currentColumn) {
+      if (this.currentColumn.type === "enum" && value !== null && value !== undefined) {
+        this.validateEnumDefault(this.currentColumn, value);
+      }
+      this.currentColumn.default = value;
+    }
     return this;
   }
 
   defaultUuid(): this {
-    if (this.currentColumn) this.currentColumn.defaultUuid = true;
+    if (this.currentColumn) {
+      if (this.currentColumn.type === "enum") {
+        throw this.invalidEnumUuidDefault(this.currentColumn);
+      }
+      this.currentColumn.defaultUuid = true;
+    }
     return this;
   }
 
@@ -338,10 +357,87 @@ export class Blueprint {
     if (!this.currentColumn) {
       throw new Error("change() must be called after a column definition.");
     }
+    if (this.currentColumn.type === "enum") {
+      throw new Error(
+        `Changing enum column "${this.table}.${this.currentColumn.name}" is not supported portably. ` +
+          "Use an explicit driver-supported schema operation in a new migration.",
+      );
+    }
     this.commands.push({
       name: "change",
       parameters: { column: this.currentColumn },
     });
+  }
+
+  validate(): void {
+    for (const column of this.columns) {
+      if (column.type !== "enum") continue;
+      this.validateEnumValues(column.name, column.values);
+      if (column.defaultUuid) throw this.invalidEnumUuidDefault(column);
+      if (column.default === undefined) continue;
+      if (column.default === null) {
+        if (!column.nullable) {
+          throw new Error(
+            `Invalid enum default for "${this.table}.${column.name}": NULL requires a nullable column.`,
+          );
+        }
+        continue;
+      }
+      this.validateEnumDefault(column, column.default);
+    }
+  }
+
+  private validateEnumValues(name: string, values: unknown): readonly string[] {
+    const location = `"${this.table}.${name}"`;
+    if (!Array.isArray(values) || values.length === 0) {
+      throw new Error(`Enum column ${location} requires at least one value.`);
+    }
+
+    const seen = new Set<string>();
+    for (const value of values) {
+      if (typeof value !== "string") {
+        throw new Error(`Enum column ${location} values must all be strings.`);
+      }
+      if (value.length === 0) {
+        throw new Error(`Enum column ${location} must not contain an empty value.`);
+      }
+      if ([...value].length > 255) {
+        throw new Error(`Enum column ${location} values must not exceed 255 characters.`);
+      }
+      if (value.includes("\0")) {
+        throw new Error(
+          `Enum column ${location} must not contain NUL characters because PostgreSQL text cannot store them.`,
+        );
+      }
+      if (value.endsWith(" ")) {
+        throw new Error(
+          `Enum column ${location} must not contain a value with trailing spaces because MySQL removes them.`,
+        );
+      }
+      if (seen.has(value)) {
+        throw new Error(`Enum column ${location} contains duplicate value ${JSON.stringify(value)}.`);
+      }
+      seen.add(value);
+    }
+    return Object.freeze([...values]);
+  }
+
+  private validateEnumDefault(column: ColumnDefinition, value: unknown): void {
+    const values = this.validateEnumValues(column.name, column.values);
+    if (typeof value !== "string" || !values.includes(value)) {
+      throw new Error(
+        `Invalid enum default for "${this.table}.${column.name}": ${describeSchemaValue(value)} ` +
+          `is not one of ${values.map((item) => JSON.stringify(item)).join(", ")}.`,
+      );
+    }
+  }
+
+  private invalidEnumUuidDefault(column: ColumnDefinition): Error {
+    const values = this.validateEnumValues(column.name, column.values);
+    return new Error(
+      `Invalid enum default for "${this.table}.${column.name}": generated UUIDs are not declared enum values. ` +
+        `Use one of ${values.map((item) => JSON.stringify(item)).join(", ")}.`,
+    );
   }
 
   timestamps(): void;

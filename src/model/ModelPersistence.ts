@@ -15,6 +15,7 @@ import { ModelCore } from "./ModelCore.js";
 import { isNumericColumnType, shouldGeneratePrimaryKeyForColumn } from "../utils.js";
 import type { Connection } from "../connection/Connection.js";
 import { insertAndResolveKey, type PrimaryKeyColumn } from "./PrimaryKeyResolution.js";
+import { isBackedEnumDefinition } from "./BackedEnum.js";
 
 type TimestampColumns = { createdAt: string; updatedAt: string };
 
@@ -87,6 +88,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     let attributes: Record<string, any>;
     if (options.trusted) {
       attributes = { ...record };
+      instance.validateBackedEnumAttributes(attributes);
     } else {
       instance.fill(record as any);
       attributes = { ...(instance.$attributes as Record<string, any>) };
@@ -134,6 +136,12 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     const instance = new this() as InstanceType<M>;
     const hydrated = { ...row };
     for (const [key, cast] of Object.entries(instance.$mergedCasts)) {
+      if (isBackedEnumDefinition(cast)) {
+        if (Object.hasOwn(hydrated, key)) {
+          instance.validateBackedEnumAttribute(key, hydrated[key]);
+        }
+        continue;
+      }
       if (typeof cast !== "string") continue;
       const separator = cast.indexOf(":");
       const type = separator === -1 ? cast : cast.slice(0, separator);
@@ -294,6 +302,10 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       return models;
     }
 
+    for (const model of models) {
+      model.validateBackedEnumAttributes();
+    }
+
     const timestampColumns = this.timestamps
       ? (this as any).getTimestampColumns() as TimestampColumns
       : null;
@@ -450,6 +462,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     if (this.$exists) {
       this.$wasRecentlyCreated = false;
       if (events) await ObserverRegistry.dispatch("saving", this as any);
+      this.validateBackedEnumAttributes();
 
       let dirty = this.getDirty();
       Object.assign(this.$attributes, dirty);
@@ -486,6 +499,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     } else {
       if (events) await ObserverRegistry.dispatch("creating", this as any);
       if (events) await ObserverRegistry.dispatch("saving", this as any);
+      this.validateBackedEnumAttributes();
 
       if (constructor.timestamps) {
         const { createdAt, updatedAt } = constructor.getTimestampColumns();
@@ -606,8 +620,12 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       extra = { ...extra, [updatedAt]: this.freshTimestamp() };
     }
 
+    this.validateBackedEnumAttribute(column, amount);
+    this.validateBackedEnumAttributes(extra);
+    const incrementedValue = ((this.$attributes as any)[column] || 0) + amount;
+
     await builder.increment(column, amount, extra);
-    (this.$attributes as any)[column] = ((this.$attributes as any)[column] || 0) + amount;
+    (this.$attributes as any)[column] = incrementedValue;
     delete this.$castCache[column as string];
     for (const [key, value] of Object.entries(extra)) {
       (this.$attributes as any)[key] = value;

@@ -45,6 +45,10 @@ import { Builder } from "../query/Builder.js";
 import { Collection } from "../support/Collection.js";
 import type { Factory } from "../seeding/Factory.js";
 
+export { backedEnum } from "./BackedEnum.js";
+export type { BackedEnumDefinition, EnumValue } from "./BackedEnum.js";
+export { InvalidEnumValueError } from "./InvalidEnumValueError.js";
+
 // Re-export types from ModelTypes
 export type {
   ModelConstructor,
