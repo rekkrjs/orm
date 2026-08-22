@@ -427,6 +427,8 @@ const all = await User.all();                                  // Collection<Use
 const count = await User.count();
 const found = await User.find(1);                              // null if missing
 const first = await User.first();
+const firstOrGuest = await User.firstOr(() => guestUser);
+const foundOrGuest = await User.findOr(1, () => guestUser);
 const many = await User.findMany([1, 2, 3]);
 const admin = await User.firstWhere("role", "admin");
 
@@ -436,6 +438,7 @@ const others = await User.whereKeyNot(1).get();
 // Throw-on-miss
 const user = await User.findOrFail(1);
 const first = await User.firstOrFail();
+const email = await User.where("id", 1).valueOrFail("email");
 ```
 
 ### Create
@@ -473,10 +476,15 @@ user.setAttribute("name", "Dana");
 ### Delete
 
 ```ts
-await user.delete();
-await user.refresh();   // reload current state from DB
+const freshUser = await user.fresh(); // new instance or null; user is unchanged
+await user.refresh();   // reload current state or throw ModelNotFoundError
 await user.touch();     // update only the timestamp columns
+await user.delete();
 ```
+
+`fresh()` and `refresh()` reload the same primary key on the model's current
+connection without applying global scopes. This lets an already-hydrated model
+reload itself after a soft delete; it does not expose unrelated rows.
 
 ### `firstOrNew` / `firstOrCreate` / `updateOrInsert`
 
@@ -637,18 +645,19 @@ user.wasChanged("email"); // false
 user.getChanges();        // { name: "Updated" }
 ```
 
-### `isDirty` / `getDirty`
+### `isDirty` / `isClean` / `getDirty`
 
 In-memory attributes that haven't been saved yet:
 
 ```ts
 user.setAttribute("name", "Pending");
 user.isDirty();           // true
-user.isDirty("name");     // true
+user.isClean();           // false
 user.getDirty();          // { name: "Pending" }
 
 await user.save();
 user.isDirty();           // false
+user.isClean();           // true
 ```
 
 ### `is` / `isNot`
@@ -775,8 +784,12 @@ await user.forceDelete();    // permanently removes the row
 
 await User.all();                       // excludes trashed
 await User.withTrashed().get();         // includes trashed
+await User.withTrashed().withoutTrashed().get(); // excludes them again
 await User.onlyTrashed().get();         // only trashed
 await User.onlyTrashed().restore();     // restore everything trashed
+
+await User.where("inactive", true).delete();          // bulk soft delete
+await User.onlyTrashed().where("inactive", true).forceDelete(); // bulk permanent delete
 ```
 
 ## Scopes
@@ -845,9 +858,10 @@ Useful for cache invalidation patterns where the parent's timestamp drives view 
 
 - **Accessors without typing widen to `any`.** Annotate `static accessors` with `AccessorMap<TAttrs, TModel>` to get full IntelliSense.
 - **Mass assignment surprises.** Adding a new column doesn't automatically expose it through `create()` if you set `static fillable`. Update the allow list when you add new fields.
-- **`update()` on the builder skips events.** `User.where(...).update(...)` does not fire observers, set timestamps, or apply soft deletes. For events / hooks, fetch the instance and call `instance.save()` or `instance.update()`.
+- **Builder updates skip per-instance before-hooks and timestamps.** Registered observers still receive `updated`/`saved` after `User.where(...).update(...)`; fetch the instance and call `instance.save()` or `instance.update()` when `updating`/`saving` hooks or automatic timestamps matter.
 - **`delete()` without soft deletes is permanent.** If you intended a soft delete, set `static softDeletes = true` and add a `deleted_at` column.
-- **`refresh()` is per-instance.** It re-fetches the current row but does not reload related models. Use `Collection.loadMissing()` or `with()` on the next query for that.
+- **`fresh()` and `refresh()` differ.** `fresh()` returns a new instance (or `null`) without changing the current object; `refresh()` mutates the current instance and throws `ModelNotFoundError` if its row no longer exists. Both reload without global scopes.
+- **Relation loading is explicit.** Use `model.loadMissing()` or `Collection.loadMissing()` to load only relations that are still absent, or `with()` on the next query.
 
 ## Where to next
 

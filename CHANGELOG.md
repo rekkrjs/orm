@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Model-backed builders expose `forceDelete()` for explicit permanent bulk
+  deletion and `withoutTrashed()` for restoring the default soft-delete scope.
+- Builders expose `firstOr()`, `findOr()`, and `valueOrFail()` retrieval
+  terminators. Model statics proxy the applicable methods, callbacks may be
+  synchronous or asynchronous, and `valueOrFail()` preserves a nullable value
+  when the row itself exists.
+- Builders and models expose `average()` as an alias of `avg()`.
+- Model instances expose `fresh()`, `isClean()`, and `loadMissing()` for
+  non-mutating reloads, clean-state checks, and selective relation loading.
+- Builders and models expose `orDoesntHave()`, `orWhereDoesntHave()`, and
+  `whereMorphRelation()` for symmetric negative and polymorphic relation
+  filters.
+
+### Fixed
+
+- `delete()` on a model-backed builder now updates `deleted_at` when the model
+  uses soft deletes. Raw builders and models without soft deletes continue to
+  issue a physical `DELETE`; limited soft deletes affect only the selected
+  primary keys, and soft builder deletion dispatches `deleted` without
+  incorrectly dispatching update events.
+- Builder `update()`, `increment()`, `decrement()`, `upsert()`, `delete()`, and
+  `forceDelete()` invalidate affected Identity Map entries. Model persistence
+  now keys entries by physical connection and qualified table consistently.
+- Model-backed limited updates and increments modify only the selected primary
+  keys; limited deletes remove the same ordered rows selected for observers,
+  and limited soft deletes qualify their key when joins are present.
+- Builder update observers reload affected rows without global scopes and on
+  the builder's connection, including rows that leave a scope after the write.
+- Chaining `onlyTrashed()` with `withoutTrashed()`, `withTrashed()`, or itself no
+  longer leaves contradictory or duplicate `deleted_at` predicates.
+- Model proxies no longer mistake inherited object properties for loaded
+  relations, preserving `constructor`, `toString()`, and the model prototype.
+- `Collection.loadMissing()` groups mixed model collections by constructor, so
+  each model class resolves and eager-loads its own relation.
+- `refresh()` reloads without global scopes and throws when its row is missing;
+  `fresh()` keeps the original instance canonical inside an Identity Map.
+- Bulk `deleted` observer placeholders remain existing models after a soft
+  delete, while force-deleted placeholders are marked as non-existing.
+
 ## 0.12.2 - 2026-08-22
 
 ### Added

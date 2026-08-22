@@ -262,11 +262,28 @@ export class Collection<T = any> extends Array<T> {
     if (models.length === 0) return this;
 
     for (const relation of relations.flat()) {
-      const missing = models.filter((m: any) => m.getRelation(relation) === undefined);
-      if (missing.length === 0) continue;
-      const constructor = Object.getPrototypeOf(missing[0]).constructor;
-      if (typeof constructor.eagerLoadRelations === "function") {
-        await constructor.eagerLoadRelations(missing, [relation]);
+      const [direct, ...nested] = relation.split(".");
+      const missing = models.filter((m: any) => m.getRelation(direct) === undefined);
+      const groups = new Map<any, any[]>();
+      for (const model of missing) {
+        const constructor = Object.getPrototypeOf(model).constructor;
+        const group = groups.get(constructor);
+        group ? group.push(model) : groups.set(constructor, [model]);
+      }
+      for (const [constructor, group] of groups) {
+        if (typeof constructor.eagerLoadRelations === "function") {
+          await constructor.eagerLoadRelations(group, [direct]);
+        }
+      }
+
+      if (nested.length > 0) {
+        const related: any[] = [];
+        for (const model of models) {
+          const value = model.getRelation(direct);
+          if (Array.isArray(value)) related.push(...value);
+          else if (value) related.push(value);
+        }
+        await Collection.make(related).loadMissing(nested.join("."));
       }
     }
     return this;

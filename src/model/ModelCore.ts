@@ -694,6 +694,10 @@ export class ModelCore<T extends Record<string, any> = any> {
     return Object.keys(this.getDirty()).length > 0;
   }
 
+  isClean(): boolean {
+    return !this.isDirty();
+  }
+
   wasChanged(key?: string): boolean {
     if (key !== undefined) return key in this.$changes;
     return Object.keys(this.$changes).length > 0;

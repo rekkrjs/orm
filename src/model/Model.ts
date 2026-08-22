@@ -307,10 +307,22 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
     return (this as any).query().doesntHave(relationName as any);
   }
 
+  static orDoesntHave<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R): Builder<InstanceType<M>>;
+  static orDoesntHave<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>): Builder<InstanceType<M>>;
+  static orDoesntHave<M extends ModelConstructor>(this: M, relationName: string): Builder<InstanceType<M>> {
+    return (this as any).query().orDoesntHave(relationName as any);
+  }
+
   static whereDoesntHave<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, callback?: (query: RelationConstraintQuery<InstanceType<M>, R>) => void | Builder<any>): Builder<InstanceType<M>>;
   static whereDoesntHave<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, callback?: (query: Builder<any>) => void | Builder<any>): Builder<InstanceType<M>>;
   static whereDoesntHave<M extends ModelConstructor>(this: M, relationName: string, callback?: (query: Builder<any>) => void | Builder<any>): Builder<InstanceType<M>> {
     return (this as any).query().whereDoesntHave(relationName as any, callback as any);
+  }
+
+  static orWhereDoesntHave<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, callback?: (query: RelationConstraintQuery<InstanceType<M>, R>) => void | Builder<any>): Builder<InstanceType<M>>;
+  static orWhereDoesntHave<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, callback?: (query: Builder<any>) => void | Builder<any>): Builder<InstanceType<M>>;
+  static orWhereDoesntHave<M extends ModelConstructor>(this: M, relationName: string, callback?: (query: Builder<any>) => void | Builder<any>): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereDoesntHave(relationName as any, callback as any);
   }
 
   static whereHasMorph<M extends ModelConstructor, R extends string & MorphToRelationName<InstanceType<M>>>(this: M, relationName: R, types: string | string[] | ModelConstructor | ModelConstructor[], callback?: EagerLoadConstraint, operator?: string, count?: number): Builder<InstanceType<M>>;
@@ -323,6 +335,11 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
   static whereDoesntHaveMorph<M extends ModelConstructor>(this: M, relationName: string, types: string | string[] | ModelConstructor | ModelConstructor[], callback?: EagerLoadConstraint): Builder<InstanceType<M>>;
   static whereDoesntHaveMorph<M extends ModelConstructor>(this: M, relationName: string, types: string | string[] | ModelConstructor | ModelConstructor[], callback?: EagerLoadConstraint): Builder<InstanceType<M>> {
     return (this as any).query().whereDoesntHaveMorph(relationName as any, types as any, callback as any);
+  }
+
+  static whereMorphRelation<M extends ModelConstructor, R extends string & MorphToRelationName<InstanceType<M>>>(this: M, relationName: R, types: string | string[] | ModelConstructor | ModelConstructor[], column: ModelColumn<RelationRelatedModel<InstanceType<M>, R>>, operator: any, value?: any): Builder<InstanceType<M>>;
+  static whereMorphRelation<M extends ModelConstructor>(this: M, relationName: string, types: string | string[] | ModelConstructor | ModelConstructor[], column: string, operator: any, value?: any): Builder<InstanceType<M>> {
+    return (this as any).query().whereMorphRelation(relationName as any, types as any, column, operator, value);
   }
 
   static with<M extends ModelConstructor, Rs extends ReadonlyArray<TypedEagerLoad<InstanceType<M>>>>(this: M, relations: Rs): Builder<InstanceType<M>, WithLoadedRelations<InstanceType<M>, ExtractStringPaths<Rs[number]>>>;
@@ -407,6 +424,14 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
   async load(...relations: (EagerLoadInput | EagerLoadInput[])[]): Promise<this> {
     const constructor = this.getModelConstructor() as typeof Model;
     await constructor.eagerLoadRelations([this] as any, relations as any);
+    return this;
+  }
+
+  async loadMissing<R extends string & NestedRelationPath<this>>(relation: R, ...relations: R[]): Promise<WithLoadedRelations<this, R>>;
+  async loadMissing<Rs extends ReadonlyArray<string & NestedRelationPath<this>>>(relations: Rs): Promise<WithLoadedRelations<this, Rs[number]>>;
+  async loadMissing<Rs extends ReadonlyArray<string & NestedRelationPath<this>>>(...relations: Rs): Promise<WithLoadedRelations<this, Rs[number]>>;
+  async loadMissing(...relations: (string | string[])[]): Promise<this> {
+    await Collection.make([this]).loadMissing(relations.flat() as any);
     return this;
   }
 

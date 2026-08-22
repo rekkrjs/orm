@@ -197,11 +197,12 @@ await model.save({ events: false });
 await User.createMany(records, { events: false });
 await User.saveMany(models, { events: false });
 
-// Builder writes already skip observers
-await User.where("inactive", true).update({ archived: true }); // no events fire
+// Low-level builder inserts and upserts skip observers
+await User.query().insert(records);
+await User.query().upsert(records, "id");
 ```
 
-If a write is supposed to trigger side-effects, work through model instances. If it isn't (analytics rollups, scheduled cleanups), the builder path is faster and cheaper.
+Builder `update()` and `delete()` dispatch their after-hooks when observers are registered, but skip per-instance before-hooks. For full lifecycle control, work through model instances.
 
 ## Testing observers
 
@@ -226,7 +227,7 @@ Avoid sharing observer state between tests — each registration is global until
 
 ## Common pitfalls
 
-- **Builder writes skip observers.** `Model.where(...).update(...)`, `delete()`, `insert()`, and `upsert()` all bypass the registry. If side-effects matter, fetch the instance and call `.save()` / `.delete()`.
+- **Builder writes skip before-hooks.** `Model.where(...).update(...)` dispatches `updated`/`saved` and `delete()` dispatches `deleted`, but neither runs the corresponding before-hooks. Builder `insert()` and `upsert()` bypass the registry entirely. Fetch instances and call `.save()` / `.delete()` when the full lifecycle matters.
 - **`saving` runs before `creating`/`updating`.** If both hooks set the same attribute, `creating`/`updating` wins because it runs later.
 - **`created` runs after the insert.** The primary key is set by then, but the relation cache is still empty. If you need to immediately load a freshly created relation, do it in `created` (after) — not `creating` (before).
 - **Cyclic saves.** Calling `.save()` on another model inside an observer can cascade into more observer fires. Guard with a flag or use [`saveQuietly`](./models.md#quiet-operations-skip-observers) inside the observer.

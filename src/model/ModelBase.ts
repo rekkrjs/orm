@@ -92,13 +92,13 @@ type BaseModelInstanceKey =
   | "$wasRecentlyCreated" | "fill" | "setConnection" | "getConnection"
   | "forceFill"
   | "isFillable" | "getAttribute" | "setAttribute" | "castAttribute"
-  | "serializeCastAttribute" | "mergeCasts" | "getDirty" | "isDirty"
+  | "serializeCastAttribute" | "mergeCasts" | "getDirty" | "isDirty" | "isClean"
   | "wasChanged" | "getChanges" | "getOriginal" | "replicate" | "makeHidden"
   | "makeVisible" | "append" | "setAppends" | "getAppends" | "save" | "update"
   | "updateTimestamps" | "touch" | "increment" | "decrement" | "is" | "isNot" | "isInstanceOf"
-  | "load" | "loadMorph" | "loadCount" | "loadSum" | "loadAvg" | "loadMin"
+  | "load" | "loadMissing" | "loadMorph" | "loadCount" | "loadSum" | "loadAvg" | "loadMin"
   | "loadMax" | "delete" | "saveQuietly" | "deleteQuietly" | "restore"
-  | "forceDelete" | "refresh" | "toJSON" | "json" | "toString" | "freshTimestamp"
+  | "forceDelete" | "fresh" | "refresh" | "toJSON" | "json" | "toString" | "freshTimestamp"
   | "setRelation" | "getRelation" | "hasMany" | "belongsTo" | "hasOne"
   | "hasManyThrough" | "hasOneThrough" | "belongsToMany" | "morphTo" | "morphOne"
   | "morphMany" | "morphToMany" | "morphedByMany";
@@ -526,18 +526,18 @@ export const modelProxyHandler: ProxyHandler<any> = {
   get(target, prop, receiver) {
     if (typeof prop === "string") {
       const accessors = getAccessors(target);
-      if (prop in accessors && accessors[prop].get) {
+      if (Object.hasOwn(accessors, prop) && accessors[prop].get) {
         return accessors[prop].get!((target.$attributes as any)[prop], target.$attributes as any, target);
       }
-      if (prop in target.$relations) return target.$relations[prop];
-      if (!(prop in target) && prop in target.$attributes) return target.getAttribute(prop);
+      if (Object.hasOwn(target.$relations, prop)) return target.$relations[prop];
+      if (!(prop in target) && Object.hasOwn(target.$attributes, prop)) return target.getAttribute(prop);
     }
     return Reflect.get(target, prop, receiver);
   },
   set(target, prop, value, receiver) {
     if (typeof prop === "string" && !prop.startsWith("$") && !(prop in target)) {
       const accessors = getAccessors(target);
-      if (prop in accessors && accessors[prop].set) {
+      if (Object.hasOwn(accessors, prop) && accessors[prop].set) {
         (target.$attributes as any)[prop] = accessors[prop].set!(value, target.$attributes as any, target);
         delete target.$castCache[prop];
         return true;
@@ -548,25 +548,25 @@ export const modelProxyHandler: ProxyHandler<any> = {
     return Reflect.set(target, prop, value, receiver);
   },
   has(target, prop) {
-    if (typeof prop === "string" && prop in target.$relations) return true;
-    if (typeof prop === "string" && prop in target.$attributes) return true;
+    if (typeof prop === "string" && Object.hasOwn(target.$relations, prop)) return true;
+    if (typeof prop === "string" && Object.hasOwn(target.$attributes, prop)) return true;
     if (typeof prop === "string") {
       const accessors = getAccessors(target);
-      if (prop in accessors) return true;
+      if (Object.hasOwn(accessors, prop)) return true;
     }
     return Reflect.has(target, prop);
   },
   getOwnPropertyDescriptor(target, prop) {
-    if (typeof prop === "string" && prop in target.$relations) {
+    if (typeof prop === "string" && Object.hasOwn(target.$relations, prop)) {
       return { enumerable: true, configurable: true, value: target.$relations[prop] };
     }
     if (typeof prop === "string") {
       const accessors = getAccessors(target);
-      if (prop in accessors && accessors[prop].get) {
+      if (Object.hasOwn(accessors, prop) && accessors[prop].get) {
         return { enumerable: true, configurable: true, value: accessors[prop].get!((target.$attributes as any)[prop], target.$attributes as any, target) };
       }
     }
-    if (typeof prop === "string" && prop in target.$attributes) {
+    if (typeof prop === "string" && Object.hasOwn(target.$attributes, prop)) {
       return { enumerable: true, configurable: true, value: target.getAttribute(prop) };
     }
     return Reflect.getOwnPropertyDescriptor(target, prop);

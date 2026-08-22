@@ -1108,14 +1108,23 @@ export class Builder<T = Record<string, any>, TResult = T> {
   }
 
   withTrashed(): this {
-    return this.withoutGlobalScope("softDeletes");
+    return this.withoutGlobalScope("softDeletes").withoutGlobalScope("onlyTrashed");
+  }
+
+  withoutTrashed(): this {
+    this.withTrashed();
+    const model = this.model as any;
+    if (model?.softDeletes) {
+      this.whereNull(model.getQualifiedDeletedAtColumn(), "and", "softDeletes");
+    }
+    return this;
   }
 
   onlyTrashed(): this {
     this.withTrashed();
     const model = this.model as any;
     if (model?.softDeletes) {
-      this.whereNotNull(model.getQualifiedDeletedAtColumn());
+      this.whereNotNull(model.getQualifiedDeletedAtColumn(), "and", "onlyTrashed");
     }
     return this;
   }
@@ -1251,8 +1260,16 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this.has(relationName, "<", 1, callback);
   }
 
+  orDoesntHave<R extends ModelRelationName<TResult>>(relationName: R): this {
+    return this.orHas(relationName, "<", 1);
+  }
+
   whereDoesntHave<R extends ModelRelationName<TResult>>(relationName: R, callback?: RelationConstraint<TResult, R>): this {
     return this.doesntHave(relationName, callback);
+  }
+
+  orWhereDoesntHave<R extends ModelRelationName<TResult>>(relationName: R, callback?: RelationConstraint<TResult, R>): this {
+    return this.orHas(relationName, "<", 1, callback);
   }
 
   whereHasMorph<R extends MorphToRelationName<TResult>>(
@@ -1273,7 +1290,9 @@ export class Builder<T = Record<string, any>, TResult = T> {
     }
     const relation = relationMethod.call(new (this.model as any)()) as any;
     const typeList = this.normalizeMorphTypes(types);
-    if (typeList.length === 0) return this;
+    if (typeList.length === 0) {
+      return this.whereRaw(`0 ${operator} ${this.grammar.escape(count)}`);
+    }
 
     const shouldNotExist = operator === "<" || (operator === "=" && count <= 0);
 
@@ -1307,6 +1326,18 @@ export class Builder<T = Record<string, any>, TResult = T> {
     callback?: EagerLoadDefinition["constraint"]
   ): this {
     return this.whereHasMorph(relationName, types, callback, "<", 1);
+  }
+
+  whereMorphRelation<R extends MorphToRelationName<TResult>>(
+    relationName: R,
+    types: string | string[] | ModelConstructor | ModelConstructor[],
+    column: RelatedColumn<TResult, R>,
+    operator: string | any,
+    value?: any
+  ): this {
+    return this.whereHasMorph(relationName, types, (query) => {
+      value === undefined ? query.where(column as any, operator) : query.where(column as any, operator, value);
+    });
   }
 
   whereMorphedTo<R extends MorphToRelationName<TResult>>(relationName: R, model: Model | ModelConstructor | string): this {
@@ -1779,7 +1810,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
         if (identityMap) {
           const pk = row[primaryKey];
           if (pk !== null && pk !== undefined) {
-            const cached = IdentityMap.get(table, pk);
+            const cached = IdentityMap.get(table, pk, this.connection);
             if (cached) {
               for (const column of this.booleanResultColumns) {
                 if (column in row) {
@@ -1796,7 +1827,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
         if (identityMap) {
           const pk = row[primaryKey];
           if (pk !== null && pk !== undefined) {
-            IdentityMap.set(table, pk, instance);
+            IdentityMap.set(table, pk, instance, this.connection);
           }
         }
 
@@ -2014,8 +2045,17 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return (await this.limit(1).get())[0] || null;
   }
 
+  async firstOr<TFallback>(callback: () => TFallback): Promise<TResult | Awaited<TFallback>> {
+    const result = await this.first();
+    return result === null ? await callback() : result;
+  }
+
   async find(id: any, column: ModelColumn<T> = "id"): Promise<TResult | null> {
     return this.where(column, id).first();
+  }
+
+  async findOr<TFallback>(id: any, callback: () => TFallback, column: ModelColumn<T> = "id"): Promise<TResult | Awaited<TFallback>> {
+    return await this.where(column, id).firstOr(callback);
   }
 
   async findOrFail(id: any, column: ModelColumn<T> = "id"): Promise<TResult> {
@@ -2192,6 +2232,10 @@ export class Builder<T = Record<string, any>, TResult = T> {
 
   async avg(column: ModelColumn<T>): Promise<NumericAggregate> {
     return (await this.aggregate(`AVG(${this.grammar.wrap(column as string)})`, "avg_val")) ?? 0;
+  }
+
+  async average(column: ModelColumn<T>): Promise<NumericAggregate> {
+    return this.avg(column);
   }
 
   async min<K extends ModelColumn<T>>(column: K): Promise<ModelColumnValue<T, K> | null> {
@@ -2726,7 +2770,11 @@ export class Builder<T = Record<string, any>, TResult = T> {
       uniqueCols,
       updateCols
     );
-    return await this.connection.run(sql, bindings);
+    const result = await this.connection.run(sql, bindings);
+    if (this.model && IdentityMap.current()) {
+      IdentityMap.clearTable((this.model as any).getQualifiedTable(this.connection), this.connection);
+    }
+    return result;
   }
 
   private getUniformColumns(records: ModelAttributeInput<T>[]): string[] {
@@ -2744,9 +2792,26 @@ export class Builder<T = Record<string, any>, TResult = T> {
   async update(data: ModelAttributeInput<T>): Promise<any> {
     data = this.definedRecords(data)[0]!;
     if (Object.keys(data).length === 0) return;
+    const limited = this.limitValue !== undefined;
+    if (limited && !this.model) {
+      throw new Error("limit() on update() requires a model-backed query");
+    }
     const dispatch = this.shouldDispatchObservers();
-    const affectedIds = dispatch ? await this.pluckAffectedIds() : null;
+    const affectedIds = this.model && (limited || dispatch || IdentityMap.current())
+      ? await this.pluckAffectedIds()
+      : null;
+    const query = limited ? this.queryForAffectedIds(affectedIds!) : this;
 
+    const result = await query.performUpdate(data);
+    this.invalidateAffectedIdentityMap(affectedIds);
+
+    if (dispatch && affectedIds && affectedIds.length > 0) {
+      await this.dispatchOnAffected(["updated", "saved"], affectedIds);
+    }
+    return result;
+  }
+
+  private async performUpdate(data: ModelAttributeInput<T>): Promise<any> {
     this.bindings = [];
     this.parameterize = true;
     const sets = Object.entries(data).map(([key, value]) => {
@@ -2761,18 +2826,49 @@ export class Builder<T = Record<string, any>, TResult = T> {
       whereSql,
       this.updateJoins
     );
-    const result = await this.connection.run(sql, this.bindings);
+    return await this.connection.run(sql, this.bindings);
+  }
+
+  async delete(): Promise<any> {
+    const model = this.model as any;
+    if (!model?.softDeletes) return await this.forceDelete();
+
+    const dispatch = this.shouldDispatchObservers();
+    const limited = this.limitValue !== undefined;
+    const affectedIds = limited || dispatch || IdentityMap.current()
+      ? await this.pluckAffectedIds()
+      : null;
+    const limitedIds = limited ? affectedIds : null;
+    const query = limitedIds === null ? this : this.queryForAffectedIds(limitedIds);
+    const deletedAt = new model().freshTimestamp();
+    const data = this.definedRecords({ [model.deletedAtColumn]: deletedAt } as any)[0]!;
+    const result = await query.performUpdate(data);
+    this.invalidateAffectedIdentityMap(affectedIds);
 
     if (dispatch && affectedIds && affectedIds.length > 0) {
-      await this.dispatchOnAffected(["updated", "saved"], affectedIds);
+      await this.dispatchDeleted(affectedIds, deletedAt);
     }
     return result;
   }
 
-  async delete(): Promise<any> {
+  async forceDelete(): Promise<any> {
     const dispatch = this.shouldDispatchObservers();
-    const affectedIds = dispatch ? await this.pluckAffectedIds() : null;
+    const limited = Boolean(this.model) && this.limitValue !== undefined;
+    const affectedIds = this.model && (limited || dispatch || IdentityMap.current())
+      ? await this.pluckAffectedIds()
+      : null;
+    const query = limited ? this.queryForAffectedIds(affectedIds!) : this;
 
+    const result = await query.performDelete();
+    this.invalidateAffectedIdentityMap(affectedIds);
+
+    if (dispatch && affectedIds && affectedIds.length > 0) {
+      await this.dispatchDeleted(affectedIds);
+    }
+    return result;
+  }
+
+  private async performDelete(): Promise<any> {
     this.bindings = [];
     this.parameterize = true;
     const whereSql = this.compileWheres();
@@ -2783,20 +2879,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
       this.updateJoins,
       this.limitValue
     );
-    const result = await this.connection.run(sql, this.bindings);
-
-    if (dispatch && affectedIds && affectedIds.length > 0) {
-      // Rows are gone — hydrate placeholder instances carrying just the PK so
-      // observers can see which IDs were removed.
-      const model = this.model as any;
-      for (const id of affectedIds) {
-        const instance = new model();
-        (instance as any).setAttribute(model.primaryKey, id);
-        (instance as any).$exists = false;
-        await ObserverRegistry.dispatch("deleted", instance);
-      }
-    }
-    return result;
+    return await this.connection.run(sql, this.bindings);
   }
 
   private shouldDispatchObservers(): boolean {
@@ -2806,13 +2889,43 @@ export class Builder<T = Record<string, any>, TResult = T> {
   private async pluckAffectedIds(): Promise<any[]> {
     const model = this.model as any;
     const pk: string = model.primaryKey;
-    return await this.clone().pluck(pk as any);
+    const ids = await this.clone().pluck(`${this.tableName}.${pk}` as any);
+    return [...new Map(ids.map((id) => [String(id), id])).values()];
+  }
+
+  private queryForAffectedIds(affectedIds: any[]): Builder<T, TResult> {
+    const model = this.model as any;
+    const query = new Builder<T, TResult>(this.connection, this.tableName).setModel(model);
+    return affectedIds.length > 0
+      ? query.whereIn(`${this.tableName}.${model.primaryKey}` as any, affectedIds)
+      : query.whereRaw("0 = 1");
+  }
+
+  private invalidateAffectedIdentityMap(affectedIds: any[] | null): void {
+    if (!affectedIds || !IdentityMap.current()) return;
+    const model = this.model as any;
+    const table = model.getQualifiedTable(this.connection);
+    for (const id of affectedIds) IdentityMap.delete(table, id, this.connection);
+  }
+
+  private async dispatchDeleted(affectedIds: any[], deletedAt?: string): Promise<void> {
+    const model = this.model as any;
+    for (const id of affectedIds) {
+      const instance = new model();
+      instance.setConnection(this.connection);
+      (instance as any).setAttribute(model.primaryKey, id);
+      if (deletedAt !== undefined) {
+        (instance as any).setAttribute(model.deletedAtColumn, deletedAt);
+        (instance as any).$exists = true;
+      } else {
+        (instance as any).$exists = false;
+      }
+      await ObserverRegistry.dispatch("deleted", instance);
+    }
   }
 
   private async dispatchOnAffected(events: Array<"updated" | "saved" | "deleted">, ids: any[]): Promise<void> {
-    const model = this.model as any;
-    const pk: string = model.primaryKey;
-    const rows = await model.whereIn(pk, ids).get();
+    const rows = await this.queryForAffectedIds(ids).get();
     for (const row of rows) {
       for (const event of events) await ObserverRegistry.dispatch(event, row);
     }
@@ -2823,6 +2936,20 @@ export class Builder<T = Record<string, any>, TResult = T> {
       throw new Error("Increment amount must be a finite number.");
     }
     extra = this.definedRecords(extra)[0]!;
+    const limited = this.limitValue !== undefined;
+    if (limited && !this.model) {
+      throw new Error("limit() on increment() requires a model-backed query");
+    }
+    const affectedIds = this.model && (limited || IdentityMap.current())
+      ? await this.pluckAffectedIds()
+      : null;
+    const query = limited ? this.queryForAffectedIds(affectedIds!) : this;
+    const result = await query.performIncrement(column, amount, extra);
+    this.invalidateAffectedIdentityMap(affectedIds);
+    return result;
+  }
+
+  private async performIncrement(column: ModelColumn<T>, amount: number, extra: ModelAttributeInput<T>): Promise<any> {
     this.bindings = [];
     this.parameterize = true;
     const sets = [`${this.grammar.wrap(column)} = ${this.grammar.wrap(column)} + ${this.addBinding(amount)}`];
@@ -2909,6 +3036,14 @@ export class Builder<T = Record<string, any>, TResult = T> {
   async value<K extends ModelColumn<T>>(column: K): Promise<ModelColumnValue<T, K> | null> {
     const result = await this.first();
     return result ? (result as any)[column] : null;
+  }
+
+  async valueOrFail<K extends ModelColumn<T>>(column: K): Promise<ModelColumnValue<T, K>> {
+    const result = await this.first();
+    if (result === null) {
+      throw new ModelNotFoundError(this.model?.name || "Model");
+    }
+    return (result as any)[column];
   }
 
   dump(): this {

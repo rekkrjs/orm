@@ -268,6 +268,38 @@ describe("Polymorphic Relations", () => {
     expect(excluded[0].getAttribute("body")).toBe("video row");
   });
 
+  test("whereMorphRelation filters morphTo relations by one related column", async () => {
+    await MComment.truncate();
+
+    const post = await MPost.create({ title: "Morph relation target" });
+    const video = await MVideo.create({ title: "Other morph relation" });
+
+    await MComment.create({ body: "post relation match", commentable_id: post.getAttribute("id"), commentable_type: "MPost" });
+    await MComment.create({ body: "video relation row", commentable_id: video.getAttribute("id"), commentable_type: "MVideo" });
+
+    const shorthand = await MComment.whereMorphRelation(
+      "commentable",
+      [MPost, MVideo],
+      "title",
+      "Morph relation target",
+    ).get();
+    expect(shorthand.map((comment) => comment.getAttribute("body"))).toEqual(["post relation match"]);
+
+    const withOperator = await MComment.query()
+      .whereMorphRelation("commentable", [MPost], "title", "LIKE", "Morph relation%")
+      .get();
+    expect(withOperator.map((comment) => comment.getAttribute("body"))).toEqual(["post relation match"]);
+
+    expect(await MComment.whereMorphRelation("commentable", [], "title", "Morph relation target").count()).toBe(0);
+    expect(await MComment.whereDoesntHaveMorph("commentable", []).count()).toBe(2);
+
+    if (false) {
+      MComment.whereMorphRelation("commentable", MPost, "title", "Morph relation target");
+      // @ts-expect-error Only morphTo relation names should be accepted.
+      MPost.whereMorphRelation("comments", MComment, "body", "post relation match");
+    }
+  });
+
   test("whereMorphedTo family filters morphTo columns directly", async () => {
     await MComment.truncate();
 

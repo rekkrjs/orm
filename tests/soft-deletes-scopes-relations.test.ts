@@ -1,6 +1,5 @@
 import { beforeAll, describe, expect, test } from "bun:test";
-import { Model, Schema } from "../src/index.js";
-import type { Builder } from "../src/index.js";
+import { Builder, Model, ObserverRegistry, Schema } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 class ScopedUser extends PermissiveModel {
@@ -88,12 +87,160 @@ describe("Soft Deletes, Scopes, and Relation Queries", () => {
     expect(await ScopedUser.withTrashed().find(user.getAttribute("id"))).not.toBeNull();
     expect(await ScopedUser.onlyTrashed().count()).toBe(1);
 
+    const fresh = await user.fresh();
+    expect(fresh).not.toBe(user);
+    expect(fresh?.trashed()).toBe(true);
+
+    user.setAttribute("name", "Dirty archived");
+    await user.refresh();
+    expect(user.getAttribute("name")).toBe("Archived");
+    expect(user.trashed()).toBe(true);
+
     await user.restore();
 
     expect(await ScopedUser.find(user.getAttribute("id"))).not.toBeNull();
     expect(await ScopedUser.onlyTrashed().count()).toBe(0);
 
     await user.forceDelete();
+    expect(await ScopedUser.withTrashed().find(user.getAttribute("id"))).toBeNull();
+  });
+
+  test("builder delete soft deletes rows and dispatches only deleted", async () => {
+    const user = await ScopedUser.create({ name: "Bulk archived", active: true });
+    const id = user.getAttribute("id");
+    const events: string[] = [];
+    let observedDeletedAt: unknown;
+
+    ObserverRegistry.register(ScopedUser, {
+      updated() { events.push("updated"); },
+      saved() { events.push("saved"); },
+      deleted(model) {
+        events.push("deleted");
+        observedDeletedAt = model.getAttribute("deleted_at");
+      },
+    });
+
+    try {
+      await ScopedUser.where("id", id).delete();
+    } finally {
+      ObserverRegistry.unregister(ScopedUser);
+    }
+
+    expect(await ScopedUser.find(id)).toBeNull();
+    expect(await ScopedUser.withTrashed().find(id)).not.toBeNull();
+    expect(observedDeletedAt).toBeDefined();
+    expect(typeof observedDeletedAt).toBe("string");
+    expect(events).toEqual(["deleted"]);
+
+    await ScopedUser.onlyTrashed().where("id", id).restore();
+    expect(await ScopedUser.find(id)).not.toBeNull();
+  });
+
+  test("withoutTrashed reapplies visibility and forceDelete removes rows", async () => {
+    const active = await ScopedUser.create({ name: "Bulk active", active: true });
+    const trashed = await ScopedUser.create({ name: "Bulk force delete", active: true });
+    await trashed.delete();
+    const ids = [active.getAttribute("id"), trashed.getAttribute("id")];
+
+    const visible = await ScopedUser.withTrashed().withoutTrashed().whereIn("id", ids).get();
+    expect(visible.map((user) => user.getAttribute("id"))).toEqual([active.getAttribute("id")]);
+    expect(await ScopedUser.withoutTrashed().whereIn("id", ids).count()).toBe(1);
+    expect(await ScopedUser.onlyTrashed().withoutTrashed().whereIn("id", ids).pluck("id")).toEqual([active.getAttribute("id")]);
+    expect(await ScopedUser.onlyTrashed().onlyTrashed().whereIn("id", ids).pluck("id")).toEqual([trashed.getAttribute("id")]);
+
+    await ScopedUser.onlyTrashed().where("id", trashed.getAttribute("id")).forceDelete();
+    expect(await ScopedUser.withTrashed().find(trashed.getAttribute("id"))).toBeNull();
+  });
+
+  test("builder soft delete limits both updated rows and deleted events", async () => {
+    const first = await ScopedUser.create({ name: "Limited first", active: true });
+    const second = await ScopedUser.create({ name: "Limited second", active: true });
+    const ids = [first.getAttribute("id"), second.getAttribute("id")];
+    const deletedIds: unknown[] = [];
+
+    ObserverRegistry.register(ScopedUser, {
+      deleted(model) { deletedIds.push(model.getAttribute("id")); },
+    });
+
+    try {
+      await ScopedUser.whereIn("id", ids).orderBy("id").limit(1).delete();
+    } finally {
+      ObserverRegistry.unregister(ScopedUser);
+    }
+
+    expect(await ScopedUser.onlyTrashed().whereIn("id", ids).pluck("id")).toEqual([ids[0]]);
+    expect(await ScopedUser.whereIn("id", ids).pluck("id")).toEqual([ids[1]]);
+    expect(deletedIds).toEqual([ids[0]]);
+  });
+
+  test("limited physical delete removes and reports the ordered row", async () => {
+    const first = await TenantItem.create({ tenant_id: 1, name: "Physical first" });
+    const second = await TenantItem.create({ tenant_id: 1, name: "Physical second" });
+    const third = await TenantItem.create({ tenant_id: 1, name: "Physical third" });
+    const ids = [first.getAttribute("id"), second.getAttribute("id"), third.getAttribute("id")];
+    const deletedIds: unknown[] = [];
+
+    ObserverRegistry.register(TenantItem, {
+      deleted(model) { deletedIds.push(model.getAttribute("id")); },
+    });
+
+    try {
+      await TenantItem.whereIn("id", ids).orderByDesc("id").limit(1).forceDelete();
+    } finally {
+      ObserverRegistry.unregister(TenantItem);
+    }
+
+    expect(await TenantItem.whereIn("id", ids).orderBy("id").pluck("id")).toEqual(ids.slice(0, 2));
+    expect(deletedIds).toEqual([ids[2]]);
+    await TenantItem.whereIn("id", ids).forceDelete();
+  });
+
+  test("builder update observers can see rows that leave a global scope", async () => {
+    const item = await TenantItem.create({ tenant_id: 1, name: "Scoped update" });
+    const updatedIds: unknown[] = [];
+
+    ObserverRegistry.register(TenantItem, {
+      updated(model) { updatedIds.push(model.getAttribute("id")); },
+    });
+
+    try {
+      await TenantItem.where("id", item.getAttribute("id")).update({ tenant_id: 2 });
+    } finally {
+      ObserverRegistry.unregister(TenantItem);
+    }
+
+    expect(updatedIds).toEqual([item.getAttribute("id")]);
+    expect(await TenantItem.find(item.getAttribute("id"))).toBeNull();
+    expect(await TenantItem.withoutGlobalScopes().find(item.getAttribute("id"))).not.toBeNull();
+    await TenantItem.withoutGlobalScopes().where("id", item.getAttribute("id")).forceDelete();
+  });
+
+  test("limited soft delete qualifies primary keys when the selection joins", async () => {
+    const user = await ScopedUser.create({ name: "Joined delete owner", active: true });
+    const first = await ScopedPost.create({ scoped_user_id: user.getAttribute("id"), title: "Joined first" });
+    const second = await ScopedPost.create({ scoped_user_id: user.getAttribute("id"), title: "Joined second" });
+    const ids = [first.getAttribute("id"), second.getAttribute("id")];
+
+    await ScopedPost.query()
+      .join("scoped_users", "scoped_posts.scoped_user_id", "=", "scoped_users.id")
+      .where("scoped_users.id", user.getAttribute("id"))
+      .orderBy("scoped_posts.id")
+      .limit(1)
+      .delete();
+
+    expect(await ScopedPost.onlyTrashed().whereIn("id", ids).pluck("id")).toEqual([ids[0]]);
+    expect(await ScopedPost.whereIn("id", ids).pluck("id")).toEqual([ids[1]]);
+  });
+
+  test("delete remains physical for regular models and raw builders", async () => {
+    const item = await TenantItem.create({ tenant_id: 1, name: "Physical model delete" });
+    await TenantItem.where("id", item.getAttribute("id")).delete();
+    expect(await TenantItem.find(item.getAttribute("id"))).toBeNull();
+
+    const user = await ScopedUser.create({ name: "Physical raw delete", active: true });
+    await new Builder(ScopedUser.getConnection(), ScopedUser.getQualifiedTable())
+      .where("id", user.getAttribute("id"))
+      .delete();
     expect(await ScopedUser.withTrashed().find(user.getAttribute("id"))).toBeNull();
   });
 

@@ -546,6 +546,8 @@ await user.load("posts");
 await user.load({
   posts: (query) => query.where("status", "published"),
 });
+
+await user.loadMissing("posts"); // skips posts when already loaded
 ```
 
 ### Typed Eager Load Results
@@ -582,16 +584,20 @@ Without `with()`, `years[0].semesters` stays as `() => HasMany<Semester>` (the r
 
 ## Relation Queries
 
-### has / doesntHave
+### has / doesntHave / orDoesntHave
 
 Filter parent models by whether a relation exists:
 
 ```ts
 const usersWithPosts = await User.has("posts").get();
 const usersWithoutPosts = await User.doesntHave("posts").get();
+
+const activeOrWithoutPosts = await User.where("active", true)
+  .orDoesntHave("posts")
+  .get();
 ```
 
-### whereHas / orWhereHas / whereDoesntHave
+### whereHas / orWhereHas / whereDoesntHave / orWhereDoesntHave
 
 Filter by related record properties:
 
@@ -609,9 +615,13 @@ const usersWithPublishedOrFeatured = await User.whereHas("posts", (q) =>
 const usersWithoutSpam = await User.whereDoesntHave("posts", (q) => {
   q.where("spam", true);
 }).get();
+
+const staffOrWithoutSpam = await User.where("role", "staff")
+  .orWhereDoesntHave("posts", (q) => q.where("spam", true))
+  .get();
 ```
 
-The same pivot-aware callback behavior applies to `whereHas()` and `whereDoesntHave()` when the relation is a `belongsToMany` or `morphToMany`.
+The same pivot-aware callback behavior applies to `whereHas()`, `whereDoesntHave()`, and `orWhereDoesntHave()` when the relation is a `belongsToMany` or `morphToMany`.
 
 ### withExists
 
@@ -784,9 +794,9 @@ User.withAvg("posts", "score", "published_score_avg", (post) =>
 
 The same overloads are available for `withSum`, `withMin`, and `withMax`. The relation name autocompletes from model relations, and the column argument autocompletes from the related model.
 
-### loadMissing — Lazy Load Missing Relations on a Collection
+### loadMissing — Lazy Load Missing Relations
 
-Load relations for collection items that don't have them yet. Already-loaded relations are preserved:
+Load relations on a model or collection only when they are still absent. Already-loaded relations are preserved:
 
 ```ts
 const posts = await Post.where("status", "published").get();
@@ -800,6 +810,9 @@ posts[0].getRelation("comments"); // Collection<Comment> — now loaded
 // Safe to call multiple times — only triggers queries for truly missing relations
 posts[0].setRelation("author", sentinel);
 await posts.loadMissing("author"); // author is already set, skipped
+
+const post = await Post.first();
+await post?.loadMissing("author", "comments");
 ```
 
 ### Post-retrieval Aggregate Loaders
@@ -902,7 +915,7 @@ For `profilePicture()`, `collection` is injected from the relation constraint, s
 
 ### Morph-to query helpers
 
-`whereHasMorph()` and `whereDoesntHaveMorph()` let you filter a `morphTo` relation by the concrete types it can point to. The callback receives the related model query for each type. For eager loading, the `with()` callback receives the `MorphTo` relation itself, so `morphWith()` and `morphWithCount()` are available in IntelliSense.
+`whereHasMorph()` and `whereDoesntHaveMorph()` let you filter a `morphTo` relation by the concrete types it can point to. `whereMorphRelation()` is the shorthand when only one related column needs checking. The callback receives the related model query for each type. For eager loading, the `with()` callback receives the `MorphTo` relation itself, so `morphWith()` and `morphWithCount()` are available in IntelliSense.
 
 ```ts
 const comments = await Comment.whereHasMorph(
@@ -916,6 +929,13 @@ const comments = await Comment.whereHasMorph(
 const missingVideos = await Comment.whereDoesntHaveMorph("commentable", [
   Video,
 ]).get();
+
+const publishedComments = await Comment.whereMorphRelation(
+  "commentable",
+  [Post, Video],
+  "status",
+  "published",
+).get();
 
 const post = await Post.firstOrFail();
 
@@ -950,7 +970,7 @@ await loaded.loadMorph("commentable", {
 Assumptions for IntelliSense:
 
 - `morphWith()` and `morphWithCount()` are only available inside the `with({ commentable: (relation) => ... })` callback, because that callback is typed as the `MorphTo` relation.
-- `whereHasMorph()` and `whereDoesntHaveMorph()` callbacks are typed to the related model query, so builder methods are available there instead.
+- `whereHasMorph()` and `whereDoesntHaveMorph()` callbacks are typed to the related model query, so builder methods are available there instead. `whereMorphRelation()` accepts the same concrete types and an inline column condition.
 - `whereMorphedTo()`, `orWhereMorphedTo()`, and `whereNotMorphedTo()` only accept typed `morphTo` relation names. Passing an instance filters by both morph type and ID; passing a model class or morph type string filters by type.
 - `loadMorph()` is available on `Model` instances and collections, and the morph relation name should be one of the model's typed morph relations.
 - Fixed relation fields stay out of write-input IntelliSense when Bunny injects them from the relation itself.
@@ -1022,7 +1042,7 @@ await post.importantTags().save(new Tag({ name: "Ignored" }));
 - **Constraint methods on a relation are sticky.** `hasMany(Post).where("published", true)` filters eagerly and lazily. To opt out for a single call, build the query manually: `Post.where("user_id", user.id).get()`.
 - **`attach` without `withPivot`.** Pivot data passed to `attach(id, { extra: ... })` is dropped on read unless the relation declares `.withPivot("extra")`. Add the columns explicitly so they round-trip.
 - **`with()` joins on `belongsToMany` can produce duplicates.** Eager loading dedupes parents automatically, but if you also use manual joins, add `.distinct()` or rely on the relation aggregate variants (`withCount`, `withExists`).
-- **`load()` ignores already-loaded relations.** If you mutate `setRelation()` between fetches, `load()` won't overwrite. Use `loadMissing()` for "load only if missing", or call `model.unsetRelation("rel")` first to force a refresh.
+- **`load()` may replace an already-loaded relation.** Use `loadMissing()` when an existing relation value must be preserved.
 
 ## Where to next
 

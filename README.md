@@ -1,6 +1,5 @@
 # Bunny
 
-[☕ Buy me a coffee](https://paypal.me/jbeduya)
 
 > **Bun-only package.** Install with:
 >

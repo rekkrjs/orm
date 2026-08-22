@@ -383,6 +383,10 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().withTrashed();
   }
 
+  static withoutTrashed<M extends ModelConstructor>(this: M): Builder<InstanceType<M>> {
+    return (this as any).query().withoutTrashed();
+  }
+
   static onlyTrashed<M extends ModelConstructor>(this: M): Builder<InstanceType<M>> {
     return (this as any).query().onlyTrashed();
   }
@@ -415,8 +419,16 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().doesntHave(relationName as any);
   }
 
+  static orDoesntHave<M extends ModelConstructor>(this: M, relationName: string): Builder<InstanceType<M>> {
+    return (this as any).query().orDoesntHave(relationName as any);
+  }
+
   static whereDoesntHave<M extends ModelConstructor>(this: M, relationName: string, callback?: (query: Builder<any>) => void | Builder<any>): Builder<InstanceType<M>> {
     return (this as any).query().whereDoesntHave(relationName as any, callback as any);
+  }
+
+  static orWhereDoesntHave<M extends ModelConstructor>(this: M, relationName: string, callback?: (query: Builder<any>) => void | Builder<any>): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereDoesntHave(relationName as any, callback as any);
   }
 
   static whereHasMorph<M extends ModelConstructor>(this: M, relationName: string, types: string | string[] | ModelConstructor | ModelConstructor[], callback?: EagerLoadConstraint, operator?: string, count?: number): Builder<InstanceType<M>> {
@@ -425,6 +437,10 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
 
   static whereDoesntHaveMorph<M extends ModelConstructor>(this: M, relationName: string, types: string | string[] | ModelConstructor | ModelConstructor[], callback?: EagerLoadConstraint): Builder<InstanceType<M>> {
     return (this as any).query().whereDoesntHaveMorph(relationName as any, types as any, callback as any);
+  }
+
+  static whereMorphRelation<M extends ModelConstructor>(this: M, relationName: string, types: string | string[] | ModelConstructor | ModelConstructor[], column: string, operator: any, value?: any): Builder<InstanceType<M>> {
+    return (this as any).query().whereMorphRelation(relationName as any, types as any, column, operator, value);
   }
 
   static whereMorphedTo<M extends ModelConstructor>(this: M, relationName: string, model: any): Builder<InstanceType<M>> {

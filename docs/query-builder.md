@@ -141,6 +141,8 @@ const all = await User.all();                                // every row
 const found = await User.find(1);                            // by primary key, or null
 const first = await User.first();                            // first row in default order
 const user = await User.where("email", "a@b.com").first();   // first matching row
+const result = await User.where("email", "a@b.com").firstOr(() => guestUser);
+const byId = await User.findOr(1, () => guestUser);
 const users = await User.where("active", true).get();        // Collection<User>
 const arr = await User.where("active", true).getArray();     // plain User[]
 ```
@@ -156,6 +158,7 @@ These raise `ModelNotFoundError` when there's no row:
 ```ts
 const user = await User.findOrFail(1);
 const first = await User.firstOrFail();
+const email = await User.where("id", 1).valueOrFail("email");
 ```
 
 `sole()` is stricter — throws if there are zero **or** more than one match:
@@ -170,6 +173,7 @@ Use `sole()` to enforce uniqueness assumptions (one row per email, etc.) and sur
 
 ```ts
 const name = await User.where("id", 1).value("name");      // single column from first row
+const requiredName = await User.where("id", 1).valueOrFail("name"); // throws only when no row exists
 const emails = await User.pluck("email");                  // string[] — one column from every row
 const idsByEmail = await User.pluck("email", "id");        // Record<id, email>
 ```
@@ -692,15 +696,16 @@ await User.where("email", "test@example.com").exists();
 await User.where("email", "missing@example.com").doesntExist();
 await Order.sum("amount");
 await Order.avg("amount");
+await Order.average("amount"); // alias of avg()
 await Product.min("price");
 await Product.max("price");
 ```
 
 `exists()` runs a tiny `SELECT 1` and short-circuits — prefer it to `count() > 0` when you only need a boolean.
 
-`count`, `sum`, `avg`, `min`, `max`, `exists`, `sole` and `pluck` all run either straight off the model, as above, or off a constrained query — `User.sum("credits")` and `User.where("active", true).sum("credits")` are the same call with a different starting point.
+`count`, `sum`, `avg`/`average`, `min`, `max`, `exists`, `sole` and `pluck` all run either straight off the model, as above, or off a constrained query — `User.sum("credits")` and `User.where("active", true).sum("credits")` are the same call with a different starting point.
 
-`count()` always returns a JavaScript `number`. `sum()` and `avg()` preserve the
+`count()` always returns a JavaScript `number`. `sum()`, `avg()` and its `average()` alias preserve the
 driver's exact numeric representation and return `number | string | bigint`:
 MySQL `DECIMAL` and PostgreSQL `NUMERIC` aggregates are strings; large integer
 aggregates can be strings or bigints when the connection enables `bigint`. Do
@@ -802,12 +807,16 @@ await User.whereHas("posts", (q) => q.where("published", true), ">=", 3).get();
 // Users with NO posts
 await User.doesntHave("posts").get();
 
+// Active users OR users with no posts
+await User.where("active", true).orDoesntHave("posts").get();
+
 // Or: filter by a single related column
 await User.whereRelation("posts", "title", "like", "Hello%").get();
 
 // Polymorphic: filter a morphTo
 const author = await User.find(1);
 await Comment.whereMorphedTo("commentable", author).get();
+await Comment.whereMorphRelation("commentable", [Post, Video], "status", "published").get();
 ```
 
 See [Relationships](./relationships.md#querying-relations) for the full reference.
@@ -964,12 +973,16 @@ await User.query().upsert(
 
 // Update matched rows
 await User.where("active", false).update({ deleted: true });
+await User.where("active", false).orderBy("id").limit(10).update({ deleted: true });
 
 // Update with JOIN (Postgres / SQL Server)
 await Post.query().updateFrom("users", "users.id", "=", "posts.user_id");
 
 // Delete
 await User.where("active", false).delete();
+
+// For soft-deleting models, delete() sets deleted_at. Permanent deletion is explicit.
+await User.onlyTrashed().where("active", false).forceDelete();
 
 // Increment / Decrement
 await user.increment("login_count");
@@ -978,7 +991,10 @@ await user.decrement("stock", 10);
 await User.where("active", false).decrement("score", 2);
 ```
 
-`insert`, `update`, and `delete` on the builder bypass [observers](./observers.md) and `timestamps`. If you want lifecycle hooks, work through model instances (`new User()`, `user.save()`, `user.delete()`) instead.
+Builder writes do not run per-instance lifecycle hooks or timestamps. `insert()` bypasses observers; when a model has registered observers, `update()` dispatches `updated`/`saved` and `delete()` dispatches `deleted` for the affected IDs. If before-hooks or fully hydrated event models matter, work through model instances (`new User()`, `user.save()`, `user.delete()`) instead.
+
+On model-backed builders, limited updates and increments first select the
+matching primary keys, so `limit()` constrains the rows actually modified.
 
 ## Debugging
 
@@ -995,7 +1011,7 @@ await User.where("name", "Alice").explain(); // run EXPLAIN
 
 - **N+1 queries.** If you find yourself looping over a collection and accessing relations, add a `.with()` higher up. Turn on `Model.preventLazyLoading = true` in development to catch these automatically.
 - **`offset` on huge tables.** Past a few thousand rows, `LIMIT/OFFSET` pagination scans linearly. Use `chunkById`, `lazyById`, or `cursorPaginate`.
-- **`update` / `delete` on the builder skip events.** If observers, timestamps, or soft deletes matter, work through model instances.
+- **Builder writes are not instance writes.** They skip per-instance before-hooks and timestamps; use model instances when those lifecycle details matter.
 - **`distinct()` and `with()` together.** Eager-load joins can introduce duplicate parent rows. Add `distinct()` or use the relation aggregate variants (`withCount`, `withExists`) when you only need scalars.
 - **Locking outside a transaction is a no-op.** `lockForUpdate` releases at commit, so without a `connection.transaction(...)` wrapper there's nothing to release against.
 
@@ -1057,25 +1073,25 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `select / addSelect / selectRaw / distinct / fromSub` | Column selection |
 | `limit / offset / take / skip / forPage` | Row limits |
 | `lockForUpdate / sharedLock / skipLocked / noWait` | Locks |
-| `get / getArray / first / find / findMany / findOrFail` | Read terminators |
-| `firstWhere / firstOrFail / sole / value / pluck` | Read terminators |
-| `count / sum / avg / min / max / exists / doesntExist` | Aggregates |
+| `get / getArray / first / firstOr / find / findOr / findMany / findOrFail` | Read terminators |
+| `firstWhere / firstOrFail / sole / value / valueOrFail / pluck` | Read terminators |
+| `count / sum / avg / average / min / max / exists / doesntExist` | Aggregates |
 | `paginate / simplePaginate / cursorPaginate` | Pagination |
 | `chunk / each / chunkById / chunkByIdDesc / eachById` | Streaming |
 | `cursor / lazy / lazyById` | Async iterators |
 | `insert / insertGetId / insertOrIgnore / upsert` | Inserts |
 | `update / updateFrom / increment / decrement` | Updates |
-| `delete / restore` | Deletes |
+| `delete / forceDelete / restore` | Delete or restore rows |
 | `with(...rels)` | Eager load |
-| `has / orHas / whereHas / orWhereHas / doesntHave / whereDoesntHave` | Relation existence |
+| `has / orHas / whereHas / orWhereHas / doesntHave / orDoesntHave / whereDoesntHave / orWhereDoesntHave` | Relation existence |
 | `whereRelation / orWhereRelation` | Filter by related column |
-| `whereMorphedTo / orWhereMorphedTo / whereNotMorphedTo` | Polymorphic filters |
+| `whereMorphRelation / whereMorphedTo / orWhereMorphedTo / whereNotMorphedTo` | Polymorphic filters |
 | `withWhereHas` | Filter + eager load |
 | `withCount / withSum / withMin / withMax / withAvg` | Relation aggregates |
 | `withExists` | Boolean relation flag |
 | `scope(name, ...args)` | Apply local scope |
 | `withoutGlobalScope(name) / withoutGlobalScopes()` | Drop global scopes |
-| `withTrashed() / onlyTrashed()` | Soft delete visibility |
+| `withTrashed() / withoutTrashed() / onlyTrashed()` | Soft delete visibility |
 | `when(cond, fn, elseFn?) / unless(...)` | Conditional |
 | `tap(fn)` | Mutate and return |
 | `clone()` | Copy builder state |

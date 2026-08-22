@@ -12,12 +12,14 @@ class Lf3Post extends PermissiveModel {
   profile() { return this.hasOne(Lf3Profile, "lf3_post_id"); }
   profileWithDefault() { return this.hasOne(Lf3Profile, "lf3_post_id").withDefault({ bio: "No bio" }); }
   comments() { return this.hasMany(Lf3Comment, "lf3_post_id"); }
+  items() { return this.comments(); }
 }
 
 class Lf3User extends PermissiveModel {
   static table = "lf3_users";
   static touches = ["latestPost"];
   posts() { return this.hasMany(Lf3Post, "lf3_user_id"); }
+  items() { return this.posts(); }
   latestPost() { return this.hasOne(Lf3Post, "lf3_user_id"); }
 }
 
@@ -462,6 +464,18 @@ describe("Collection.loadMissing()", () => {
     expect(posts[0].getRelation("author")).not.toBeUndefined();
     expect(posts[0].getRelation("comments")).not.toBeUndefined();
     expect(posts[0].getRelation("comments")).toHaveLength(1);
+  });
+
+  test("groups mixed model collections by constructor", async () => {
+    const user = await Lf3User.create({ name: "LM Mixed User" });
+    const post = await Lf3Post.create({ title: "LM Mixed Post", lf3_user_id: user.getAttribute("id") });
+    await Lf3Comment.create({ lf3_post_id: post.getAttribute("id"), body: "mixed", status: "pending" });
+    const mixed = Collection.make<any>([user, post]);
+
+    await mixed.loadMissing("items");
+
+    expect(user.getRelation("items")[0]).toBeInstanceOf(Lf3Post);
+    expect(post.getRelation("items")[0]).toBeInstanceOf(Lf3Comment);
   });
 });
 

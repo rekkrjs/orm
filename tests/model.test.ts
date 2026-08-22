@@ -1,5 +1,5 @@
 import { expect, test, describe, beforeAll } from "bun:test";
-import { Model, Schema } from "../src/index.js";
+import { Model, ModelNotFoundError, Schema } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 function expectType<T>(_value: T): void {}
@@ -163,13 +163,46 @@ describe("Model", () => {
   test("getDirty tracks changed attributes", () => {
     const user = new TestUser({ name: "Frank" });
     expect(user.isDirty()).toBe(true);
+    expect(user.isClean()).toBe(false);
     user.save = async () => user; // mock save to avoid db call
     user.$exists = true;
     user.$original = { ...user.$attributes };
     expect(user.isDirty()).toBe(false);
+    expect(user.isClean()).toBe(true);
     user.setAttribute("name", "Frankie");
     expect(user.isDirty()).toBe(true);
+    expect(user.isClean()).toBe(false);
     expect(user.getDirty()).toEqual({ name: "Frankie" });
+  });
+
+  test("fresh returns a new database instance without mutating the current one", async () => {
+    const user = await TestUser.create({ name: "Fresh original" });
+    await TestUser.where("id", user.getAttribute("id")).update({ name: "Fresh database" });
+    user.setAttribute("name", "Fresh local");
+
+    const fresh = await user.fresh();
+
+    expect(fresh).toBeInstanceOf(TestUser);
+    expect(fresh).not.toBe(user);
+    expect(fresh!.getAttribute("name")).toBe("Fresh database");
+    expect(user.getAttribute("name")).toBe("Fresh local");
+    expect(await new TestUser().fresh()).toBeNull();
+  });
+
+  test("refresh throws when the persisted row no longer exists", async () => {
+    const user = await TestUser.create({ name: "Refresh missing" });
+    await TestUser.where("id", user.getAttribute("id")).forceDelete();
+
+    await expect(user.refresh()).rejects.toBeInstanceOf(ModelNotFoundError);
+  });
+
+  test("model proxies preserve prototype properties", async () => {
+    const user = await TestUser.create({ name: "Proxy prototype" });
+    const hydrated = await TestUser.find(user.getAttribute("id"));
+
+    expect(hydrated!.constructor).toBe(TestUser);
+    expect(Object.getPrototypeOf(hydrated)).toBe(TestUser.prototype);
+    expect(String(hydrated)).toBe(JSON.stringify(hydrated!.toJSON()));
   });
 
   test("sets timestamps on create", async () => {
@@ -435,15 +468,17 @@ describe("Model query terminators as statics", () => {
     await TermComment.create({ term_post_id: commented.getAttribute("id") });
   });
 
-  test("sum, avg, min and max run off the model", async () => {
+  test("sum, avg, average, min and max run off the model", async () => {
     expect(await TermPost.sum("views")).toBe(60);
     expect(await TermPost.avg("views")).toBe(20);
+    expect(await TermPost.average("views")).toBe(20);
     expect(await TermPost.min("views")).toBe(10);
     expect(await TermPost.max("views")).toBe(30);
   });
 
   test("the static aggregates match the builder ones", async () => {
     expect(await TermPost.sum("views")).toBe(await TermPost.query().sum("views"));
+    expect(await TermPost.average("views")).toBe(await TermPost.query().average("views"));
     expect(await TermPost.max("views")).toBe(await TermPost.query().max("views"));
   });
 
@@ -469,5 +504,28 @@ describe("Model query terminators as statics", () => {
       .get();
 
     expect(posts.map((post) => post.getAttribute("title"))).toEqual(["Commented", "Standalone"]);
+  });
+
+  test("orDoesntHave and orWhereDoesntHave add OR relation branches", async () => {
+    expect(TermPost.orDoesntHave("comments").toSql()).toBe(TermPost.query().orDoesntHave("comments").toSql());
+
+    const withoutComments = await TermPost.where("title", "Commented")
+      .orDoesntHave("comments")
+      .orderBy("title")
+      .get();
+    expect(withoutComments.map((post) => post.getAttribute("title"))).toEqual(["Commented", "Quiet", "Standalone"]);
+
+    const withoutMatchingComments = await TermPost.where("title", "Standalone")
+      .orWhereDoesntHave("comments", (query) => query.where("id", "<", 0))
+      .orderBy("title")
+      .get();
+    expect(withoutMatchingComments.map((post) => post.getAttribute("title"))).toEqual(["Commented", "Quiet", "Standalone"]);
+
+    if (false) {
+      TermPost.query().orDoesntHave("comments");
+      TermPost.orWhereDoesntHave("comments", (query) => query.where("id", ">", 0));
+      // @ts-expect-error Only relation names should be accepted on typed builders.
+      TermPost.query().orDoesntHave("missing");
+    }
   });
 });

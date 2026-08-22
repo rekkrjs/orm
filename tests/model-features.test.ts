@@ -2,6 +2,8 @@ import { expect, test, describe, beforeAll } from "bun:test";
 import { Model, Schema, ModelNotFoundError } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
+function expectType<T>(_value: T): void {}
+
 class Post extends PermissiveModel {
   static table = "posts";
 
@@ -16,6 +18,17 @@ class Comment extends PermissiveModel {
 
 class Vote extends PermissiveModel {
   static table = "votes";
+  static timestamps = false;
+}
+
+class LookupPost extends Model.define<{ id: number; title: string; email: string | null }>("lookup_posts") {
+  static guarded: string[] = [];
+}
+
+class LookupToken extends Model.define<{ slug: string; label: string }>("lookup_tokens") {
+  static guarded: string[] = [];
+  static primaryKey = "slug";
+  static incrementing = false;
   static timestamps = false;
 }
 
@@ -81,6 +94,78 @@ describe("Find-or-Fail", () => {
   test("firstOrFail throws when not found", async () => {
     await Post.query().delete();
     expect(Post.firstOrFail()).rejects.toBeInstanceOf(ModelNotFoundError);
+  });
+});
+
+describe("Fallback retrieval terminators", () => {
+  beforeAll(async () => {
+    setupTestDb();
+    await Schema.create("lookup_posts", (table) => {
+      table.increments("id");
+      table.string("title");
+      table.string("email").nullable();
+      table.timestamps();
+    });
+    await Schema.create("lookup_tokens", (table) => {
+      table.string("slug").primary();
+      table.string("label");
+    });
+    await LookupPost.create({ title: "Existing", email: null });
+    await LookupToken.create({ slug: "token-a", label: "Token A" });
+  });
+
+  test("firstOr skips the callback on a hit and awaits it on a miss", async () => {
+    let calls = 0;
+    const found = await LookupPost.where("title", "Existing").firstOr(() => {
+      calls++;
+      return "fallback" as const;
+    });
+    expect(found).toBeInstanceOf(LookupPost);
+    expect(calls).toBe(0);
+
+    const fallback = await LookupPost.where("title", "Missing").firstOr(async () => {
+      calls++;
+      return "async fallback" as const;
+    });
+    expect(fallback).toBe("async fallback");
+    expect(calls).toBe(1);
+  });
+
+  test("findOr uses the model primary key and returns its fallback", async () => {
+    let calls = 0;
+    const found = await LookupToken.findOr("token-a", () => {
+      calls++;
+      return "missing" as const;
+    });
+    expect(found).toBeInstanceOf(LookupToken);
+    expect(calls).toBe(0);
+
+    const fallback = await LookupToken.findOr("token-b", () => {
+      calls++;
+      return "missing" as const;
+    });
+    expect(fallback).toBe("missing");
+    expect(calls).toBe(1);
+  });
+
+  test("valueOrFail distinguishes a nullable value from a missing row", async () => {
+    expect(await LookupPost.where("title", "Existing").valueOrFail("email")).toBeNull();
+    expect(await LookupPost.valueOrFail("title")).toBe("Existing");
+    await expect(LookupPost.where("title", "Missing").valueOrFail("email"))
+      .rejects.toBeInstanceOf(ModelNotFoundError);
+  });
+
+  test("fallback terminators preserve result and callback types", async () => {
+    const firstOrAsync = LookupPost.where("title", "Missing").firstOr(async () => "missing" as const);
+    const firstOrSync = LookupPost.firstOr(() => 404 as const);
+    const findOr = LookupToken.findOr("token-b", () => "missing" as const);
+    const valueOrFail = LookupPost.valueOrFail("email");
+
+    expectType<Promise<LookupPost | "missing">>(firstOrAsync);
+    expectType<Promise<LookupPost | 404>>(firstOrSync);
+    expectType<Promise<LookupToken | "missing">>(findOr);
+    expectType<Promise<string | null>>(valueOrFail);
+    await Promise.all([firstOrAsync, firstOrSync, findOr, valueOrFail]);
   });
 });
 

@@ -1,6 +1,8 @@
 import { expect, test, describe, beforeAll } from "bun:test";
-import { Model, Schema } from "../src/index.js";
+import { Collection, Model, Schema } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
+
+function expectType<T>(_value: T): void {}
 
 class EAuthor extends PermissiveModel {
   static table = "e_authors";
@@ -34,6 +36,14 @@ class EProfile extends PermissiveModel {
   static timestamps = false;
   author() {
     return this.belongsTo(EAuthor, "author_id");
+  }
+}
+
+class TypedEBook extends PermissiveModel.define<{ id: number; author_id: number; title: string }>("typed_e_books") {}
+
+class TypedEAuthor extends PermissiveModel.define<{ id: number; name: string }>("typed_e_authors") {
+  books() {
+    return this.hasMany(TypedEBook, "author_id");
   }
 }
 
@@ -133,6 +143,51 @@ describe("Eager Loading", () => {
 
     await found!.load("books");
     expect((found as any).books).toHaveLength(1);
+  });
+
+  test("loadMissing loads absent relations and preserves loaded ones", async () => {
+    const author = await EAuthor.create({ name: "Missing loader" });
+    await EBook.create({ author_id: author.getAttribute("id"), title: "Original book" });
+    const found = await EAuthor.where("id", author.getAttribute("id")).first();
+
+    expect(found!.getRelation("books")).toBeUndefined();
+    const loaded = await found!.loadMissing("books");
+    const books = found!.getRelation("books");
+    expect(loaded).toBe(found!);
+    expect(books).toHaveLength(1);
+
+    await EBook.create({ author_id: author.getAttribute("id"), title: "Later book" });
+    await found!.loadMissing("books");
+    expect(found!.getRelation("books")).toBe(books);
+    expect(found!.getRelation("books")).toHaveLength(1);
+  });
+
+  test("loadMissing preserves a loaded parent while loading a nested relation", async () => {
+    const author = await EAuthor.create({ name: "Nested missing loader" });
+    const kept = await EBook.create({ author_id: author.getAttribute("id"), title: "Nested kept book" });
+    await EBook.create({ author_id: author.getAttribute("id"), title: "Nested omitted book" });
+    await EChapter.create({ book_id: kept.getAttribute("id"), title: "Nested chapter" });
+
+    const found = await EAuthor.with({
+      books: (query) => query.where("title", "Nested kept book"),
+    }).find(author.getAttribute("id"));
+    const books = found!.getRelation("books");
+
+    await found!.loadMissing("books.chapters");
+
+    expect(found!.getRelation("books")).toBe(books);
+    expect(books.map((book: EBook) => book.getAttribute("title"))).toEqual(["Nested kept book"]);
+    expect(books[0].getRelation("chapters")).toHaveLength(1);
+  });
+
+  test("loadMissing exposes loaded relation types", () => {
+    const assertTypes = (author: TypedEAuthor): void => {
+      author.loadMissing("books").then((loaded) => {
+        expectType<Collection<TypedEBook>>(loaded.books);
+      });
+    };
+
+    expect(assertTypes).toBeFunction();
   });
 
   test("with constrains eager loaded hasMany relation", async () => {

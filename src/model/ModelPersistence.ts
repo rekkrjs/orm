@@ -364,11 +364,26 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
         model.$dirtyKeys?.clear();
       }
     }
+
+    if (IdentityMap.current()) {
+      const connection = (this as any).getConnection();
+      const table = (this as any).getQualifiedTable(connection);
+      for (const model of models) {
+        const pk = model.getAttribute(this.primaryKey);
+        if (model.$exists && pk !== null && pk !== undefined && pk !== "") {
+          IdentityMap.set(table, pk, model as any, connection);
+        }
+      }
+    }
     return models;
   }
 
   static async find<M extends ModelConstructor>(this: M, id: any): Promise<InstanceType<M> | null> {
     return (this as any).query().find(id, this.primaryKey);
+  }
+
+  static async findOr<M extends ModelConstructor, TFallback>(this: M, id: any, callback: () => TFallback): Promise<InstanceType<M> | Awaited<TFallback>> {
+    return (this as any).query().findOr(id, callback, this.primaryKey);
   }
 
   static async findMany<M extends ModelConstructor>(this: M, ids: any[]): Promise<Collection<InstanceType<M>>> {
@@ -385,6 +400,10 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
 
   static async first<M extends ModelConstructor>(this: M): Promise<InstanceType<M> | null> {
     return (this as any).query().first();
+  }
+
+  static async firstOr<M extends ModelConstructor, TFallback>(this: M, callback: () => TFallback): Promise<InstanceType<M> | Awaited<TFallback>> {
+    return (this as any).query().firstOr(callback);
   }
 
   static firstWhere<M extends ModelConstructor>(this: M, column: any, operator: any, value?: any): Promise<InstanceType<M> | null> {
@@ -519,7 +538,8 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     if (identityMap) {
       const pk = this.getAttribute(constructor.primaryKey);
       if (pk !== null && pk !== undefined && pk !== "") {
-        IdentityMap.set(constructor.getTable(), pk, this as any);
+        const connection = this.getConnection();
+        IdentityMap.set(constructor.getQualifiedTable(connection), pk, this as any, connection);
       }
     }
 
@@ -595,6 +615,9 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     }
     this.$original = { ...this.$attributes };
     this.$dirtyKeys?.clear();
+    if (IdentityMap.current()) {
+      IdentityMap.set(constructor.getQualifiedTable(connection), pk, this as any, connection);
+    }
     return this;
   }
 
@@ -629,7 +652,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
 
     const identityMap = IdentityMap.current();
     if (identityMap) {
-      IdentityMap.delete(constructor.getTable(), pk);
+      IdentityMap.delete(constructor.getQualifiedTable(this.getConnection()), pk, this.getConnection());
     }
 
     await ObserverRegistry.dispatch("deleted", this as any);
@@ -661,7 +684,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     }
 
     const identityMap = IdentityMap.current();
-    if (identityMap) IdentityMap.delete(constructor.getTable(), pk);
+    if (identityMap) IdentityMap.delete(constructor.getQualifiedTable(this.getConnection()), pk, this.getConnection());
 
     return true;
   }
@@ -681,6 +704,9 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     this.$original = { ...this.$attributes };
     this.$dirtyKeys?.clear();
     this.$exists = true;
+    if (IdentityMap.current()) {
+      IdentityMap.set(constructor.getQualifiedTable(connection), pk, this as any, connection);
+    }
     return true;
   }
 
@@ -697,32 +723,47 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
 
     const identityMap = IdentityMap.current();
     if (identityMap) {
-      IdentityMap.delete(constructor.getTable(), pk);
+      IdentityMap.delete(constructor.getQualifiedTable(connection), pk, connection);
     }
 
     return true;
   }
 
+  async fresh(): Promise<this | null> {
+    if (!this.$exists) return null;
+
+    const constructor = this.getModelConstructor() as typeof ModelPersistence;
+    const pk = this.getAttribute(constructor.primaryKey);
+    const connection = this.getConnection();
+    const table = constructor.getQualifiedTable(connection);
+    const identityMap = IdentityMap.current();
+    IdentityMap.delete(table, pk, connection);
+
+    const fresh = await constructor.on(connection)
+      .withoutGlobalScopes()
+      .find(pk, constructor.primaryKey) as this | null;
+    if (identityMap && fresh) IdentityMap.set(table, pk, this as any, connection);
+    return fresh;
+  }
+
   async refresh(): Promise<this> {
     const constructor = this.getModelConstructor() as typeof ModelPersistence;
     const pk = this.getAttribute(constructor.primaryKey);
-    if (!pk) return this;
+    if (pk === null || pk === undefined || pk === "") return this;
 
+    const connection = this.getConnection();
+    const table = constructor.getQualifiedTable(connection);
     const identityMap = IdentityMap.current();
-    if (identityMap) {
-      IdentityMap.delete(constructor.getTable(), pk);
-    }
+    IdentityMap.delete(table, pk, connection);
 
-    const result = await constructor.find(pk);
-    if (result) {
-      this.$attributes = result.$attributes as T;
-      this.$original = { ...result.$attributes } as Partial<T>;
-      this.$castCache = {};
-      this.$dirtyKeys?.clear();
-      if (identityMap) {
-        IdentityMap.set(constructor.getTable(), pk, this as any);
-      }
-    }
+    const result = await constructor.on(connection)
+      .withoutGlobalScopes()
+      .findOrFail(pk, constructor.primaryKey) as this;
+    this.$attributes = { ...result.$attributes } as T;
+    this.$original = { ...result.$attributes } as Partial<T>;
+    this.$castCache = {};
+    this.$dirtyKeys?.clear();
+    if (identityMap) IdentityMap.set(table, pk, this as any, connection);
     return this;
   }
 }

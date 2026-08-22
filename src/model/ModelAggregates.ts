@@ -70,6 +70,10 @@ export class ModelAggregates<T extends Record<string, any> = any> extends ModelQ
     return (this as any).query().avg(column);
   }
 
+  static async average<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>): Promise<NumericAggregate> {
+    return (this as any).query().average(column);
+  }
+
   static async min<M extends ModelConstructor, K extends ModelColumn<InstanceType<M>>>(
     this: M,
     column: K
@@ -90,6 +94,13 @@ export class ModelAggregates<T extends Record<string, any> = any> extends ModelQ
 
   static async sole<M extends ModelConstructor>(this: M): Promise<InstanceType<M>> {
     return (this as any).query().sole();
+  }
+
+  static async valueOrFail<M extends ModelConstructor, K extends ModelColumn<InstanceType<M>>>(
+    this: M,
+    column: K
+  ): Promise<ModelColumnValue<InstanceType<M>, K>> {
+    return (this as any).query().valueOrFail(column);
   }
 
   static async pluck<M extends ModelConstructor, K extends ModelColumn<InstanceType<M>>>(
