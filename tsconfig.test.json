@@ -16,7 +16,8 @@
     "tests/postgres-fts-types.test.ts",
     "tests/model-timestamps.test.ts",
     "tests/native-appends.test.ts",
-    "tests/schema-types.test.ts"
+    "tests/schema-types.test.ts",
+    "tests/schema-enum.test.ts"
   ],
   "exclude": ["node_modules", "dist"]
 }

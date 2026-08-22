@@ -45,33 +45,68 @@ describe("enum schema definitions", () => {
     expect(nativeCollation.columns[0]!.values).toEqual(["open", "OPEN"]);
   });
 
-  test("validates literal defaults after all column modifiers", () => {
-    const valid = new Blueprint("articles");
-    valid.enum("state", ["draft", "published"]).default("draft");
-    expect(() => new SQLiteGrammar().compileCreate(valid, "articles")).not.toThrow();
-
-    const nullable = new Blueprint("articles");
-    nullable.enum("state", ["draft", "published"]).default(null).nullable();
-    expect(() => new SQLiteGrammar().compileCreate(nullable, "articles")).not.toThrow();
-
-    const required = new Blueprint("articles");
-    required.enum("state", ["draft", "published"]).default(null);
-    expect(() => new SQLiteGrammar().compileCreate(required, "articles")).toThrow(
-      'Invalid enum default for "articles.state": NULL requires a nullable column.',
+  test("validates only the final enum default", () => {
+    const invalidThenValid = new Blueprint("articles");
+    invalidThenValid.enum("state", ["draft", "published"]);
+    expect(() => invalidThenValid.default("INVALID")).not.toThrow();
+    invalidThenValid.default("draft");
+    expect(new SQLiteGrammar().compileCreate(invalidThenValid, "articles")).toContain(
+      "DEFAULT 'draft'",
     );
 
-    const invalid = new Blueprint("articles");
-    invalid.enum("state", ["draft", "published"]);
-    expect(() => invalid.default("archived")).toThrow(
+    const validThenInvalid = new Blueprint("articles");
+    validThenInvalid.enum("state", ["draft", "published"]).default("draft").default("INVALID");
+    expect(() => validThenInvalid.validate()).toThrow(
       'Invalid enum default for "articles.state"',
     );
-    expect(() => invalid.default(Schema.raw("CURRENT_USER"))).toThrow(
+
+    const nullThenValid = new Blueprint("articles");
+    nullThenValid.enum("state", ["draft", "published"]).default(null).default("draft");
+    expect(new SQLiteGrammar().compileCreate(nullThenValid, "articles")).toContain(
+      "DEFAULT 'draft'",
+    );
+
+    const expressionDefault = new Blueprint("articles");
+    expressionDefault.enum("state", ["draft", "published"]);
+    expect(() => expressionDefault.default(Schema.raw("CURRENT_USER"))).not.toThrow();
+    expect(() => expressionDefault.validate()).toThrow(
       'Invalid enum default for "articles.state"',
     );
 
     const objectDefault = new Blueprint("articles");
     objectDefault.enum("state", ["draft", "published"]);
-    expect(() => objectDefault.default({ state: "draft" })).toThrow("an object value");
+    expect(() => objectDefault.default({ state: "draft" })).not.toThrow();
+    expect(() => objectDefault.validate()).toThrow("an object value");
+
+    const missingDefaultValues = new Blueprint("articles");
+    missingDefaultValues.enum("state", ["draft"]);
+    missingDefaultValues.columns[0]!.values = undefined;
+    expect(() => missingDefaultValues.default("draft")).not.toThrow();
+    expect(() => missingDefaultValues.validate()).toThrow(
+      'Enum column "articles.state" requires at least one value.',
+    );
+  });
+
+  test("treats null and undefined as no enum default", () => {
+    const validThenNull = new Blueprint("articles");
+    validThenNull.enum("state", ["draft", "published"]).default("draft").default(null);
+
+    const requiredNull = new Blueprint("articles");
+    requiredNull.enum("state", ["draft", "published"]).default(null);
+
+    const omitted = new Blueprint("articles");
+    omitted.enum("state", ["draft", "published"]).default();
+
+    for (const blueprint of [validThenNull, requiredNull, omitted]) {
+      for (const grammar of [new MySqlGrammar(), new PostgresGrammar(), new SQLiteGrammar()]) {
+        const sql = grammar.compileCreate(blueprint, "articles");
+        expect(sql).not.toContain("DEFAULT");
+        expect(sql).toContain("NOT NULL");
+      }
+    }
+  });
+
+  test("keeps generated enum default validation", () => {
 
     const generated = new Blueprint("articles");
     expect(() => generated.enum("state", ["draft", "published"]).defaultUuid()).toThrow(
@@ -83,13 +118,6 @@ describe("enum schema definitions", () => {
     tampered.columns[0]!.defaultUuid = true;
     expect(() => new SQLiteGrammar().compileCreate(tampered, "articles")).toThrow(
       'Invalid enum default for "articles.state"',
-    );
-
-    const missingDefaultValues = new Blueprint("articles");
-    missingDefaultValues.enum("state", ["draft"]);
-    missingDefaultValues.columns[0]!.values = undefined;
-    expect(() => missingDefaultValues.default("draft")).toThrow(
-      'Enum column "articles.state" requires at least one value.',
     );
 
     const missingUuidValues = new Blueprint("articles");
@@ -108,6 +136,32 @@ describe("enum schema grammars", () => {
         "    `audience` ENUM('teachers', 'children''s') NOT NULL DEFAULT 'teachers'\n" +
         ")",
     );
+  });
+
+  test("compiles only the last assigned enum default", () => {
+    const blueprint = new Blueprint("articles");
+    blueprint.enum("state", ["draft", "published"]).default("INVALID").default("draft");
+
+    for (const grammar of [new MySqlGrammar(), new PostgresGrammar(), new SQLiteGrammar()]) {
+      expect(grammar.compileCreate(blueprint, "articles")).toContain("DEFAULT 'draft'");
+    }
+  });
+
+  test("preserves false and zero defaults", () => {
+    const blueprint = new Blueprint("settings");
+    blueprint.boolean("enabled").default(false);
+    blueprint.integer("retries").default(0);
+
+    const mysql = new MySqlGrammar().compileCreate(blueprint, "settings");
+    const postgres = new PostgresGrammar().compileCreate(blueprint, "settings");
+    const sqlite = new SQLiteGrammar().compileCreate(blueprint, "settings");
+
+    expect(mysql).toContain("`enabled` BOOLEAN NOT NULL DEFAULT 0");
+    expect(mysql).toContain("`retries` INT NOT NULL DEFAULT 0");
+    expect(postgres).toContain('"enabled" BOOLEAN NOT NULL DEFAULT FALSE');
+    expect(postgres).toContain('"retries" INTEGER NOT NULL DEFAULT 0');
+    expect(sqlite).toContain('"enabled" INTEGER NOT NULL DEFAULT 0');
+    expect(sqlite).toContain('"retries" INTEGER NOT NULL DEFAULT 0');
   });
 
   test("renders MySQL enum backslashes independently of escape mode", () => {

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.1 - 2026-08-22
+
+### Changed
+
+- Repeated schema `.default()` modifiers are now last-wins. Only the final
+  value is validated and compiled, while `null` or an omitted value produces no
+  `DEFAULT` clause without changing column nullability.
+
 ## 1.1.0 - 2026-08-22
 
 ### Added

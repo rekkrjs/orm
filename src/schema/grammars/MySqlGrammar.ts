@@ -108,7 +108,7 @@ export class MySqlGrammar extends Grammar {
     if (column.unsigned) sql += this.modifyUnsigned(column);
     if (!column.nullable) sql += " NOT NULL";
     if (column.defaultUuid) sql += this.modifyDefaultUuid(column);
-    else if (column.default !== undefined) {
+    else if (column.default !== null && column.default !== undefined) {
       const json = column.type === "json" || column.type === "jsonb";
       const rendered = this.getColumnDefault(column);
       sql += ` DEFAULT ${json && column.default !== null ? `(${rendered})` : rendered}`;

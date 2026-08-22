@@ -152,10 +152,9 @@ table.enum("status", ["draft", "published", "archived"]).default("draft");
 ```
 
 Enum values must be unique strings between 1 and 255 characters, without NUL
-characters or trailing spaces. Defaults must be one of the declared values, or
-`null` on a nullable column. Changing an existing enum with `.change()` is
-rejected because no portable implementation exists across the supported
-databases.
+characters or trailing spaces. The final non-null default must be one of the
+declared values. Changing an existing enum with `.change()` is rejected because
+no portable implementation exists across the supported databases.
 
 MySQL retains its native `ENUM` comparison rules; no binary collation is
 imposed. Model casts created with `backedEnum()` still validate exact strings.
@@ -202,7 +201,7 @@ table.string("phone").after("email");        // Column position (MySQL)
 | Modifier | Effect |
 |---|---|
 | `.nullable()` | Allow `NULL` values |
-| `.default(value)` | Default literal (or `Schema.raw(...)` for expressions) |
+| `.default(value?)` | Set or replace the default literal (or use `Schema.raw(...)` for expressions) |
 | `.unique()` | Add a single-column UNIQUE constraint |
 | `.index()` | Add a single-column index |
 | `.primary()` | Make the column the primary key (see [Primary keys](#primary-keys) for composite ones) |
@@ -211,6 +210,12 @@ table.string("phone").after("email");        // Column position (MySQL)
 | `.after(column)` | Place a newly added column after another one (MySQL) |
 
 Modifiers are chainable in any order before the next column is added.
+
+Repeated `.default()` calls are last-wins, and only the final value is validated
+and compiled. `.default(null)` and `.default()` emit no `DEFAULT` clause; they
+do not make a column nullable. Call `.nullable()` explicitly when the column
+itself should accept `NULL`. The existing `.defaultUuid()` precedence is
+unchanged.
 
 String defaults are always literals, including `"CURRENT_TIMESTAMP"`. Use `Schema.raw(...)` only for a trusted database expression; its contents are inserted into migration SQL verbatim.
 

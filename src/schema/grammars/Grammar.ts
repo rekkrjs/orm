@@ -74,7 +74,9 @@ export abstract class Grammar {
     if (column.unsigned) sql += this.modifyUnsigned(column);
     if (!column.nullable) sql += " NOT NULL";
     if (column.defaultUuid) sql += this.modifyDefaultUuid(column);
-    else if (column.default !== undefined) sql += ` DEFAULT ${this.getColumnDefault(column)}`;
+    else if (column.default !== null && column.default !== undefined) {
+      sql += ` DEFAULT ${this.getColumnDefault(column)}`;
+    }
     if (column.autoIncrement) sql += this.modifyAutoIncrement(column);
     if (column.comment) sql += this.modifyComment(column);
     return sql;

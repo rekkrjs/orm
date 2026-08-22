@@ -59,7 +59,9 @@ export class SQLiteGrammar extends Grammar {
     else if (column.primary) sql += " PRIMARY KEY";
     if (!column.nullable) sql += " NOT NULL";
     if (column.defaultUuid) sql += this.modifyDefaultUuid(column);
-    else if (column.default !== undefined) sql += ` DEFAULT ${this.getColumnDefault(column)}`;
+    else if (column.default !== null && column.default !== undefined) {
+      sql += ` DEFAULT ${this.getColumnDefault(column)}`;
+    }
     sql += this.compileEnumCheck(column);
     return sql;
   }

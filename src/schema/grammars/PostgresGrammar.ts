@@ -76,7 +76,9 @@ export class PostgresGrammar extends Grammar {
     let sql = `${this.wrap(column.name)} ${this.getType(column)}`;
     if (!column.nullable) sql += " NOT NULL";
     if (column.defaultUuid) sql += this.modifyDefaultUuid(column);
-    else if (column.default !== undefined) sql += ` DEFAULT ${this.getColumnDefault(column)}`;
+    else if (column.default !== null && column.default !== undefined) {
+      sql += ` DEFAULT ${this.getColumnDefault(column)}`;
+    }
     if (column.autoIncrement) sql += this.modifyAutoIncrement(column);
     if (column.primary) sql += " PRIMARY KEY";
     sql += this.compileEnumCheck(column);
@@ -97,7 +99,7 @@ export class PostgresGrammar extends Grammar {
       `ALTER TABLE ${this.wrap(table)} ALTER COLUMN ${this.wrap(column.name)} TYPE ${this.getType(column)}`,
       `ALTER TABLE ${this.wrap(table)} ALTER COLUMN ${this.wrap(column.name)} ${column.nullable ? "DROP" : "SET"} NOT NULL`,
     ];
-    if (column.default !== undefined) {
+    if (column.default !== null && column.default !== undefined) {
       statements.push(`ALTER TABLE ${this.wrap(table)} ALTER COLUMN ${this.wrap(column.name)} SET DEFAULT ${this.getDefaultValue(column.default)}`);
     }
     return statements;

@@ -260,11 +260,8 @@ export class Blueprint {
     return this;
   }
 
-  default(value: any): this {
+  default(value?: any): this {
     if (this.currentColumn) {
-      if (this.currentColumn.type === "enum" && value !== null && value !== undefined) {
-        this.validateEnumDefault(this.currentColumn, value);
-      }
       this.currentColumn.default = value;
     }
     return this;
@@ -374,15 +371,7 @@ export class Blueprint {
       if (column.type !== "enum") continue;
       this.validateEnumValues(column.name, column.values);
       if (column.defaultUuid) throw this.invalidEnumUuidDefault(column);
-      if (column.default === undefined) continue;
-      if (column.default === null) {
-        if (!column.nullable) {
-          throw new Error(
-            `Invalid enum default for "${this.table}.${column.name}": NULL requires a nullable column.`,
-          );
-        }
-        continue;
-      }
+      if (column.default === null || column.default === undefined) continue;
       this.validateEnumDefault(column, column.default);
     }
   }

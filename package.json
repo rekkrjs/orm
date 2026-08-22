@@ -1,6 +1,6 @@
 {
   "name": "@rekkr/orm",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "An Eloquent-inspired ORM for Bun's native SQL client supporting SQLite, MySQL, and PostgreSQL.",
   "license": "MIT",
   "packageManager": "bun@1.4.0",
@@ -112,7 +112,7 @@
   "scripts": {
     "build": "tsc",
     "prepack": "bun run build",
-    "test": "bun test --parallel --path-ignore-patterns='**/benchmark*'",
+    "test": "tsc -p tsconfig.test.json && bun test --parallel --path-ignore-patterns='**/benchmark*'",
     "bench": "bun test tests/benchmark*.test.ts",
     "migrate": "bun run bin/orm.ts migrate",
     "migrate:make": "bun run bin/orm.ts migrate:make",
