@@ -3,10 +3,11 @@
 > **Bun-only package.** Install with:
 >
 > ```bash
-> bun add @rekkr/orm
+> bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.1.2
 > ```
 >
-> npm, yarn, pnpm, and Node.js runtime usage are not supported.
+> The repository is private, so GitHub read access and SSH authentication are
+> required. npm, yarn, pnpm, and Node.js runtime usage are not supported.
 
 An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s native `bun:sql` client. It ships with **zero runtime dependencies** and supports **SQLite**, **MySQL**, and **PostgreSQL** with full TypeScript typing, a chainable query builder, schema migrations, model observers, polymorphic relations, and an interactive REPL.
 
@@ -20,6 +21,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 - 🔷 **Fully Typed** — Generate declarations for plain `extends Model` classes with typed attributes, queries, relations, and eager loads
 - 🏗️ **Schema Builder** — Programmatic table creation, indexes, foreign keys
 - 🔍 **Query Builder** — Chainable `where`, `join`, `orderBy`, `groupBy`, date filters, conditional building, etc.
+- 🔎 **Search** — Meilisearch, PostgreSQL full-text search, and SQLite FTS5 engines
 - 🧠 **Tagged Cache** — Redis-backed cache facade, query `remember()`, and exact tag invalidation
 - 📣 **Events** — Application-level event dispatcher with function listeners and class handlers
 - 📨 **Queue Jobs** — Database- and Redis-backed background job queue with named queues, retries, delays, and an `orm queue` worker
@@ -39,7 +41,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 ## Installation
 
 ```bash
-bun add @rekkr/orm
+bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.1.2
 ```
 
 See [Installation](./docs/installation.md) for details.
@@ -171,6 +173,7 @@ See the [Quickstart guide](./docs/quickstart.md) for the full walkthrough.
 |---|---|
 | [Query Builder](./docs/query-builder.md) | Chainable `where` / `join` / `with` / aggregates, `DB` facade, raw queries. |
 | [Cache](./docs/cache.md) | Redis-backed cache API, query `remember()`, exact tag invalidation. |
+| [Search](./docs/search.md) | Meilisearch, PostgreSQL full-text search, and SQLite FTS5. |
 | [Collections](./docs/collections.md) | `map`, `filter`, `groupBy`, and other helpers returned by `get()`. |
 | [Models](./docs/models.md) | Defining models, casts, accessors, soft deletes, persistence. |
 | [Relationships](./docs/relationships.md) | `hasMany`, `belongsTo`, `belongsToMany`, polymorphic, eager loading. |

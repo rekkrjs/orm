@@ -31,7 +31,7 @@ await Schema.create("users", (t) => {
 });
 await Schema.create("posts", (t) => {
   t.increments("id");
-  t.integer("user_id"); // foreign key pointing to users.id
+  t.integer("user_id").unsigned(); // matches users.id on MySQL
   t.string("title");
   t.timestamps();
 });
@@ -64,7 +64,7 @@ One record has exactly one related record.
 // Schema
 await Schema.create("profiles", (t) => {
   t.increments("id");
-  t.integer("user_id"); // foreign key pointing to users.id
+  t.integer("user_id").unsigned(); // matches users.id on MySQL
   t.string("bio").nullable();
   t.timestamps();
 });
@@ -230,13 +230,13 @@ await Schema.create("countries", (t) => {
 });
 await Schema.create("users", (t) => {
   t.increments("id");
-  t.integer("country_id");
+  t.integer("country_id").unsigned();
   t.string("name");
   t.timestamps();
 });
 await Schema.create("posts", (t) => {
   t.increments("id");
-  t.integer("user_id");
+  t.integer("user_id").unsigned();
   t.string("title");
   t.timestamps();
 });
@@ -279,8 +279,8 @@ await Schema.create("roles", (t) => {
 });
 await Schema.create("role_user", (t) => {
   // pivot: alphabetical model names
-  t.integer("user_id");
-  t.integer("role_id");
+  t.integer("user_id").unsigned();
+  t.integer("role_id").unsigned();
 });
 
 // Models
@@ -512,10 +512,10 @@ const users = await User.with("posts", "profile").get();
 const posts = await Post.with("author").get();
 
 // Nested relations via dot notation
-const users = await User.with("posts.comments").get();
+const usersWithComments = await User.with("posts.comments").get();
 
 // Constrained eager loading — filter within the loaded relation
-const users = await User.with({
+const usersWithPublishedPosts = await User.with({
   posts: (q) => q.where("status", "published").orderBy("created_at", "desc"),
 }).get();
 
@@ -531,7 +531,7 @@ const semesters = await Semester.with({
 }).get();
 
 // Multiple constraints combined
-const users = await User.with(
+const usersWithFilteredPosts = await User.with(
   { posts: (q) => q.where("status", "published") },
   { "posts.comments": (q) => q.where("approved", true) },
 ).get();
@@ -682,10 +682,10 @@ Shorthand for `whereHas` when you just need to check one column on the related m
 const posts = await Post.whereRelation("comments", "status", "approved").get();
 
 // With operator
-const posts = await Post.whereRelation("comments", "votes", ">", 10).get();
+const popularPosts = await Post.whereRelation("comments", "votes", ">", 10).get();
 
 // OR variant
-const posts = await Post.whereRelation("comments", "status", "approved")
+const approvedOrFeaturedPosts = await Post.whereRelation("comments", "status", "approved")
   .orWhereRelation("comments", "status", "featured")
   .get();
 ```
@@ -850,7 +850,7 @@ import { Model, MorphMap } from "@rekkr/orm";
 await Schema.create("comments", (t) => {
   t.increments("id");
   t.string("commentable_type"); // e.g. "Post" or "Video"
-  t.integer("commentable_id");
+  t.integer("commentable_id").unsigned();
   t.text("body");
   t.timestamps();
 });
@@ -993,8 +993,8 @@ await Schema.create("tags", (t) => {
   t.timestamps();
 });
 await Schema.create("taggables", (t) => {
-  t.integer("tag_id");
-  t.integer("taggable_id");
+  t.integer("tag_id").unsigned();
+  t.integer("taggable_id").unsigned();
   t.string("taggable_type"); // "Post", "Video", etc.
 });
 

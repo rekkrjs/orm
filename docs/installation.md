@@ -16,19 +16,28 @@ bun --version
 ## Add the package
 
 ```bash
-bun add @rekkr/orm
+bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.1.2
 ```
 
-That is the entire install step. The package ships with **zero runtime dependencies** — no `pg`, no `mysql2`, no driver layer to wire up. Connections go through `bun:sql`, which Bun provides natively.
+Rekkr ORM is currently distributed from GitHub. The package name and every
+application import remain `@rekkr/orm`; the Git URL only tells Bun
+where to install it from. The package ships with **zero runtime dependencies**
+— no `pg`, no `mysql2`, no driver layer to wire up. Connections go through
+`bun:sql`, which Bun provides natively.
 
-### From git
+The repository is private, so the developer or CI runner must have read access
+and a working GitHub SSH key (a read-only deploy key is sufficient in CI). Do
+not use `bun add @rekkr/orm` yet: the registry package is not the `v1.1.2`
+release from this repository.
+
+### Other Git revisions
 
 A branch, tag, or commit works the same way — no build step, no `trustedDependencies` entry:
 
 ```bash
-bun add github:rekkrjs/orm                # default branch
-bun add github:rekkrjs/orm#<tag>          # a published tag, e.g. v0.4.0
-bun add github:rekkrjs/orm#<commit-sha>   # a specific commit
+bun add git+ssh://git@github.com/rekkrjs/orm.git                # default branch
+bun add git+ssh://git@github.com/rekkrjs/orm.git#<tag>          # e.g. v1.1.2
+bun add git+ssh://git@github.com/rekkrjs/orm.git#<commit-sha>   # exact commit
 ```
 
 The package resolves through the `bun` export condition straight to its TypeScript
@@ -67,11 +76,12 @@ against `bun:sql`, so it must be imported from server modules exclusively — in
 SvelteKit that means `+page.server.ts`, `+server.ts`, `hooks.server.ts`, or a
 `$lib/server/` module. Importing it from client code fails the build, by design.
 
-Installs from npm ship `dist/`, so they need none of this.
-
 ## TypeScript
 
-If your project uses TypeScript, no extra `@types/*` packages are needed — types resolve from the ORM's own source, so they match the code you are running whether you installed from npm or from git. Make sure your `tsconfig.json` includes the standard library settings Bun expects:
+If your project uses TypeScript, no extra `@types/*` packages are needed — the
+GitHub installation resolves types from the ORM's own source, so they match the
+code you are running. Make sure your `tsconfig.json` includes the standard
+library settings Bun expects:
 
 ```jsonc
 {
@@ -118,6 +128,12 @@ Then `bun run orm migrate` instead of `bunx orm migrate`.
 
 **`Cannot find module 'bun:sql'`** — you are running under Node.js. Switch to `bun run …` instead of `node …` or `npm run …`.
 
-**`bun add` cannot resolve the package** — make sure your registry is set correctly. The package is published on the public npm registry; no private auth is required.
+**`bun add` cannot resolve the package** — verify the GitHub repository and tag,
+then confirm that SSH authentication works:
+
+```bash
+ssh -T git@github.com
+git ls-remote git@github.com:rekkrjs/orm.git refs/tags/v1.1.2
+```
 
 **TypeScript complains about `Bun.SQL`** — install or upgrade `bun-types` (`bun add -d bun-types`) and ensure it is listed in `compilerOptions.types`.

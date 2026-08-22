@@ -72,7 +72,7 @@ If the class name doesn't pluralize naturally to your table name (`curricula`, `
 class Curriculum extends Model.define<CurriculumAttributes>("curricula") {}
 
 // When assigning to a variable instead of subclassing:
-const Curriculum = Model.define<CurriculumAttributes>("curricula", "Curriculum");
+const CurriculumModel = Model.define<CurriculumAttributes>("curricula", "Curriculum");
 ```
 
 ## Plain `extends Model<T>`
@@ -122,7 +122,7 @@ interface UserRow {
 const rows = await DB.table<UserRow>("users")
   .where("active", true)
   .select("id", "name")
-  .get();                    // rows: UserRow[]
+  .get();                    // rows: Collection<UserRow>
 ```
 
 See [Query Builder — Typed columns](./query-builder.md#typed-columns-intellisense).

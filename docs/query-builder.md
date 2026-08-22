@@ -2,10 +2,13 @@
 
 The query builder is a chainable, type-safe wrapper around SQL. Every model exposes it through static methods (`User.where(...)`, `Post.with(...)`). You can also use it directly without a model through the [`DB` facade](#the-db-facade) — handy for ad-hoc table access, reporting views, and pivot tables that don't warrant their own class.
 
-Everything in this document works the same against SQLite, MySQL, and PostgreSQL — ORM translates to the right dialect.
+Unless a section says otherwise, the APIs in this document work against SQLite,
+MySQL, and PostgreSQL, with ORM translating to the appropriate dialect.
 
 ```ts
-import { User, Post, DB } from "@rekkr/orm";
+import { DB } from "@rekkr/orm";
+import User from "./models/User";
+import Post from "./models/Post";
 ```
 
 ## Quick reference
@@ -38,14 +41,14 @@ const rows = await DB.table("users")
   .where("active", true)
   .orderBy("created_at", "desc")
   .select("id", "name", "email")
-  .get(); // Record<string, any>[]
+  .get(); // Collection<Record<string, any>>
 
 const count = await DB.table("audit_logs").where("event", "login").count();
 
 await DB.table("settings").where("key", "theme").update({ value: "dark" });
 
 // Raw SQL
-const rows = await DB.raw("SELECT * FROM users WHERE id = ?", [1]);
+const rawRows = await DB.raw("SELECT * FROM users WHERE id = ?", [1]);
 ```
 
 ### Typed columns (IntelliSense)
@@ -63,7 +66,7 @@ interface UserRow {
 const rows = await DB.table<UserRow>("users")
   .where("active", true)    // "active" autocompletes
   .select("id", "name")     // column names autocomplete
-  .get();                   // rows: UserRow[]
+  .get();                   // rows: Collection<UserRow>
 
 // Reuse model attribute interfaces
 import type { UserAttributes } from "./models/User";
@@ -74,7 +77,7 @@ const stats = await DB.raw<{ total: number }>("SELECT COUNT(*) as total FROM use
 stats[0].total; // number
 ```
 
-Omit the generic for `Record<string, any>` rows.
+Omit the generic for a `Collection<Record<string, any>>` result.
 
 ### Named connections
 
@@ -320,7 +323,7 @@ const posts = await Post.query()
   .get();
 ```
 
-For a relation-aware filter, prefer [`whereHas`](./relationships.md#querying-relations) over manual joins — it composes with eager loading and respects soft deletes.
+For a relation-aware filter, prefer [`whereHas`](./relationships.md#relation-queries) over manual joins — it composes with eager loading and respects soft deletes.
 
 ## Unions
 
@@ -733,12 +736,12 @@ for (const post of posts) {
 const posts = await Post.with("comments.author").get();
 
 // Constrain a relation's query (filter, select, order)
-const users = await User.with({
+const usersWithPublishedPosts = await User.with({
   posts: (q) => q.where("published", true).orderByDesc("created_at"),
 }).get();
 
 // Nest deeply
-const users = await User.with({
+const usersWithVisibleComments = await User.with({
   "posts.comments": (q) => q.whereNull("flagged_at"),
 }).get();
 ```
@@ -819,7 +822,7 @@ await Comment.whereMorphedTo("commentable", author).get();
 await Comment.whereMorphRelation("commentable", [Post, Video], "status", "published").get();
 ```
 
-See [Relationships](./relationships.md#querying-relations) for the full reference.
+See [Relationships](./relationships.md#relation-queries) for the full reference.
 
 ## Pagination
 

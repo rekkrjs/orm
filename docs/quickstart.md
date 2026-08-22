@@ -1,6 +1,6 @@
 # Quickstart
 
-This guide builds a tiny blog: users and the posts they author. By the end you will have a migration, two models, a seeder, and a handful of queries running against SQLite. The same steps apply unchanged to PostgreSQL or MySQL — only the connection URL changes.
+This guide builds a tiny blog: users and the posts they author. By the end you will have a migration, two models, a seeder, and a handful of queries running against SQLite. The same core steps apply to PostgreSQL and MySQL; review the [driver caveats](./schema-builder.md#driver-caveats) before deploying against either one.
 
 Estimated time: ten minutes.
 
@@ -8,7 +8,7 @@ Estimated time: ten minutes.
 
 ```bash
 bun init -y
-bun add @rekkr/orm
+bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.1.2
 ```
 
 If you are using TypeScript, make sure `tsconfig.json` has `"target": "ESNext"`, `"module": "ESNext"`, and `"moduleResolution": "bundler"`. See [Installation](./installation.md) for the full setup.
@@ -68,7 +68,7 @@ export default class CreatePostsTable extends Migration {
   async up() {
     await Schema.create("posts", (table) => {
       table.increments("id");
-      table.integer("user_id").references("id").on("users");
+      table.integer("user_id").unsigned().references("id").on("users");
       table.string("title");
       table.text("body").nullable();
       table.timestamps();
@@ -138,9 +138,7 @@ Plain `extends Model` also works if you have generated declarations or don't nee
 
 ## 5. Write a seeder (optional)
 
-```bash
-bunx orm make:seeder UserSeeder
-```
+Create the seeder file under the configured `seedersPath`:
 
 ```ts
 // database/seeders/UserSeeder.ts
@@ -160,7 +158,7 @@ export default class UserSeeder extends Seeder {
 Run it:
 
 ```bash
-bunx orm seed
+bunx orm db:seed
 ```
 
 See [Seeders](./seeders.md) for targeted runs, ordering, and factories.

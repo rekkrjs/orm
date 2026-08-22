@@ -3,7 +3,7 @@
 Seeders are scripts that populate the database with development, demo, or test data. Factories generate realistic-looking model attributes that seeders (and tests) can use to create many similar records quickly.
 
 ```ts
-import { Seeder, factory, SeederRunner } from "@rekkr/orm";
+import { Seeder, SeederRunner } from "@rekkr/orm";
 ```
 
 ## Writing a seeder

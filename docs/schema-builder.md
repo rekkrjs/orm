@@ -45,9 +45,9 @@ Every method on the blueprint adds a column. The first argument is always the co
 
 | Method | SQL type |
 |---|---|
-| `id(name = "id")` | `BIGINT PRIMARY KEY AUTOINCREMENT` — alias of `bigIncrements` |
-| `increments(name = "id")` | `INTEGER PRIMARY KEY AUTOINCREMENT` |
-| `bigIncrements(name = "id")` | `BIGINT PRIMARY KEY AUTOINCREMENT` |
+| `id(name = "id")` | Alias of `bigIncrements`; auto-incrementing primary key |
+| `increments(name = "id")` | Auto-incrementing integer primary key |
+| `bigIncrements(name = "id")` | Auto-incrementing big-integer primary key |
 | `tinyInteger(name)` | `TINYINT` |
 | `smallInteger(name)` | `SMALLINT` |
 | `integer(name)` | `INTEGER` |
@@ -90,7 +90,7 @@ JavaScript's lossy `number` representation.
 | `longText(name)` | `LONGTEXT` on MySQL (~4GB); `TEXT` elsewhere |
 
 ```ts
-table.string("email", 191).unique(); // 191 = MySQL utf8mb4 index cap
+table.string("email").unique();
 table.char("country_code", 2);       // always exactly 2 characters
 table.text("body").nullable();
 table.longText("payload");
@@ -105,10 +105,10 @@ Only MySQL/MariaDB has separate storage classes for text, so it is the only driv
 | Method | Notes |
 |---|---|
 | `boolean(name)` | `BOOLEAN` (TINYINT(1) on MySQL) |
-| `date(name)` | `DATE` |
-| `time(name)` | `TIME` |
-| `dateTime(name)` | `DATETIME` |
-| `timestamp(name)` | `TIMESTAMP` (timezone-aware on Postgres) |
+| `date(name)` | `DATE` (MySQL/Postgres); `TEXT` (SQLite) |
+| `time(name)` | `TIME` (MySQL); `TIME WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
+| `dateTime(name)` | `DATETIME` (MySQL); `TIMESTAMP WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
+| `timestamp(name)` | `TIMESTAMP` (MySQL); `TIMESTAMP WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
 
 ```ts
 table.boolean("is_published").default(false);
@@ -131,7 +131,7 @@ MySQL uses its native binary `JSON` type, PostgreSQL uses native `JSON`, and
 SQLite stores the serialized text. Structured defaults such as `.default({})`
 and `.default([])` are serialized correctly on all three drivers. Use `jsonb`
 on Postgres for indexable / queryable JSON. See
-[`whereJsonContains`](./query-builder.md#json-clauses).
+[`whereJsonContains`](./query-builder.md#json).
 
 JSON is decoded into JavaScript values, so numeric literals beyond
 `Number.MAX_SAFE_INTEGER` are not exact. Encode large IDs and exact decimal
@@ -192,6 +192,7 @@ table.string("slug").index();                // INDEX
 table.string("name").nullable();             // NULL allowed
 table.integer("role").default(1);            // DEFAULT 1
 table.timestamp("published_at").default(Schema.raw("CURRENT_TIMESTAMP"));
+table.uuid("public_id").defaultUuid();        // database-generated UUID where supported
 table.string("code").comment("SKU code");    // COMMENT
 table.integer("user_id").unsigned();         // UNSIGNED (MySQL)
 table.string("uuid").primary();              // Composite/custom primary key column
@@ -202,6 +203,7 @@ table.string("phone").after("email");        // Column position (MySQL)
 |---|---|
 | `.nullable()` | Allow `NULL` values |
 | `.default(value?)` | Set or replace the default literal (or use `Schema.raw(...)` for expressions) |
+| `.defaultUuid()` | Use `UUID()` on MySQL or `gen_random_uuid()` on PostgreSQL; emit no default on SQLite |
 | `.unique()` | Add a single-column UNIQUE constraint |
 | `.index()` | Add a single-column index |
 | `.primary()` | Make the column the primary key (see [Primary keys](#primary-keys) for composite ones) |
@@ -214,8 +216,9 @@ Modifiers are chainable in any order before the next column is added.
 Repeated `.default()` calls are last-wins, and only the final value is validated
 and compiled. `.default(null)` and `.default()` emit no `DEFAULT` clause; they
 do not make a column nullable. Call `.nullable()` explicitly when the column
-itself should accept `NULL`. The existing `.defaultUuid()` precedence is
-unchanged.
+itself should accept `NULL`. `.defaultUuid()` takes precedence over a literal
+`.default(...)`; enum columns reject it because a generated UUID cannot satisfy
+their declared values.
 
 String defaults are always literals, including `"CURRENT_TIMESTAMP"`. Use `Schema.raw(...)` only for a trusted database expression; its contents are inserted into migration SQL verbatim.
 
@@ -479,5 +482,5 @@ When you set `connection.schema` (or use a tenant resolver), every `Schema.creat
 
 - **SQLite** can not change column types in place. The schema builder issues `ALTER TABLE` where SQLite supports it and falls back to a `create + copy + drop + rename` recipe for unsupported operations.
 - **SQLite exact numbers:** its `INTEGER`/`REAL` values and Bun's SQLite decoder use JavaScript numbers, so values beyond `Number.MAX_SAFE_INTEGER` and arbitrary-precision decimals are not exact. Store large IDs/decimals as `TEXT`, or store money as integer minor units. Changing `decimal()` globally to text would break numeric ordering and aggregates, so ORM does not do that implicitly.
-- **MySQL** unique-key indexes have a 191-character limit on `utf8mb4`. Use `string("col", 191)` for unique columns.
-- **PostgreSQL** is the only driver that supports `jsonb`, named `schema` qualification, and timezone-aware `timestamp`.
+- **MySQL index limits** are byte-based and depend on the InnoDB row format and page size. The often-cited 191-character `utf8mb4` limit applies to the legacy 767-byte ceiling, not every MySQL installation. See the [MySQL index documentation](https://dev.mysql.com/doc/refman/8.4/en/column-indexes.html) before indexing unusually wide or composite string keys.
+- **PostgreSQL** is the only driver that supports `jsonb` and named `schema` qualification. `dateTime()` and `timestamp()` currently compile to `TIMESTAMP(0) WITHOUT TIME ZONE`.

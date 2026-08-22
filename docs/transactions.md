@@ -126,4 +126,4 @@ For the schema-qualify strategy, all tables are in the same physical database, s
 
 - [Query Builder — Locking](./query-builder.md#locking) — `lockForUpdate`, `sharedLock`, `skipLocked`, `noWait`.
 - [Models](./models.md#crud) — `save()`, `delete()`, and bulk operations inside transactions.
-- [Multi-tenant — Context switching](./query-builder.md#context-switching) — how tenant scope and transactions interact under nesting and parallelism.
+- [Multi-tenant scope](./query-builder.md#multi-tenant-scope) — how tenant context selects the active connection.

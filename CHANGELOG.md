@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.2 - 2026-08-22
+
+### Changed
+
+- Refreshed the documentation to match the current public API, supported
+  drivers, private GitHub distribution, and `v1.1.2` installation tag.
+- Expanded queue documentation for database, Redis, custom drivers, retry
+  timing, stable job names, and migration-based table setup.
+- Expanded schema and backed-enum documentation with driver-specific timestamp
+  types, UUID defaults, immutable descriptors, and structured enum errors.
+
+### Fixed
+
+- Replaced obsolete seeder and tenant CLI examples with the commands and flags
+  accepted by the current CLI.
+- Corrected invalid imports, query result types, duplicate declarations, local
+  anchors, MySQL foreign-key signedness, and outdated index-limit guidance.
+
 ## 1.1.1 - 2026-08-22
 
 ### Changed

@@ -168,6 +168,7 @@ orm run                      # list all registered commands
 ```sh
 orm make:model User
 orm make:migration create_users_table
+orm make:command ReportOverdue
 orm make:job SendWelcomeEmail
 orm make:policy AnnouncementPolicy
 orm make:policy AnnouncementPolicy --model=Announcement

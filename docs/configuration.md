@@ -14,7 +14,7 @@ export default {
 
 That is enough for a single-database app with file-based migrations. Everything else is optional.
 
-## A complete config
+## A representative config
 
 ```ts
 // orm.config.ts
@@ -273,7 +273,11 @@ migrations: {
 }
 ```
 
-When `migrations.landlord` or `migrations.tenant` is set, the CLI's `orm migrate landlord` and `orm migrate tenant` commands target each group separately. The flat `migrationsPath` is still honored as a fallback when a scope is requested but its grouped path is missing.
+When `migrations.landlord` or `migrations.tenant` is set, use
+`orm migrate --landlord`, `orm migrate --tenants`, or
+`orm migrate --tenant=<id>` to target a scope. The flat `migrationsPath` is
+still honored as a fallback when a scope is requested but its grouped path is
+missing.
 
 ### `createIfMissing`
 
@@ -304,7 +308,7 @@ seedersPath: "./database/seeders",
 seedersPath: ["./database/seeders", "./database/test-fixtures"],
 ```
 
-Used by `bunx orm seed` and `orm.seed()`. See [Seeders](./seeders.md).
+Used by `bunx orm db:seed` and `orm.seed()`. See [Seeders](./seeders.md).
 
 ## `tenancy`
 
@@ -367,7 +371,7 @@ Resolution order for model table names:
 
 ### `listTenants`
 
-Only used by the CLI when running grouped tenant migrations across every tenant (`bunx orm migrate tenants`):
+Only used by the CLI when running grouped tenant migrations across every tenant (`bunx orm migrate --tenants`):
 
 ```ts
 tenancy: {
@@ -421,7 +425,7 @@ modelsPath: {
 }
 ```
 
-The grouped form lets `orm migrate landlord` regenerate types only for landlord-scoped models.
+The grouped form lets `orm migrate --landlord --types` regenerate types only for landlord-scoped models.
 
 ## `policyPath`
 
@@ -483,14 +487,18 @@ Useful in development; in production prefer the file form (or leave off) and ens
 
 ## `queue`
 
-Enables the background job queue. When present, `configureOrm()` automatically creates a `DatabaseQueueDriver` wired to the default connection.
+Enables the background job queue. When present, `configureOrm()` configures the
+selected database, Redis, or custom driver. The database driver is the default.
 
 ```ts
 queue: {
+  driver: "db",                  // "db", "redis", or a QueueDriver instance
   defaultQueue: "default",        // queue name used when a job does not specify one
   workers: 2,                     // concurrent worker slots for `orm queue`
   jobsPath: "./app/jobs",         // directory the worker imports to register job classes
   retryAfterSeconds: 90,          // re-queue jobs reserved but not finished within this time
+  retryDelaySeconds: 5,           // wait before retrying a failed job
+  pollIntervalMs: 1_000,          // worker polling interval
   table: "jobs",                  // override the jobs table name
   failedTable: "failed_jobs",     // override the failed jobs table name
 },
@@ -498,16 +506,27 @@ queue: {
 
 All fields are optional. Omitting the entire `queue` key leaves the queue unconfigured; you can still call `Queue.configure()` manually.
 
-To use the Redis driver instead, configure the driver manually after `configureOrm()` (or before dispatching jobs):
+For Redis, configuration is enough; the URL defaults to Bun's `REDIS_URL`:
 
 ```ts
-import { redis } from "bun";
-import { Queue, RedisQueueDriver } from "@rekkr/orm/queue";
-
-Queue.configure(new RedisQueueDriver(redis, { prefix: "myapp:queue:" }), "default");
+queue: {
+  driver: "redis",
+  redis: { url: process.env.QUEUE_REDIS_URL },
+}
 ```
 
-See [Queue Jobs](./queue.md) for the full reference.
+Use `Queue.configure()` manually only when wiring ORM without `configureOrm()`
+or when supplying a custom driver. See [Queue Jobs](./queue.md) for the full
+reference.
+
+## Subsystem configuration
+
+These optional `OrmConfig` sections have dedicated guides:
+
+- [`cache`](./cache.md#setup) — cache store, key prefix, and default TTL.
+- [`commands`](./commands.md#configuration) — command discovery paths.
+- [`search`](./search.md#configure) — engine, model discovery, batching, queues,
+  and tenant-aware indexes.
 
 ## Wiring it up at runtime
 
@@ -531,7 +550,7 @@ const orm = configureOrm(config);
 3. Wires up `tenancy.resolveTenant` if provided, and applies the tenant pool defaults (`idleTimeoutMs`, `sweep`).
 4. Applies the abandoned-transaction safety net (`transactions.abandonedTimeoutMs`, default 60s).
 5. Configures query logging from `log`.
-6. Configures a `DatabaseQueueDriver` and calls `Queue.configure()` if `queue` is set.
+6. Configures the selected database, Redis, or custom queue driver if `queue` is set.
 
 It returns a [facade](./library-usage.md) you can use to run migrations and seeders programmatically.
 

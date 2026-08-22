@@ -51,7 +51,7 @@ For tables with irregular plural names (`curricula`, `media`, ...) pass the sing
 class Curriculum extends Model.define<CurriculumAttributes>("curricula") {}
 
 // Direct assignment — provide name explicitly:
-const Curriculum = Model.define<CurriculumAttributes>("curricula", "Curriculum");
+const CurriculumModel = Model.define<CurriculumAttributes>("curricula", "Curriculum");
 ```
 
 ### Plain `extends Model`
@@ -215,7 +215,13 @@ user.settings.theme;       // "dark" (parsed JSON)
 Use a backed enum descriptor when an attribute has a fixed set of string values:
 
 ```ts
-import { Model, backedEnum, type EnumValue } from "@rekkr/orm";
+import {
+  Model,
+  backedEnum,
+  InvalidEnumValueError,
+  type BackedEnumDefinition,
+  type EnumValue,
+} from "@rekkr/orm";
 
 export const PublicationState = backedEnum({
   Draft: "draft",
@@ -231,9 +237,18 @@ class Article extends Model {
 }
 ```
 
-Descriptor constants are primitive strings. Reads, writes, bulk model operations,
-and hydration reject values outside the descriptor. The legacy `"enum"` string
-cast is not supported because it declares no allowed values.
+Descriptor constants and serialized model values are primitive strings. The
+descriptor, its case map, and its internal value list are immutable. Empty
+descriptors, empty or duplicate values, and non-string values fail immediately
+when `backedEnum()` is called. `BackedEnumDefinition` is exported for APIs that
+accept any descriptor.
+
+Reads, writes, bulk model operations, and hydration reject values outside the
+descriptor with `InvalidEnumValueError`. The error exposes `model`, `attribute`,
+`value`, and the immutable `expected` value list for structured handling. The
+legacy `"enum"` string cast is not supported because it declares no allowed
+values; reads and writes throw an actionable error instead of passing the value
+through.
 
 `decimal:N` deliberately returns a string. Pass exact database decimals as
 strings too (`"12345678901234567890.12"`): once a value has entered a JavaScript
@@ -461,7 +476,7 @@ const others = await User.whereKeyNot(1).get();
 
 // Throw-on-miss
 const user = await User.findOrFail(1);
-const first = await User.firstOrFail();
+const requiredFirst = await User.firstOrFail();
 const email = await User.where("id", 1).valueOrFail("email");
 ```
 
@@ -522,7 +537,7 @@ user.$exists; // false if not found
 await user.save();
 
 // firstOrCreate — find or create (saves immediately)
-const user = await User.firstOrCreate(
+const persistedUser = await User.firstOrCreate(
   { email: "alice@example.com" },
   { name: "Alice" },
 );

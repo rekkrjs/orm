@@ -236,5 +236,5 @@ Avoid sharing observer state between tests — each registration is global until
 ## Where to next
 
 - [Models — quiet operations](./models.md#quiet-operations-skip-observers) — `saveQuietly` / `deleteQuietly` and `{ events: false }` flags.
-- [Models — `touches`](./models.md#touches---bump-parent-timestamps) — declarative parent-timestamp updates, simpler than an observer.
+- [Models — `touches`](./models.md#touches--bump-parent-timestamps) — declarative parent-timestamp updates, simpler than an observer.
 - [Transactions](./transactions.md) — wrap multi-model writes so observer-driven side effects don't fire when the parent change rolls back.
