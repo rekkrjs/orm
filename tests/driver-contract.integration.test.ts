@@ -1,9 +1,18 @@
+import { SQL } from "bun";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { PermissiveModel } from "./helpers.js";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { pathToFileURL } from "url";
-import { Builder, Connection, Migrator, Model, Schema, backedEnum } from "../src/index.js";
+import {
+  Builder,
+  Connection,
+  Migrator,
+  Model,
+  Schema,
+  UniqueConstraintViolationError,
+  backedEnum,
+} from "../src/index.js";
 import { createDriverContext, serverUrl, type ServerDriver } from "./driver-harness.js";
 
 type ContractDriver = "sqlite" | ServerDriver;
@@ -36,6 +45,11 @@ class ContractDefault extends PermissiveModel {
   static timestamps = false;
 }
 
+class ContractUniqueRecord extends PermissiveModel {
+  static table = "contract_unique_records";
+  static timestamps = false;
+}
+
 const ContractJsonState = backedEnum({ Ready: "ready", Paused: "paused" });
 
 class ContractFastJson extends PermissiveModel {
@@ -56,6 +70,23 @@ async function createContext(driver: ContractDriver): Promise<ContractContext> {
   Model.setConnection(connection);
   Schema.setConnection(connection);
   return { connection, dispose: () => connection.close() };
+}
+
+async function caught(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  throw new Error("Expected promise to reject");
+}
+
+function expectDriverUniqueCause(driver: ContractDriver, error: unknown): void {
+  expect(error).toBeInstanceOf(UniqueConstraintViolationError);
+  const cause = (error as Error).cause;
+  if (driver === "sqlite") expect(cause).toBeInstanceOf(SQL.SQLiteError);
+  else if (driver === "mysql") expect(cause).toBeInstanceOf(SQL.MySQLError);
+  else expect(cause).toBeInstanceOf(SQL.PostgresError);
 }
 
 for (const driver of ["sqlite", "mysql", "postgres"] as const) {
@@ -148,6 +179,69 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
       expect((await ContractUser.find(user.getAttribute("id")))?.getAttribute("name")).toBe("Saved");
       await post.delete();
       expect(await ContractPost.find(post.getAttribute("id"))).toBeNull();
+    });
+
+    run("normalizes only unique violations across every write path", async () => {
+      const connection = context.connection;
+      await Schema.create("contract_unique_records", (table) => {
+        table.increments("id");
+        table.string("email").unique();
+        table.string("required_value");
+      }, connection);
+
+      const first = await ContractUniqueRecord.on(connection).create({
+        email: `first-${driver}@example.test`,
+        required_value: "first",
+      });
+
+      // On MySQL this model path goes through runAndGetMysqlInsertId() on a
+      // reserved session, which must classify the failed INSERT before trying
+      // to read LAST_INSERT_ID().
+      expectDriverUniqueCause(driver, await caught(ContractUniqueRecord.on(connection).create({
+        email: `first-${driver}@example.test`,
+        required_value: "model duplicate",
+      })));
+      expectDriverUniqueCause(driver, await caught(new Builder(connection, "contract_unique_records").insert({
+        email: `first-${driver}@example.test`,
+        required_value: "builder duplicate",
+      })));
+      const duplicatePrimary = driver === "postgres"
+        ? connection.run(
+            `INSERT INTO ${connection.getGrammar().wrap(connection.qualifyTable("contract_unique_records"))} ` +
+              `("id", "email", "required_value") OVERRIDING SYSTEM VALUE VALUES ($1, $2, $3)`,
+            [first.getAttribute("id"), `primary-${driver}@example.test`, "primary duplicate"],
+          )
+        : new Builder(connection, "contract_unique_records").insert({
+            id: first.getAttribute("id"),
+            email: `primary-${driver}@example.test`,
+            required_value: "primary duplicate",
+          });
+      expectDriverUniqueCause(driver, await caught(duplicatePrimary));
+
+      const second = await ContractUniqueRecord.on(connection).create({
+        email: `second-${driver}@example.test`,
+        required_value: "second",
+      });
+      expectDriverUniqueCause(driver, await caught(
+        ContractUniqueRecord.on(connection)
+          .where("id", second.getAttribute("id"))
+          .update({ email: `first-${driver}@example.test` })
+      ));
+
+      const before = await ContractUniqueRecord.on(connection).count();
+      await ContractUniqueRecord.on(connection).insertOrIgnore({
+        email: `first-${driver}@example.test`,
+        required_value: "ignored",
+      });
+      expect(await ContractUniqueRecord.on(connection).count()).toBe(before);
+
+      const notNull = await caught(new Builder(connection, "contract_unique_records").insert({
+        email: `missing-${driver}@example.test`,
+      }));
+      expect(notNull).not.toBeInstanceOf(UniqueConstraintViolationError);
+      if (driver === "sqlite") expect(notNull).toBeInstanceOf(SQL.SQLiteError);
+      else if (driver === "mysql") expect(notNull).toBeInstanceOf(SQL.MySQLError);
+      else expect(notNull).toBeInstanceOf(SQL.PostgresError);
     });
 
     run("keeps raw and nested query values out of SQL text", async () => {

@@ -219,6 +219,33 @@ import { Connection } from "@rekkr/orm";
 Connection.defaultPostgresPoolMax = 20;
 ```
 
+### Unique constraint errors
+
+Duplicate unique values and primary keys are normalized across SQLite, MySQL,
+and PostgreSQL:
+
+```ts
+import { UniqueConstraintViolationError } from "@rekkr/orm";
+
+try {
+  await User.create({ email: "already-taken@example.test" });
+} catch (error) {
+  if (error instanceof UniqueConstraintViolationError) {
+    // Return a conflict response, report a validation issue, etc.
+  }
+}
+```
+
+The public message is stable and intentionally contains no SQL, bindings,
+table, column, or constraint names. The original Bun driver error is available
+as `error.cause` for trusted server-side diagnostics. Treat that cause as
+sensitive: do not serialize it into an HTTP response or expose it to clients.
+
+Only duplicate unique and primary-key violations use this error. `NOT NULL`,
+`CHECK`, foreign-key, connection, and syntax failures remain the original
+driver errors. `insertOrIgnore()` continues to suppress duplicate conflicts as
+requested instead of throwing.
+
 ### Multi-tenant connection budget
 
 Each distinct connection opens its **own** pool of up to `max` sockets. Postgres `max_connections` defaults to 100, so the ceiling is roughly:

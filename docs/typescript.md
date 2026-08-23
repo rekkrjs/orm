@@ -230,6 +230,7 @@ The string name in `scope("active")` autocompletes from the available `scope*` m
 ```ts
 await User.create({ name: "Alice", email: "a@b.com" });           // ✓
 await User.create({ name: "Alice", nonexistent: true });          // ✗
+await User.query().forceCreate({ is_admin: true });                // ✓ trusted input
 
 await user.update({ active: false });                              // ✓
 user.fill({ name: "Bob" });

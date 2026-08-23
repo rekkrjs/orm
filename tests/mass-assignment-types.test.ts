@@ -78,6 +78,9 @@ function typeAssertions(): void {
     user.setAttribute("admin", true);
     user.forceFill({ admin: true });
     ProtectedUser.forceCreate({ admin: true });
+    ProtectedUser.query().forceCreate({ admin: true });
+    // @ts-expect-error builder create still accepts only the writable subset.
+    ProtectedUser.query().create({ admin: true });
     ProtectedUser.query().insert({ admin: true });
 
     ProtectedUser.firstOrNew({ admin: true }, { name: "Search criteria remain broad" });

@@ -587,6 +587,12 @@ model.save({ events: false });
 ```ts
 await User.forceCreate({ name: "Root", internal_flag: true });
 
+// Keep a trusted write on an explicitly selected tenant / database connection.
+await User.on(tenantConnection).forceCreate({
+  name: "Tenant root",
+  internal_flag: true,
+});
+
 await User.truncate();   // wipe the table
 
 await User.withoutTimestamps(async () => {
@@ -594,6 +600,13 @@ await User.withoutTimestamps(async () => {
   await user.save();                              // updated_at unchanged
 });
 ```
+
+`forceCreate()` bypasses `fillable` / `guarded`, but it is otherwise a normal
+model save: casts and backed enums are validated, UUIDs and timestamps are
+generated, observers run, and save options such as `{ events: false }` are
+honored. The builder form requires a model-backed builder (`User.query()` or
+`User.on(connection)`); a raw `new Builder(connection, table)` has no model to
+instantiate and throws before writing.
 
 ## Bulk operations
 

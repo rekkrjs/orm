@@ -923,6 +923,29 @@ for await (const user of User.lazyById(500)) { /* keyset chunked */ }
 
 **Avoid `offset` for large tables** — once you're past a few thousand rows, offset pagination becomes O(offset) on most engines. Reach for `chunkById` / `lazyById` instead.
 
+## Model-backed creation
+
+Model-backed builders can construct and save a model on the builder's exact
+connection:
+
+```ts
+const user = await User.on(tenantConnection).create({
+  name: "Alice",
+  email: "alice@example.test",
+});
+
+const root = await User.on(tenantConnection).forceCreate({
+  name: "Root",
+  is_admin: true,
+});
+```
+
+`create()` applies the model's mass-assignment policy. `forceCreate()` accepts
+trusted model attributes and bypasses that policy. Both use the normal model
+save lifecycle (casts, enum validation, generated keys, timestamps, observers,
+and save options) and return the persisted model. They are unavailable on raw
+table builders because those builders do not know which model to instantiate.
+
 ## Conditional building
 
 `when()` and `unless()` let you compose filters from optional inputs without an `if`-ladder:
@@ -1112,6 +1135,7 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `paginate / simplePaginate / cursorPaginate` | Pagination |
 | `chunk / each / chunkById / chunkByIdDesc / eachById` | Streaming |
 | `cursor / lazy / lazyById` | Async iterators |
+| `create / forceCreate` | Persist and return a model (model-backed builders only) |
 | `insert / insertGetId / insertOrIgnore / upsert` | Inserts |
 | `update / updateFrom / increment / decrement` | Updates |
 | `delete / forceDelete / restore` | Delete or restore rows |

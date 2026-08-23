@@ -2114,6 +2114,12 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return instance;
   }
 
+  async forceCreate(attributes: ModelAttributeInput<T>, options: SaveOptions = {}): Promise<T> {
+    const instance = this.newModelForCreation("forceCreate", attributes);
+    await instance.save(options);
+    return instance;
+  }
+
   async firstOrNew(attributes: ModelAttributeInput<T> = {}, values: ModelMassAssignmentInput<T> = {}): Promise<T> {
     const found = await this.clone().where(attributes as any).first();
     return found ?? this.newModelForCreation("firstOrNew", attributes, values);

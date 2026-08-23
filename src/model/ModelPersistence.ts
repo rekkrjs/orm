@@ -26,11 +26,15 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
    * the column itself, which is what decides how the key is read back after an
    * insert. Fetched once so a save costs a single introspection.
    */
-  static async primaryKeyStrategy(): Promise<{ generate: boolean; column: PrimaryKeyColumn | null }> {
+  static async primaryKeyStrategy(connection?: Connection): Promise<{ generate: boolean; column: PrimaryKeyColumn | null }> {
     if ((this as any).usesUuids || this.keyType === "uuid") return { generate: true, column: null };
     const { Schema } = await import("../schema/Schema.js");
-    const connection = (this as any).getConnection();
-    const column = await Schema.getColumn((this as any).getQualifiedTable(connection), this.primaryKey, connection);
+    const activeConnection = connection ?? (this as any).getConnection();
+    const column = await Schema.getColumn(
+      (this as any).getQualifiedTable(activeConnection),
+      this.primaryKey,
+      activeConnection,
+    );
     return { generate: shouldGeneratePrimaryKeyForColumn(column), column };
   }
 
@@ -504,7 +508,8 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
 
       const primaryKey = constructor.primaryKey;
       const primaryKeyValue = this.getAttribute(primaryKey);
-      const keyStrategy = await constructor.primaryKeyStrategy();
+      const connection = this.getConnection();
+      const keyStrategy = await constructor.primaryKeyStrategy(connection);
       const shouldGeneratePrimaryKey = keyStrategy.generate;
       if ((primaryKeyValue === null || primaryKeyValue === undefined || primaryKeyValue === "") && shouldGeneratePrimaryKey) {
         const generated = crypto.randomUUID();
@@ -512,7 +517,6 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
         delete this.$castCache[primaryKey];
       }
 
-      const connection = this.getConnection();
       if (shouldGeneratePrimaryKey || primaryKeyValue !== null && primaryKeyValue !== undefined && primaryKeyValue !== "") {
         await new Builder(connection, constructor.getQualifiedTable(connection)).insert(this.attributesForDriver(connection) as any);
       } else {

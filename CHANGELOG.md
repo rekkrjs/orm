@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.3.0 - 2026-08-23
+
+### Added
+
+- Added model-backed `Builder.forceCreate()`, including connection-bound
+  creation through `Model.on(connection)`. It bypasses mass-assignment guards
+  while retaining normal casts, backed-enum validation, generated keys,
+  timestamps, observers, and save options.
+- Added the exported `UniqueConstraintViolationError` for duplicate unique and
+  primary-key writes on SQLite, MySQL, and PostgreSQL. Its stable public message
+  omits query details and retains the native Bun error as `cause` for trusted
+  diagnostics.
+
+### Fixed
+
+- Routed ordinary writes, date-bearing MySQL writes, reserved-session writes,
+  and MySQL auto-increment inserts through the same unique-error classifier.
+  Other database and constraint errors remain unchanged, and
+  `insertOrIgnore()` keeps its existing behavior.
+- Model instances created from an explicitly bound builder now inspect their
+  primary-key strategy using that exact connection instead of the global model
+  connection.
+
+### Verification
+
+- Added focused SQLite regressions and live Bun 1.4.0 driver-contract coverage
+  for SQLite, MySQL, and PostgreSQL, including model creation, raw inserts,
+  updates, primary keys, transactions, ignored conflicts, and non-unique
+  constraints.
+
 ## 1.2.0 - 2026-08-23
 
 ### Added

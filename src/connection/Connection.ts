@@ -4,6 +4,29 @@ import { Grammar } from "../query/grammars/Grammar.js";
 import { SQLiteGrammar } from "../query/grammars/SQLiteGrammar.js";
 import { MySqlGrammar } from "../query/grammars/MySqlGrammar.js";
 import { PostgresGrammar } from "../query/grammars/PostgresGrammar.js";
+import { UniqueConstraintViolationError } from "./UniqueConstraintViolationError.js";
+
+function isUniqueConstraintViolation(
+  driverName: "sqlite" | "mysql" | "postgres",
+  error: unknown,
+): boolean {
+  switch (driverName) {
+    case "sqlite":
+      return error instanceof SQL.SQLiteError && (
+        error.code === "SQLITE_CONSTRAINT_UNIQUE" ||
+        error.code === "SQLITE_CONSTRAINT_PRIMARYKEY"
+      );
+    case "postgres":
+      return error instanceof SQL.PostgresError && (
+        // Bun 1.4 reports the server SQLSTATE in errno while code stays generic.
+        error.code === "23505" || error.errno === "23505"
+      );
+    case "mysql":
+      return error instanceof SQL.MySQLError && (
+        error.code === "ER_DUP_ENTRY" || error.errno === 1062
+      );
+  }
+}
 
 export class Connection {
   /** Every driver the ORM has a grammar for. Anything else is rejected up front. */
@@ -312,6 +335,17 @@ export class Connection {
     return bindings?.map((binding) => this.normalizeBinding(binding));
   }
 
+  private async executeStatement(driver: SQL, sqlString: string, bindings?: any[]): Promise<any> {
+    try {
+      return await this.keepEventLoopAlive(() => driver.unsafe(sqlString, bindings));
+    } catch (error) {
+      if (isUniqueConstraintViolation(this.driverName, error)) {
+        throw new UniqueConstraintViolationError({ cause: error });
+      }
+      throw error;
+    }
+  }
+
   async query(sqlString: string, bindings?: any[]): Promise<any[]> {
     return (await this.execute(sqlString, bindings)) as any[];
   }
@@ -331,10 +365,8 @@ export class Connection {
       const normalizedBindings = this.normalizeBindings(bindings);
       this.log(sqlString, normalizedBindings);
       if (hasDate) await this.assertMysqlUtc(driver, this.dedicated || !!this.reservedDriver);
-      await this.keepEventLoopAlive(() => driver.unsafe(sqlString, normalizedBindings));
-      const rows = await this.keepEventLoopAlive(
-        () => driver.unsafe("SELECT LAST_INSERT_ID() AS orm_insert_id")
-      ) as any[];
+      await this.executeStatement(driver, sqlString, normalizedBindings);
+      const rows = await this.executeStatement(driver, "SELECT LAST_INSERT_ID() AS orm_insert_id") as any[];
       return rows[0]?.orm_insert_id ?? null;
     };
 
@@ -363,7 +395,7 @@ export class Connection {
 
     const driver = this.getDriver();
     if (this.driverName !== "mysql" || !hasDate) {
-      return await this.keepEventLoopAlive(() => driver.unsafe(sqlString, normalizedBindings));
+      return await this.executeStatement(driver, sqlString, normalizedBindings);
     }
 
     // A pool may hand two consecutive queries to different sessions. Reserve
@@ -372,14 +404,14 @@ export class Connection {
       const reserved = await this.keepEventLoopAlive(() => (driver as any).reserve()) as SQL & { release?: () => void };
       try {
         await this.assertMysqlUtc(reserved);
-        return await this.keepEventLoopAlive(() => reserved.unsafe(sqlString, normalizedBindings));
+        return await this.executeStatement(reserved, sqlString, normalizedBindings);
       } finally {
         reserved.release?.();
       }
     }
 
     await this.assertMysqlUtc(driver, this.dedicated || !!this.reservedDriver);
-    return await this.keepEventLoopAlive(() => driver.unsafe(sqlString, normalizedBindings));
+    return await this.executeStatement(driver, sqlString, normalizedBindings);
   }
 
   /** Whether a binding contains a semantic date rather than date-looking text. */

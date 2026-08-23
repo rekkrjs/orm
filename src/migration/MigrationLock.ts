@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { Connection } from "../connection/Connection.js";
+import { UniqueConstraintViolationError } from "../connection/UniqueConstraintViolationError.js";
 import { Builder } from "../query/Builder.js";
 import { Blueprint } from "../schema/Blueprint.js";
 import { Schema } from "../schema/Schema.js";
@@ -50,6 +51,7 @@ const UNIQUE_VIOLATION_CODES = new Set([
 ]);
 
 function isUniqueViolation(error: unknown): boolean {
+  if (error instanceof UniqueConstraintViolationError) return true;
   const candidate = error as { code?: unknown; errno?: unknown; message?: unknown } | null | undefined;
 
   const code = candidate?.code;
