@@ -268,6 +268,16 @@ describe("Attribute Casting", () => {
     // Reading rows already stored with the old cast fails just as loudly.
     record.$attributes.secret = "aGlkZGVu";
     expect(() => record.secret).toThrow(/base64/);
+
+    class MisreportedEncryptedModel extends LegacyEncryptedModel {
+      override getModelConstructor(): typeof Model {
+        return Model;
+      }
+    }
+
+    const misreported = new MisreportedEncryptedModel();
+    misreported.$attributes.secret = "aGlkZGVu";
+    expect(() => misreported.secret).toThrow("(MisreportedEncryptedModel.secret)");
   });
 
   test("caches casted values until the attribute or casts change", () => {

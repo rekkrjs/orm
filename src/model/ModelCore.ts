@@ -30,18 +30,7 @@ import {
   isBackedEnumDefinition,
   type BackedEnumDefinition,
 } from "./BackedEnum.js";
-
-/**
- * The old `encrypted` cast only Base64-encoded values, so it read as a security
- * guarantee it never provided. Failing loudly beats silently storing secrets in
- * plain sight.
- */
-function removedEncryptedCast(model: object, key: string): Error {
-  return new Error(
-    `The "encrypted" cast was removed (${model.constructor.name}.${key}): it only Base64-encoded values, it never encrypted them. ` +
-      `Use the "base64" cast for encoding, or a custom CastsAttributes class backed by a real cipher for secrets.`
-  );
-}
+import { castBuiltInAttribute, removedEncryptedCastError } from "./ModelJsonRow.js";
 
 function dateCastKeys(casts: Record<string, any>): string[] {
   const keys: string[] = [];
@@ -186,6 +175,7 @@ export class ModelCore<T extends Record<string, any> = any> {
   static appends: readonly string[] = [];
   static accessors: AccessorMap<any, any> = {};
   static touches: readonly string[] = [];
+  static fastJson = false;
 
   $attributes = {} as T;
   $original = {} as Partial<T>;
@@ -525,7 +515,8 @@ export class ModelCore<T extends Record<string, any> = any> {
     const cast = this.getCastDefinition(key);
     if (!cast) return value;
     if (value === null) return value;
-    if (isBackedEnumDefinition(cast)) {
+    const backedEnum = isBackedEnumDefinition(cast);
+    if (backedEnum) {
       if (value === undefined && !Object.hasOwn(this.$attributes, key)) return value;
       this.assertBackedEnumValue(key, value, cast);
       return value;
@@ -533,39 +524,10 @@ export class ModelCore<T extends Record<string, any> = any> {
     if (value === undefined) return value;
     const custom = this.resolveCustomCast(cast);
     if (custom) return custom.get(this, key, value, this.$attributes);
-    const [type, argument] = String(cast).split(":");
-
-    switch (type) {
-      case "boolean":
-      case "bool":
-        return !!value;
-      case "number":
-      case "integer":
-      case "int":
-      case "float":
-      case "double":
-        return Number(value);
-      case "decimal":
-        return formatDecimal(value, Number(argument || 2));
-      case "string":
-        return String(value);
-      case "date":
-      case "datetime":
-        // Always a fresh Date: callers get a value they can mutate without
-        // reaching back into `$attributes`, which `$original` shares.
-        return new Date(value);
-      case "json":
-      case "array":
-        return typeof value === "string" ? JSON.parse(value) : value;
-      case "object":
-        return typeof value === "string" ? JSON.parse(value) : value;
-      case "base64":
-        return typeof value === "string" ? Buffer.from(value, "base64").toString("utf8") : value;
-      case "encrypted":
-        throw removedEncryptedCast(this, key);
-      default:
-        return value;
-    }
+    return castBuiltInAttribute(cast, value, {
+      modelName: this.constructor.name,
+      attribute: key,
+    });
   }
 
   serializeCastAttribute(key: string, value: any): any {
@@ -605,7 +567,7 @@ export class ModelCore<T extends Record<string, any> = any> {
       case "base64":
         return Buffer.from(String(value), "utf8").toString("base64");
       case "encrypted":
-        throw removedEncryptedCast(this, key);
+        throw removedEncryptedCastError(this.constructor.name, key);
       default:
         return value;
     }

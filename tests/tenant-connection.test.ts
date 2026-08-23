@@ -4,6 +4,7 @@ import { configureOrm, Connection, ConnectionManager, Model, Schema, TenantConte
 class TenantUser extends Model {
   static table = "tenant_users";
   static timestamps = false;
+  static override fastJson = true;
 }
 
 class LandlordTenant extends Model {
@@ -69,6 +70,26 @@ describe("tenant connection switching", () => {
 
     expect(left?.getAttribute("name")).toBe("Acme User");
     expect(right?.getAttribute("name")).toBe("Beta User");
+  });
+
+  test("keeps direct model JSON on the resolved tenant connection", async () => {
+    const acme = await createTenantDb("Acme");
+    const beta = await createTenantDb("Beta");
+    ConnectionManager.setTenantResolver((tenantId) => ({
+      strategy: "database",
+      name: `json:${tenantId}`,
+      config: { url: "sqlite://:memory:" },
+    }));
+    ConnectionManager.add("json:acme", acme);
+    ConnectionManager.add("json:beta", beta);
+
+    const [acmeJson, betaJson] = await Promise.all([
+      TenantContext.run("acme", () => TenantUser.query().json()),
+      TenantContext.run("beta", () => TenantUser.query().json()),
+    ]);
+
+    expect(acmeJson).toEqual([{ id: 1, name: "Acme User" }]);
+    expect(betaJson).toEqual([{ id: 1, name: "Beta User" }]);
   });
 
   test("forTenant uses an already resolved tenant connection", async () => {

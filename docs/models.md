@@ -736,6 +736,54 @@ user.json({ relations: false });   // attributes only, no relations
 
 `JSON.stringify(user)` calls `toJSON()`, so it picks up relations and accessor-defined virtual fields automatically.
 
+### Direct query JSON
+
+`Builder.json()` can avoid constructing one model per row when the model opts in
+and all of its JSON behavior is static:
+
+```ts
+class User extends Model {
+  static override fastJson = true;
+  static override casts = { active: "boolean" };
+  static override hidden = ["password"];
+}
+
+const payload = await User.select("id", "name", "active").orderBy("id").json();
+```
+
+Eligible direct queries preserve built-in casts, backed-enum validation, static
+`hidden` / `visible` rules, selected aliases and aggregates, ordering, query
+caching, recursive decorations, and the builder's resolved tenant connection.
+The result remains a `Collection`-compatible JSON array.
+
+`fastJson = true` is explicit permission for direct query JSON to skip per-row
+constructor side effects. Put serialization configuration in the documented
+static properties rather than a custom constructor. The flag does not force the
+optimization: the ORM falls back to hydrated models for eager loads, an active
+Identity Map, non-empty `appends` or `accessors`, custom cast classes or objects,
+default `attributes`, a static `hydrate()` override, and relevant prototype
+serialization or connection method overrides. Existing models default to
+`fastJson = false`.
+
+Methods installed by a constructor or class field are part of the same
+constructor boundary and cannot be detected from static metadata. Do not enable
+`fastJson` on models that install serialization or connection behavior that
+way.
+
+These forms always retain their existing semantics:
+
+```ts
+const users = await User.select("id", "name", "active").get();
+users.each((user) => user.makeHidden("internal_note"));
+const instancePayload = users.json(); // serializes these exact model instances
+
+const rows = await DB.table<UserRow>("users").getArray();
+// Raw rows: no model casts, visibility, accessors, or constructors.
+```
+
+Instance `json()`, `toJSON()`, `JSON.stringify(model)`, and collection
+serialization never use the direct-query fast path.
+
 ### Picking fields
 
 Pass field names to return only a subset. Keys autocomplete and are type-checked:

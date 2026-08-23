@@ -148,11 +148,41 @@ const result = await User.where("email", "a@b.com").firstOr(() => guestUser);
 const byId = await User.findOr(1, () => guestUser);
 const users = await User.where("active", true).get();        // Collection<User>
 const arr = await User.where("active", true).getArray();     // plain User[]
+const payload = await User.where("active", true).json();     // serialized rows
 ```
 
 `get()` returns a [Collection](./collections.md) with helpers like `map`, `filter`, `groupBy`. `getArray()` removes that Collection wrapper, but its entries are still hydrated `User` models with casts, accessors, visibility, relations, and dirty tracking.
 
-For a high-throughput read-only endpoint that only needs database values, query with `DB.table<UserRow>("users")` instead. It returns plain rows and skips model hydration; apply any output-only conversion (for example, `Boolean(row.active)`) explicitly before returning the response.
+`Builder.json()` normally hydrates those models and serializes them. A model can
+opt compatible direct JSON queries into static row serialization:
+
+```ts
+class User extends Model {
+  // Direct query JSON may bypass per-row construction when the model is eligible.
+  static override fastJson = true;
+}
+
+const payload = await User.select("id", "name", "active").orderBy("id").json();
+```
+
+The optimized path preserves built-in casts, backed enums, `hidden` / `visible`,
+SQL aliases, result order, relation aggregates, recursive decorations, query
+caching, and tenant connections. The flag is only permission to optimize, not a
+guarantee: eager loads, an active Identity Map, appends, accessors, custom casts,
+default model attributes, a static `hydrate()` override, or relevant prototype
+method overrides automatically use normal hydration.
+
+Fetching first always requests models and exact instance behavior:
+
+```ts
+const users = await User.select("id", "name", "active").get();
+const payloadWithInstanceBehavior = users.json();
+```
+
+For a read-only endpoint that wants database values without model serialization
+rules, query with `DB.table<UserRow>("users")` instead. It returns plain rows and
+skips model hydration; apply any output-only conversion (for example,
+`Boolean(row.active)`) explicitly before returning the response.
 
 ### Throw-on-miss variants
 

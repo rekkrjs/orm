@@ -3,7 +3,7 @@ import { PermissiveModel } from "./helpers.js";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { pathToFileURL } from "url";
-import { Builder, Connection, Migrator, Model, Schema } from "../src/index.js";
+import { Builder, Connection, Migrator, Model, Schema, backedEnum } from "../src/index.js";
 import { createDriverContext, serverUrl, type ServerDriver } from "./driver-harness.js";
 
 type ContractDriver = "sqlite" | ServerDriver;
@@ -34,6 +34,20 @@ class ContractPost extends PermissiveModel {
 class ContractDefault extends PermissiveModel {
   static table = "contract_defaults";
   static timestamps = false;
+}
+
+const ContractJsonState = backedEnum({ Ready: "ready", Paused: "paused" });
+
+class ContractFastJson extends PermissiveModel {
+  static override table = "contract_fast_json";
+  static override timestamps = false;
+  static override fastJson = true;
+  static override casts = {
+    active: "boolean",
+    happened_at: "datetime",
+    metadata: "json",
+    state: ContractJsonState,
+  };
 }
 
 async function createContext(driver: ContractDriver): Promise<ContractContext> {
@@ -167,6 +181,34 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
       expect((await ContractDefault.find(omitted.id))!.value).toBe("database");
       expect((await ContractDefault.find(explicitNull.id))!.value).toBeNull();
       expect(await ContractDefault.where("value", "database").count()).toBe(2);
+    });
+
+    run("keeps direct query JSON equal to hydrated JSON across driver values", async () => {
+      const connection = context.connection;
+      await Schema.create("contract_fast_json", (table) => {
+        table.increments("id");
+        table.boolean("active");
+        table.timestamp("happened_at");
+        table.json("metadata");
+        table.string("state");
+      }, connection);
+
+      await ContractFastJson.on(connection).insert({
+        active: true,
+        happened_at: "2026-08-20T10:11:12.000Z",
+        metadata: JSON.stringify({ driver, nested: [1, 2] }),
+        state: ContractJsonState.Ready,
+      });
+
+      const direct = await ContractFastJson.on(connection).json();
+      const hydrated = (await ContractFastJson.on(connection).get()).toJSON();
+      expect(direct).toEqual(hydrated);
+      expect(direct[0]).toMatchObject({
+        active: true,
+        metadata: { driver, nested: [1, 2] },
+        state: "ready",
+      });
+      expect((direct[0] as any).happened_at).toBeInstanceOf(Date);
     });
 
     run("paginates joined and grouped queries with having bindings", async () => {

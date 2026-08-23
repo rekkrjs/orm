@@ -8,6 +8,7 @@ import { findRelationMethod, HasMany, Model as BaseModel } from "../model/Model.
 import { ObserverRegistry } from "../model/Observer.js";
 import { ModelNotFoundError } from "../model/ModelNotFoundError.js";
 import { IdentityMap } from "../model/IdentityMap.js";
+import { createFastJsonPlan, serializeJsonRow } from "../model/ModelJsonRow.js";
 import {
   assertBackedEnumValue,
   assertDeclaredEnumCast,
@@ -2043,7 +2044,18 @@ export class Builder<T = Record<string, any>, TResult = T> {
   }
 
   async json(): Promise<CollectionJson<TResult>> {
-    return (await this.get()).toJSON();
+    if (!this.model || this.eagerLoads.length > 0 || IdentityMap.current()) {
+      return (await this.get()).toJSON();
+    }
+
+    const plan = createFastJsonPlan(this.model, BaseModel);
+    if (!plan) return (await this.get()).toJSON();
+
+    const query = this.clone();
+    query.model = undefined;
+    query.eagerLoads = [];
+    const rows = await query.get();
+    return rows.map((row) => serializeJsonRow(row as Record<string, unknown>, plan)) as CollectionJson<TResult>;
   }
 
   async first(): Promise<TResult | null> {

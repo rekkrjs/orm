@@ -2,7 +2,9 @@ import type { Connection } from "../connection/Connection.js";
 import type { Builder } from "../query/Builder.js";
 import type { BackedEnumDefinition } from "./BackedEnum.js";
 
-export type ModelConstructor<T = any> = (new (...args: any[]) => T) & Omit<any, "prototype">;
+export type ModelConstructor<T = any> = (new (...args: any[]) => T) &
+  { fastJson: boolean } &
+  Omit<any, "prototype" | "fastJson">;
 export type GlobalScope = (builder: Builder<any>, model: ModelConstructor) => void;
 export type LiteralUnion<T extends string> = T | (string & {});
 export type EagerLoadConstraint = (query: Builder<any>) => void | Builder<any>;

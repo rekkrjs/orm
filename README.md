@@ -3,7 +3,7 @@
 > **Bun-only package.** Install with:
 >
 > ```bash
-> bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.1.2
+> bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.2.0
 > ```
 >
 > The repository is private, so GitHub read access and SSH authentication are
@@ -21,6 +21,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 - 🔷 **Fully Typed** — Generate declarations for plain `extends Model` classes with typed attributes, queries, relations, and eager loads
 - 🏗️ **Schema Builder** — Programmatic table creation, indexes, foreign keys
 - 🔍 **Query Builder** — Chainable `where`, `join`, `orderBy`, `groupBy`, date filters, conditional building, etc.
+- ⚡ **Fast direct JSON** — Opted-in compatible model queries avoid per-row hydration
 - 🔎 **Search** — Meilisearch, PostgreSQL full-text search, and SQLite FTS5 engines
 - 🧠 **Tagged Cache** — Redis-backed cache facade, query `remember()`, and exact tag invalidation
 - 📣 **Events** — Application-level event dispatcher with function listeners and class handlers
@@ -41,7 +42,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 ## Installation
 
 ```bash
-bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.1.2
+bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.2.0
 ```
 
 See [Installation](./docs/installation.md) for details.

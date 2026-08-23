@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.2.0 - 2026-08-23
+
+### Added
+
+- Models can opt direct query `json()` into conservative static row
+  serialization with `static override fastJson = true`. Eligible queries keep
+  built-in casts, backed enums, visibility, aliases, ordering, aggregates,
+  recursive decorations, caching, and tenant connections without constructing
+  one model per row.
+- Added a 500-row JSON benchmark covering raw rows, eligible direct JSON,
+  explicit hydration, fallback JSON, and response encoding.
+
+### Changed
+
+- Built-in read casts and driver JSON normalization now share the same internal
+  conversion helpers between hydrated models and direct query JSON.
+- Direct query JSON automatically retains hydration for eager loads, active
+  Identity Maps, appends, accessors, custom casts, default attributes, and
+  static hydration overrides or relevant prototype method overrides.
+
 ## 1.1.2 - 2026-08-22
 
 ### Changed

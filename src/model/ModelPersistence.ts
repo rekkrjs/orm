@@ -16,6 +16,7 @@ import { isNumericColumnType, shouldGeneratePrimaryKeyForColumn } from "../utils
 import type { Connection } from "../connection/Connection.js";
 import { insertAndResolveKey, type PrimaryKeyColumn } from "./PrimaryKeyResolution.js";
 import { isBackedEnumDefinition } from "./BackedEnum.js";
+import { normalizeHydratedCastValue } from "./ModelJsonRow.js";
 
 type TimestampColumns = { createdAt: string; updatedAt: string };
 
@@ -142,17 +143,8 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
         }
         continue;
       }
-      if (typeof cast !== "string") continue;
-      const separator = cast.indexOf(":");
-      const type = separator === -1 ? cast : cast.slice(0, separator);
-      if (
-        (type === "json" || type === "array" || type === "object") &&
-        hydrated[key] !== null &&
-        hydrated[key] !== undefined &&
-        typeof hydrated[key] !== "string"
-      ) {
-        hydrated[key] = JSON.stringify(hydrated[key]);
-      }
+      const normalized = normalizeHydratedCastValue(cast, hydrated[key]);
+      if (normalized !== hydrated[key]) hydrated[key] = normalized;
     }
     instance.$dirtyKeys?.clear();
     const defaults = instance.$attributes as Record<string, any>;

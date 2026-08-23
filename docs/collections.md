@@ -56,6 +56,21 @@ users.json("id", "name", "posts.title")
 // [{ id: 1, name: "Alice", posts: [{ title: "Hello" }] }, ...]
 ```
 
+Collection conversion always serializes the exact items already in memory. It
+never uses the direct-query `fastJson` optimization, so instance calls such as
+`makeHidden()`, appended getters, loaded relations, and custom model behavior are
+preserved:
+
+```ts
+const users = await User.select("id", "name").get();
+users.each((user) => user.makeHidden("internal_note"));
+const payload = users.json();
+```
+
+By contrast, `await User.select("id", "name").json()` is a query terminal. A
+model declaring `static override fastJson = true` may serialize eligible rows
+without hydrating them; see [Direct query JSON](./models.md#direct-query-json).
+
 ## State
 
 ```ts

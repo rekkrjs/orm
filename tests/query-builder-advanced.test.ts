@@ -6,6 +6,8 @@ describe("Advanced Query Builder Features", () => {
   let db: Connection;
 
   class Folder extends PermissiveModel.define<{ id: number; parent_id: number | null; name: string; depth?: number }>("folders") {
+    static override fastJson = true;
+
     items() {
       return this.hasMany(Folder, "parent_id");
     }
@@ -539,6 +541,29 @@ describe("Advanced Query Builder Features", () => {
       ]);
       expect(folders.map((folder) => folder.getAttribute("has_children"))).toEqual([true, true, false, false]);
       expect(folders.map((folder) => folder.getAttribute("leaf"))).toEqual([false, false, true, true]);
+    });
+
+    test("direct JSON preserves flat recursive decorations", async () => {
+      const query = () => Folder
+        .descendants(1)
+        .path("name")
+        .hasChildren()
+        .leaf()
+        .orderByDepth()
+        .orderBy("name");
+
+      const direct = await query().json();
+      const hydrated = (await query().get()).toJSON();
+
+      expect(direct).toEqual(hydrated);
+      expect(direct.map((folder) => (folder as any).path)).toEqual([
+        "Root",
+        "Root > Admissions",
+        "Root > Billing",
+        "Root > Admissions > Forms",
+      ]);
+      expect(direct.map((folder) => (folder as any).has_children)).toEqual([true, true, false, false]);
+      expect(direct.map((folder) => (folder as any).leaf)).toEqual([false, false, true, true]);
     });
 
     test("getTree materializes recursive results into the matching hasMany relation", async () => {
