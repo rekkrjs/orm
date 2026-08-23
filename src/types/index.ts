@@ -64,7 +64,7 @@ export interface ForeignKeyDefinition {
 }
 
 export interface WhereClause {
-  type: "basic" | "in" | "null" | "raw" | "nested" | "between" | "column" | "exists" | "like" | "regexp" | "fulltext" | "json_contains" | "json_length" | "date" | "all" | "any";
+  type: "basic" | "in" | "null" | "raw" | "nested" | "between" | "between_columns" | "column" | "exists" | "like" | "regexp" | "fulltext" | "json_contains" | "json_length" | "date" | "all" | "any";
   column: string;
   columns?: string[];
   operator?: string;
@@ -85,12 +85,14 @@ export interface OrderClause {
 }
 
 export interface HavingClause {
+  type?: "basic" | "between";
   column?: string;
   operator?: string;
   value?: any;
   sql?: string;
   boolean: "and" | "or";
   bindings?: readonly unknown[];
+  not?: boolean;
 }
 
 export interface UnionClause {

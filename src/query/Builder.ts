@@ -551,15 +551,19 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this;
   }
 
-  whereNull(column: ModelColumn<T>, boolean: "and" | "or" = "and", scope?: string): this {
-    this.invalidateSqlCache();
-    this.wheres.push({ type: "null", column, boolean, scope });
+  whereNull(column: ModelColumn<T> | readonly ModelColumn<T>[], boolean: "and" | "or" = "and", scope?: string): this {
+    for (const item of Array.isArray(column) ? column : [column]) {
+      this.invalidateSqlCache();
+      this.wheres.push({ type: "null", column: item, boolean, scope });
+    }
     return this;
   }
 
-  whereNotNull(column: ModelColumn<T>, boolean: "and" | "or" = "and", scope?: string): this {
-    this.invalidateSqlCache();
-    this.wheres.push({ type: "null", column, boolean, operator: "NOT NULL" as any, scope });
+  whereNotNull(column: ModelColumn<T> | readonly ModelColumn<T>[], boolean: "and" | "or" = "and", scope?: string): this {
+    for (const item of Array.isArray(column) ? column : [column]) {
+      this.invalidateSqlCache();
+      this.wheres.push({ type: "null", column: item, boolean, operator: "NOT NULL" as any, scope });
+    }
     return this;
   }
 
@@ -573,6 +577,16 @@ export class Builder<T = Record<string, any>, TResult = T> {
     this.invalidateSqlCache();
     this.wheres.push({ type: "between", column, value: values, boolean, operator: "NOT BETWEEN" as any, scope });
     return this;
+  }
+
+  whereBetweenColumns(column: ModelColumn<T>, values: readonly [ModelColumn<T>, ModelColumn<T>], boolean: "and" | "or" = "and", not: boolean = false): this {
+    this.invalidateSqlCache();
+    this.wheres.push({ type: "between_columns", column, value: values, boolean: validBoolean(boolean), not });
+    return this;
+  }
+
+  whereNotBetweenColumns(column: ModelColumn<T>, values: readonly [ModelColumn<T>, ModelColumn<T>], boolean: "and" | "or" = "and"): this {
+    return this.whereBetweenColumns(column, values, boolean, true);
   }
 
   whereDate(column: ModelColumn<T>, operator?: string | any, value?: any, boolean: "and" | "or" = "and"): this {
@@ -615,6 +629,42 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this.whereTime(column, operator, value, "or");
   }
 
+  wherePast(columns: ModelColumn<T> | readonly ModelColumn<T>[]): this {
+    return this.addRelativeDateWhere(columns, "<", new Date());
+  }
+
+  whereNowOrPast(columns: ModelColumn<T> | readonly ModelColumn<T>[]): this {
+    return this.addRelativeDateWhere(columns, "<=", new Date());
+  }
+
+  whereFuture(columns: ModelColumn<T> | readonly ModelColumn<T>[]): this {
+    return this.addRelativeDateWhere(columns, ">", new Date());
+  }
+
+  whereNowOrFuture(columns: ModelColumn<T> | readonly ModelColumn<T>[]): this {
+    return this.addRelativeDateWhere(columns, ">=", new Date());
+  }
+
+  whereToday(columns: ModelColumn<T> | readonly ModelColumn<T>[]): this {
+    return this.addRelativeDateWhere(columns, "=", this.today(), true);
+  }
+
+  whereBeforeToday(columns: ModelColumn<T> | readonly ModelColumn<T>[]): this {
+    return this.addRelativeDateWhere(columns, "<", this.today(), true);
+  }
+
+  whereAfterToday(columns: ModelColumn<T> | readonly ModelColumn<T>[]): this {
+    return this.addRelativeDateWhere(columns, ">", this.today(), true);
+  }
+
+  whereTodayOrBefore(columns: ModelColumn<T> | readonly ModelColumn<T>[]): this {
+    return this.addRelativeDateWhere(columns, "<=", this.today(), true);
+  }
+
+  whereTodayOrAfter(columns: ModelColumn<T> | readonly ModelColumn<T>[]): this {
+    return this.addRelativeDateWhere(columns, ">=", this.today(), true);
+  }
+
   whereRaw(sql: string, boolean?: "and" | "or", scope?: string): this;
   whereRaw(sql: string, bindings?: readonly unknown[], boolean?: "and" | "or", scope?: string): this;
   whereRaw(
@@ -632,9 +682,23 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this;
   }
 
-  whereColumn(first: string, operator: string, second: string, boolean: "and" | "or" = "and"): this {
+  whereColumn(comparisons: readonly (readonly [ModelColumn<T>, string, ModelColumn<T>])[]): this;
+  whereColumn(first: string, second: string): this;
+  whereColumn(first: string, operator: string, second: string, boolean?: "and" | "or"): this;
+  whereColumn(first: string | readonly (readonly [ModelColumn<T>, string, ModelColumn<T>])[], operatorOrSecond?: string, second?: string, boolean: "and" | "or" = "and"): this {
+    if (typeof first !== "string") {
+      if (first.length === 0) return this;
+      return this.whereNested((query) => {
+        for (const [left, operator, right] of first) {
+          query.whereColumn(left, operator, right);
+        }
+      }, boolean);
+    }
+
+    const operator = second === undefined ? "=" : operatorOrSecond!;
+    const right = second === undefined ? operatorOrSecond! : second;
     this.invalidateSqlCache();
-    this.wheres.push({ type: "column", column: first, operator: validOperator(operator), value: second, boolean: validBoolean(boolean) });
+    this.wheres.push({ type: "column", column: first, operator: validOperator(operator), value: right, boolean: validBoolean(boolean) });
     return this;
   }
 
@@ -659,11 +723,11 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this.whereExists(sql, "and", true);
   }
 
-  orWhereNull(column: ModelColumn<T>, scope?: string): this {
+  orWhereNull(column: ModelColumn<T> | readonly ModelColumn<T>[], scope?: string): this {
     return this.whereNull(column, "or", scope);
   }
 
-  orWhereNotNull(column: ModelColumn<T>, scope?: string): this {
+  orWhereNotNull(column: ModelColumn<T> | readonly ModelColumn<T>[], scope?: string): this {
     return this.whereNotNull(column, "or", scope);
   }
 
@@ -673,6 +737,14 @@ export class Builder<T = Record<string, any>, TResult = T> {
 
   orWhereNotBetween<K extends ModelColumn<T>>(column: K, values: [ModelColumnValue<T, K>, ModelColumnValue<T, K>], scope?: string): this {
     return this.whereNotBetween(column, values, "or", scope);
+  }
+
+  orWhereBetweenColumns(column: ModelColumn<T>, values: readonly [ModelColumn<T>, ModelColumn<T>]): this {
+    return this.whereBetweenColumns(column, values, "or");
+  }
+
+  orWhereNotBetweenColumns(column: ModelColumn<T>, values: readonly [ModelColumn<T>, ModelColumn<T>]): this {
+    return this.whereBetweenColumns(column, values, "or", true);
   }
 
   orWhereIn<K extends ModelColumn<T>>(column: K, values: ModelColumnValue<T, K>[], scope?: string): this {
@@ -691,8 +763,20 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this.whereExists(sql, bindings, "or", true);
   }
 
-  orWhereColumn(first: string, operator: string, second: string): this {
-    return this.whereColumn(first, operator, second, "or");
+  orWhereColumn(comparisons: readonly (readonly [ModelColumn<T>, string, ModelColumn<T>])[]): this;
+  orWhereColumn(first: string, second: string): this;
+  orWhereColumn(first: string, operator: string, second: string): this;
+  orWhereColumn(first: string | readonly (readonly [ModelColumn<T>, string, ModelColumn<T>])[], operatorOrSecond?: string, second?: string): this {
+    if (typeof first !== "string") {
+      return this.whereNested((query) => {
+        for (const [left, operator, right] of first) {
+          query.whereColumn(left, operator, right);
+        }
+      }, "or");
+    }
+    return second === undefined
+      ? this.whereColumn(first, "=", operatorOrSecond!, "or")
+      : this.whereColumn(first, operatorOrSecond!, second, "or");
   }
 
   orWhereRaw(sql: string, bindings?: readonly unknown[], scope?: string): this;
@@ -743,15 +827,36 @@ export class Builder<T = Record<string, any>, TResult = T> {
   }
 
   whereAll(columns: ModelColumn<T>[], operator: string, value: any, boolean: "and" | "or" = "and"): this {
+    if (columns.length === 0) return this;
     this.invalidateSqlCache();
     this.wheres.push({ type: "all", column: "", columns: columns as string[], operator: validOperator(operator), value, boolean: validBoolean(boolean), scope: undefined });
     return this;
   }
 
   whereAny(columns: ModelColumn<T>[], operator: string, value: any, boolean: "and" | "or" = "and"): this {
+    if (columns.length === 0) return this;
     this.invalidateSqlCache();
     this.wheres.push({ type: "any", column: "", columns: columns as string[], operator: validOperator(operator), value, boolean: validBoolean(boolean), scope: undefined });
     return this;
+  }
+
+  whereNone(columns: ModelColumn<T>[], operator: string, value: any, boolean: "and" | "or" = "and"): this {
+    if (columns.length === 0) return this;
+    this.invalidateSqlCache();
+    this.wheres.push({ type: "any", column: "", columns: columns as string[], operator: validOperator(operator), value, boolean: validBoolean(boolean), scope: undefined, not: true });
+    return this;
+  }
+
+  orWhereAny(columns: ModelColumn<T>[], operator: string, value: any): this {
+    return this.whereAny(columns, operator, value, "or");
+  }
+
+  orWhereAll(columns: ModelColumn<T>[], operator: string, value: any): this {
+    return this.whereAll(columns, operator, value, "or");
+  }
+
+  orWhereNone(columns: ModelColumn<T>[], operator: string, value: any): this {
+    return this.whereNone(columns, operator, value, "or");
   }
 
   orderBy(column: ModelColumn<T>, direction: "asc" | "desc" = "asc"): this {
@@ -796,6 +901,10 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this;
   }
 
+  reorderDesc(column?: ModelColumn<T>): this {
+    return this.reorder(column, "desc");
+  }
+
   groupBy(...columns: ModelColumn<T>[]): this {
     this.invalidateSqlCache();
     this.groups.push(...columns);
@@ -835,6 +944,24 @@ export class Builder<T = Record<string, any>, TResult = T> {
 
   orHavingRaw(sql: string, bindings: readonly unknown[] = []): this {
     return this.havingRaw(sql, bindings, "or");
+  }
+
+  havingBetween(column: ModelColumn<T>, values: readonly [any, any], boolean: "and" | "or" = "and", not: boolean = false): this {
+    this.invalidateSqlCache();
+    this.havings.push({ type: "between", column, value: values, boolean: validBoolean(boolean), not });
+    return this;
+  }
+
+  havingNotBetween(column: ModelColumn<T>, values: readonly [any, any]): this {
+    return this.havingBetween(column, values, "and", true);
+  }
+
+  orHavingBetween(column: ModelColumn<T>, values: readonly [any, any]): this {
+    return this.havingBetween(column, values, "or");
+  }
+
+  orHavingNotBetween(column: ModelColumn<T>, values: readonly [any, any]): this {
+    return this.havingBetween(column, values, "or", true);
   }
 
   limit(count: number): this {
@@ -1166,6 +1293,10 @@ export class Builder<T = Record<string, any>, TResult = T> {
   tap(callback: (query: this) => void | this): this {
     const result = callback(this);
     return (result || this) as this;
+  }
+
+  pipe<R>(callback: (query: this) => R): R {
+    return callback(this);
   }
 
   whereBelongsTo<R extends string & BelongsToRelationName<TResult>>(relationName: R, model: RelationShortcutInput): this {
@@ -1579,6 +1710,9 @@ export class Builder<T = Record<string, any>, TResult = T> {
       const low = this.parameterize ? this.addBinding((where.value as any[])[0]) : this.grammar.escape((where.value as any[])[0]);
       const high = this.parameterize ? this.addBinding((where.value as any[])[1]) : this.grammar.escape((where.value as any[])[1]);
       return `${prefix} ${this.grammar.wrap(where.column)} ${op} ${low} AND ${high}`;
+    } else if (where.type === "between_columns") {
+      const op = where.not ? "NOT BETWEEN" : "BETWEEN";
+      return `${prefix} ${this.grammar.wrap(where.column)} ${op} ${this.grammar.wrap(where.value[0])} AND ${this.grammar.wrap(where.value[1])}`;
     } else if (where.type === "raw") {
       return `${prefix} ${this.compileRaw(where.column, where.bindings)}`;
     } else if (where.type === "nested") {
@@ -1606,20 +1740,13 @@ export class Builder<T = Record<string, any>, TResult = T> {
     } else if (where.type === "date") {
       const sql = this.grammar.compileDateWhere(where.dateType || "date", this.grammar.wrap(where.column), validOperator(where.operator || "="), where.value, this.parameterize ? (v) => this.addBinding(v) : undefined);
       return `${prefix} ${sql}`;
-    } else if (where.type === "all") {
+    } else if (where.type === "all" || where.type === "any") {
       const cols = (where.columns || []).map((c) => this.grammar.wrap(c));
       const inner = cols.map((c) => {
         const val = this.parameterize ? this.addBinding(where.value) : this.grammar.escape(where.value);
         return `${c} ${validOperator(where.operator)} ${val}`;
-      }).join(" AND ");
-      return `${prefix} (${inner})`;
-    } else if (where.type === "any") {
-      const cols = (where.columns || []).map((c) => this.grammar.wrap(c));
-      const inner = cols.map((c) => {
-        const val = this.parameterize ? this.addBinding(where.value) : this.grammar.escape(where.value);
-        return `${c} ${validOperator(where.operator)} ${val}`;
-      }).join(" OR ");
-      return `${prefix} (${inner})`;
+      }).join(where.type === "all" ? " AND " : " OR ");
+      return `${prefix} ${where.not ? "NOT " : ""}(${inner})`;
     } else if (where.type === "column") {
       return `${prefix} ${this.grammar.wrap(where.column)} ${validOperator(where.operator)} ${this.grammar.wrap(where.value)}`;
     } else if (where.type === "exists") {
@@ -1667,6 +1794,11 @@ export class Builder<T = Record<string, any>, TResult = T> {
       const prefix = index === 0 ? "" : validBoolean(h.boolean).toUpperCase() + " ";
       if (h.sql) {
         return prefix + this.compileRaw(h.sql, h.bindings);
+      }
+      if (h.type === "between") {
+        const low = this.parameterize ? this.addBinding(h.value[0]) : this.grammar.escape(h.value[0]);
+        const high = this.parameterize ? this.addBinding(h.value[1]) : this.grammar.escape(h.value[1]);
+        return prefix + `${this.grammar.wrap(h.column!)} ${h.not ? "NOT BETWEEN" : "BETWEEN"} ${low} AND ${high}`;
       }
       const value = this.parameterize ? this.addBinding(h.value) : this.grammar.escape(h.value);
       return prefix + `${this.grammar.wrap(h.column!)} ${validOperator(h.operator)} ${value}`;
@@ -2380,7 +2512,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
     let lastId: any = null;
 
     while (true) {
-      const builder = this.clone().orderBy(qualifiedColumn as ModelColumn<T>, "asc").limit(count);
+      const builder = this.clone().reorder(qualifiedColumn as ModelColumn<T>, "asc").limit(count);
       if (lastId !== null) {
         builder.where(qualifiedColumn as ModelColumn<T>, ">", lastId);
       }
@@ -2401,7 +2533,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
     let lastId: any = null;
 
     while (true) {
-      const builder = this.clone().orderBy(qualifiedColumn as ModelColumn<T>, "desc").limit(count);
+      const builder = this.clone().reorder(qualifiedColumn as ModelColumn<T>, "desc").limit(count);
       if (lastId !== null) {
         builder.where(qualifiedColumn as ModelColumn<T>, "<", lastId);
       }
@@ -2601,6 +2733,14 @@ export class Builder<T = Record<string, any>, TResult = T> {
   }
 
   async *lazyById(count: number = 1000, column?: ModelColumn<T>): AsyncGenerator<TResult> {
+    yield* this.lazyByIdDirection(count, column, "asc");
+  }
+
+  async *lazyByIdDesc(count: number = 1000, column?: ModelColumn<T>): AsyncGenerator<TResult> {
+    yield* this.lazyByIdDirection(count, column, "desc");
+  }
+
+  private async *lazyByIdDirection(count: number, column: ModelColumn<T> | undefined, direction: "asc" | "desc"): AsyncGenerator<TResult> {
     positiveInteger(count, "Lazy chunk size");
     const idColumn = (column ?? this.getModelPrimaryKey()) as ModelColumn<T>;
     const qualifiedColumn = String(idColumn).includes(".") ? String(idColumn) : `${this.tableName}.${String(idColumn)}`;
@@ -2608,9 +2748,9 @@ export class Builder<T = Record<string, any>, TResult = T> {
     let lastId: any = null;
 
     while (true) {
-      const builder = this.clone().orderBy(qualifiedColumn as ModelColumn<T>, "asc").limit(count);
+      const builder = this.clone().reorder(qualifiedColumn as ModelColumn<T>, direction).limit(count);
       if (lastId !== null) {
-        builder.where(qualifiedColumn as ModelColumn<T>, ">", lastId);
+        builder.where(qualifiedColumn as ModelColumn<T>, direction === "asc" ? ">" : "<", lastId);
       }
       const items = await builder.withoutCache().get() as unknown as Collection<TResult>;
       if (items.length === 0) break;
@@ -3169,6 +3309,23 @@ export class Builder<T = Record<string, any>, TResult = T> {
     this.invalidateSqlCache();
     this.wheres.push({ type: "date", column: column as string, operator: validOperator(operator), value, boolean: validBoolean(boolean), scope: undefined, dateType: type });
     return this;
+  }
+
+  private addRelativeDateWhere(columns: ModelColumn<T> | readonly ModelColumn<T>[], operator: string, value: Date | string, dateOnly: boolean = false): this {
+    for (const column of Array.isArray(columns) ? columns : [columns]) {
+      if (dateOnly) this.whereDate(column, operator, value);
+      else if (this.connection.getDriverName() === "sqlite") {
+        this.whereRaw(
+          `julianday(${this.grammar.wrap(String(column))}) ${validOperator(operator)} julianday(?)`,
+          [value],
+        );
+      } else this.where(column, operator, value);
+    }
+    return this;
+  }
+
+  private today(): string {
+    return new Date().toISOString().slice(0, 10);
   }
 
   private normalizeRelationShortcutModels(input: RelationShortcutInput): Model[] {

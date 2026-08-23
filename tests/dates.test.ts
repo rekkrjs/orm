@@ -4,6 +4,44 @@ import { formatDateForDriver } from "../src/utils.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 describe("Date handling", () => {
+  test("SQLite relative-date helpers compare mixed timestamp formats chronologically", async () => {
+    const connection = new Connection({ url: "sqlite://:memory:" });
+    const { Schema } = await import("../src/index.js");
+
+    try {
+      await Schema.create("relative_events", (table) => {
+        table.id();
+        table.string("label");
+        table.timestamp("occurred_at").useCurrent();
+      }, connection);
+
+      await connection.run(
+        "INSERT INTO relative_events (label, occurred_at) VALUES (?, datetime('now', '-5 minutes')), (?, datetime('now', '+5 minutes'))",
+        ["sql past", "sql future"],
+      );
+      await new Builder(connection, "relative_events").insert([
+        { label: "iso past", occurred_at: new Date(Date.now() - 300_000) },
+        { label: "iso future", occurred_at: new Date(Date.now() + 300_000) },
+      ]);
+
+      const past = await new Builder(connection, "relative_events")
+        .wherePast("occurred_at")
+        .orderBy("label")
+        .pluck("label");
+      const future = await new Builder(connection, "relative_events")
+        .whereFuture("occurred_at")
+        .orderBy("label")
+        .pluck("label");
+
+      expect(past).toEqual(["iso past", "sql past"]);
+      expect(future).toEqual(["iso future", "sql future"]);
+      expect(new Builder(connection, "relative_events").wherePast("occurred_at").toSql())
+        .toContain('julianday("occurred_at") < julianday(');
+    } finally {
+      await connection.close();
+    }
+  });
+
   test("a Date and its ISO equivalent are the same value for dirty tracking", async () => {
     const connection = setupTestDb();
     const { Schema } = await import("../src/index.js");

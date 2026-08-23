@@ -180,4 +180,9 @@ describe("Conditional Query Building", () => {
     expect(events.length).toBe(1);
     expect(events[0].name).toBe("B");
   });
+
+  test("pipe returns the callback result", () => {
+    const sql = Event.pipe((query) => query.where("category", "music").toSql());
+    expect(sql).toContain(`WHERE "category" = 'music'`);
+  });
 });

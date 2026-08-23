@@ -125,6 +125,13 @@ describe("Eloquent-style ergonomics", () => {
       ErgUser.orWhereExists("SELECT 1").get();
       ErgUser.whereRaw("score > 0").get();
       ErgUser.whereColumn("erg_users.id", "=", "erg_users.id").get();
+      ErgUser.whereColumn("erg_users.id", "erg_users.id").get();
+      ErgUser.whereColumn([["erg_users.id", "=", "erg_users.id"]]).get();
+      ErgUser.whereNull(["group_name", "name"]).get();
+      ErgUser.whereBetweenColumns("score", ["id", "score"]).get();
+      ErgUser.wherePast(["created_at", "updated_at"]).get();
+      ErgUser.whereNone(["name", "group_name"], "=", "blocked").get();
+      ErgUser.havingBetween("score", [1, 5]).get();
       ErgUser.whereNotIn("score", [1, 2]).get();
       ErgUser.whereBetween("score", [1, 4]).get();
       ErgUser.whereNotBetween("score", [1, 4]).get();
@@ -140,7 +147,7 @@ describe("Eloquent-style ergonomics", () => {
     }
   });
 
-  test("chunkByIdDesc and lazyById iterate by primary key without offsets", async () => {
+  test("chunkByIdDesc and lazyById variants iterate by primary key without offsets", async () => {
     const descIds: number[] = [];
     await ErgUser.chunkByIdDesc(2, (users) => {
       descIds.push(...users.map((user) => user.id));
@@ -148,10 +155,16 @@ describe("Eloquent-style ergonomics", () => {
     expect(descIds).toEqual([6, 5, 4, 3, 2, 1]);
 
     const lazyIds: number[] = [];
-    for await (const user of ErgUser.lazyById(2)) {
+    for await (const user of ErgUser.orderByDesc("id").lazyById(2)) {
       lazyIds.push(user.id);
     }
     expect(lazyIds).toEqual([1, 2, 3, 4, 5, 6]);
+
+    const lazyDescIds: number[] = [];
+    for await (const user of ErgUser.orderBy("id").lazyByIdDesc(2)) {
+      lazyDescIds.push(user.id);
+    }
+    expect(lazyDescIds).toEqual([6, 5, 4, 3, 2, 1]);
   });
 
   test("static appends and append() include computed accessors in JSON", async () => {

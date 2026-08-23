@@ -6,12 +6,14 @@ import type {
   AggregateConstraint,
   AggregateLoaded,
   AggregateValueForRelation,
+  EagerLoadInput,
   LoadMorphRelationName,
   Model,
   MorphEagerLoadMap,
   ModelRelationName,
   NestedRelationPath,
 } from "../model/Model.js";
+import { ModelNotFoundError } from "../model/ModelNotFoundError.js";
 
 type CollectionKey = string | number | symbol;
 
@@ -74,6 +76,58 @@ function compareValues(a: any, b: any): number {
   if (a === null || a === undefined) return -1;
   if (b === null || b === undefined) return 1;
   return a > b ? 1 : -1;
+}
+
+type ModelLike = {
+  getAttribute(key: string): any;
+  getConnection(): any;
+  getModelConstructor(): { primaryKey?: string; name?: string };
+  is(other: ModelLike): boolean;
+};
+
+function isModelLike(value: unknown): value is ModelLike {
+  return value !== null && typeof value === "object" &&
+    typeof (value as any).getAttribute === "function" &&
+    typeof (value as any).getConnection === "function" &&
+    typeof (value as any).getModelConstructor === "function" &&
+    typeof (value as any).is === "function";
+}
+
+function groupModelsByConnection<T extends ModelLike>(models: Iterable<T>): Array<[any, T[]]> {
+  const grouped = new Map<any, Map<any, T[]>>();
+  for (const model of models) {
+    const constructor = model.getModelConstructor();
+    const byConnection = grouped.get(constructor) ?? new Map<any, T[]>();
+    const connection = model.getConnection();
+    const group = byConnection.get(connection);
+    group ? group.push(model) : byConnection.set(connection, [model]);
+    grouped.set(constructor, byConnection);
+  }
+  return Array.from(grouped, ([constructor, byConnection]) =>
+    Array.from(byConnection.values(), (group) => [constructor, group] as [any, T[]])
+  ).flat();
+}
+
+function modelKey(value: unknown): any {
+  if (!isModelLike(value)) return undefined;
+  return value.getAttribute(value.getModelConstructor().primaryKey || "id");
+}
+
+function sameModel(left: unknown, right: unknown): boolean {
+  if (!isModelLike(left) || !isModelLike(right)) return left === right;
+  const leftKey = modelKey(left);
+  const rightKey = modelKey(right);
+  return left.getModelConstructor() === right.getModelConstructor() &&
+    leftKey !== null && leftKey !== undefined &&
+    rightKey !== null && rightKey !== undefined &&
+    left.is(right);
+}
+
+function matchesModelKey(model: unknown, key: unknown): boolean {
+  if (!isModelLike(model)) return false;
+  if (isModelLike(key)) return sameModel(model, key);
+  const current = modelKey(model);
+  return current !== null && current !== undefined && String(current) === String(key);
 }
 
 export class Collection<T = any> extends Array<T> {
@@ -207,6 +261,7 @@ export class Collection<T = any> extends Array<T> {
   }
 
   contains(value: T): boolean;
+  contains(key: unknown): boolean;
   contains(predicate: CollectionPredicate<T>): boolean;
   contains<K extends CollectionKey>(key: K, value: any): boolean;
   contains(keyOrValue: any, value?: any): boolean {
@@ -216,7 +271,74 @@ export class Collection<T = any> extends Array<T> {
     if (arguments.length === 2) {
       return this.some((item) => valueFor(item, keyOrValue) === value);
     }
+    if (isModelLike(keyOrValue)) return this.some((item) => sameModel(item, keyOrValue));
+    if (this.some(isModelLike)) {
+      return this.some((item) => isModelLike(item)
+        ? matchesModelKey(item, keyOrValue)
+        : item === keyOrValue);
+    }
     return this.includes(keyOrValue);
+  }
+
+  modelKeys(): any[] {
+    return this.filter(isModelLike).map(modelKey);
+  }
+
+  find<S extends T>(predicate: (value: T, index: number, obj: T[]) => value is S, thisArg?: any): S | undefined;
+  find(predicate: (value: T, index: number, obj: T[]) => unknown, thisArg?: any): T | undefined;
+  find(key: readonly any[]): Collection<T>;
+  find(key: any, defaultValue?: T | null): T | null;
+  find(keyOrPredicate: any, defaultValue?: any): any {
+    if (typeof keyOrPredicate === "function") {
+      return Array.prototype.find.call(this, keyOrPredicate, defaultValue);
+    }
+    if (Array.isArray(keyOrPredicate)) {
+      return new Collection(this.filter((item) => keyOrPredicate.some((key) => matchesModelKey(item, key))));
+    }
+    return this.first((item) => matchesModelKey(item, keyOrPredicate), defaultValue ?? null);
+  }
+
+  findOrFail(key: readonly any[]): Collection<T>;
+  findOrFail(key: any): T;
+  findOrFail(key: any): T | Collection<T> {
+    const found = this.find(key as any);
+    const missing = found === null || found === undefined ||
+      (Array.isArray(key) && found instanceof Collection &&
+        key.some((requested) => !found.some((item) => matchesModelKey(item, requested))));
+    if (missing) {
+      const firstModel = this.first((item) => isModelLike(item));
+      const name = isModelLike(firstModel)
+        ? firstModel.getModelConstructor().name || "Model"
+        : "Model";
+      throw new ModelNotFoundError(name, key);
+    }
+    return found as T | Collection<T>;
+  }
+
+  diff(items: Iterable<T>): Collection<T> {
+    const others = Array.from(items);
+    return new Collection(this.filter((item) => !others.some((other) => sameModel(item, other))));
+  }
+
+  intersect(items: Iterable<T>): Collection<T> {
+    const others = Array.from(items);
+    return new Collection(this.filter((item) => others.some((other) => sameModel(item, other))));
+  }
+
+  only(keys: readonly any[]): Collection<T> {
+    return new Collection(this.filter((item) => keys.some((key) => matchesModelKey(item, key))));
+  }
+
+  except(keys: readonly any[]): Collection<T> {
+    return new Collection(this.filter((item) => !keys.some((key) => matchesModelKey(item, key))));
+  }
+
+  unique(): Collection<T> {
+    const result = new Collection<T>();
+    for (const item of this) {
+      if (!result.some((existing) => sameModel(existing, item))) result.push(item);
+    }
+    return result;
   }
 
   firstWhere<K extends CollectionKey>(key: K, value: any): T | null {
@@ -254,6 +376,34 @@ export class Collection<T = any> extends Array<T> {
     }, key === undefined ? this[0] : typeof key === "function" ? key(this[0]) : valueFor(this[0], key));
   }
 
+  makeHidden(...keys: (string | readonly string[])[]): this {
+    return this.each((item) => { (item as any)?.makeHidden?.(...keys); });
+  }
+
+  makeVisible(...keys: (string | readonly string[])[]): this {
+    return this.each((item) => { (item as any)?.makeVisible?.(...keys); });
+  }
+
+  append<K extends string>(...keys: (K | readonly K[])[]): Collection<T & Record<K, any>> {
+    this.each((item) => { (item as any)?.append?.(...keys); });
+    return this as unknown as Collection<T & Record<K, any>>;
+  }
+
+  setAppends<K extends string>(keys: readonly K[]): Collection<T & Record<K, any>> {
+    this.each((item) => { (item as any)?.setAppends?.(keys); });
+    return this as unknown as Collection<T & Record<K, any>>;
+  }
+
+  async load(...relations: (EagerLoadInput | EagerLoadInput[])[]): Promise<this> {
+    const models = this.filter((item) => isModelLike(item)) as unknown as ModelLike[];
+    for (const [constructor, group] of groupModelsByConnection(models)) {
+      if (typeof (constructor as any).eagerLoadRelations === "function") {
+        await (constructor as any).eagerLoadRelations(group, relations as any);
+      }
+    }
+    return this;
+  }
+
   async loadMissing<R extends string & NestedRelationPath<T>>(relation: R, ...relations: R[]): Promise<this>;
   async loadMissing<Rs extends ReadonlyArray<string & NestedRelationPath<T>>>(relations: Rs): Promise<this>;
   async loadMissing<Rs extends ReadonlyArray<string & NestedRelationPath<T>>>(...relations: Rs): Promise<this>;
@@ -264,13 +414,7 @@ export class Collection<T = any> extends Array<T> {
     for (const relation of relations.flat()) {
       const [direct, ...nested] = relation.split(".");
       const missing = models.filter((m: any) => m.getRelation(direct) === undefined);
-      const groups = new Map<any, any[]>();
-      for (const model of missing) {
-        const constructor = Object.getPrototypeOf(model).constructor;
-        const group = groups.get(constructor);
-        group ? group.push(model) : groups.set(constructor, [model]);
-      }
-      for (const [constructor, group] of groups) {
+      for (const [constructor, group] of groupModelsByConnection(missing)) {
         if (typeof constructor.eagerLoadRelations === "function") {
           await constructor.eagerLoadRelations(group, [direct]);
         }
@@ -292,9 +436,10 @@ export class Collection<T = any> extends Array<T> {
   async loadMorph<R extends LoadMorphRelationName<T>>(relationName: R, relations: MorphEagerLoadMap): Promise<this> {
     const models = this.filter((item): item is any => item !== null && item !== undefined && typeof (item as any).getRelation === "function");
     if (models.length === 0) return this;
-    const constructor = Object.getPrototypeOf(models[0]).constructor;
-    if (typeof constructor.loadMorph === "function") {
-      await constructor.loadMorph(models, relationName, relations);
+    for (const [constructor, group] of groupModelsByConnection(models)) {
+      if (typeof constructor.loadMorph === "function") {
+        await constructor.loadMorph(group, relationName, relations);
+      }
     }
     return this;
   }
@@ -306,15 +451,7 @@ export class Collection<T = any> extends Array<T> {
     const models = this.filter((item) => item !== null && item !== undefined && typeof (item as any).getRelation === "function") as unknown as Model[];
     if (models.length === 0) return this as any;
 
-    const groups = new Map<any, Model[]>();
-    for (const model of models) {
-      const constructor = Object.getPrototypeOf(model).constructor;
-      const list = groups.get(constructor) || [];
-      list.push(model);
-      groups.set(constructor, list);
-    }
-
-    for (const [constructor, group] of groups) {
+    for (const [constructor, group] of groupModelsByConnection(models as any)) {
       if (typeof constructor.loadCount === "function") {
         await constructor.loadCount(group, relationName, alias as any);
       }
@@ -330,15 +467,7 @@ export class Collection<T = any> extends Array<T> {
     const models = this.filter((item) => item !== null && item !== undefined && typeof (item as any).getRelation === "function") as unknown as Model[];
     if (models.length === 0) return this as any;
 
-    const groups = new Map<any, Model[]>();
-    for (const model of models) {
-      const constructor = Object.getPrototypeOf(model).constructor;
-      const list = groups.get(constructor) || [];
-      list.push(model);
-      groups.set(constructor, list);
-    }
-
-    for (const [constructor, group] of groups) {
+    for (const [constructor, group] of groupModelsByConnection(models as any)) {
       if (typeof constructor.loadSum === "function") {
         await constructor.loadSum(group, relationName, column as any, aliasOrCallback as any, callback as any);
       }
@@ -354,15 +483,7 @@ export class Collection<T = any> extends Array<T> {
     const models = this.filter((item) => item !== null && item !== undefined && typeof (item as any).getRelation === "function") as unknown as Model[];
     if (models.length === 0) return this as any;
 
-    const groups = new Map<any, Model[]>();
-    for (const model of models) {
-      const constructor = Object.getPrototypeOf(model).constructor;
-      const list = groups.get(constructor) || [];
-      list.push(model);
-      groups.set(constructor, list);
-    }
-
-    for (const [constructor, group] of groups) {
+    for (const [constructor, group] of groupModelsByConnection(models as any)) {
       if (typeof constructor.loadAvg === "function") {
         await constructor.loadAvg(group, relationName, column as any, aliasOrCallback as any, callback as any);
       }
@@ -378,15 +499,7 @@ export class Collection<T = any> extends Array<T> {
     const models = this.filter((item) => item !== null && item !== undefined && typeof (item as any).getRelation === "function") as unknown as Model[];
     if (models.length === 0) return this as any;
 
-    const groups = new Map<any, Model[]>();
-    for (const model of models) {
-      const constructor = Object.getPrototypeOf(model).constructor;
-      const list = groups.get(constructor) || [];
-      list.push(model);
-      groups.set(constructor, list);
-    }
-
-    for (const [constructor, group] of groups) {
+    for (const [constructor, group] of groupModelsByConnection(models as any)) {
       if (typeof constructor.loadMin === "function") {
         await constructor.loadMin(group, relationName, column as any, aliasOrCallback as any, callback as any);
       }
@@ -402,15 +515,7 @@ export class Collection<T = any> extends Array<T> {
     const models = this.filter((item) => item !== null && item !== undefined && typeof (item as any).getRelation === "function") as unknown as Model[];
     if (models.length === 0) return this as any;
 
-    const groups = new Map<any, Model[]>();
-    for (const model of models) {
-      const constructor = Object.getPrototypeOf(model).constructor;
-      const list = groups.get(constructor) || [];
-      list.push(model);
-      groups.set(constructor, list);
-    }
-
-    for (const [constructor, group] of groups) {
+    for (const [constructor, group] of groupModelsByConnection(models as any)) {
       if (typeof constructor.loadMax === "function") {
         await constructor.loadMax(group, relationName, column as any, aliasOrCallback as any, callback as any);
       }

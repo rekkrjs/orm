@@ -563,6 +563,10 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     return this.save(options);
   }
 
+  updateQuietly(attributes: ModelMassAssignmentInput<this>): Promise<this> {
+    return this.update(attributes, { events: false });
+  }
+
   private async touchOwners(): Promise<void> {
     const constructor = this.getModelConstructor() as typeof ModelPersistence;
     const touches = constructor.touches || [];

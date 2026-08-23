@@ -1,5 +1,5 @@
 import { expect, test, describe, beforeAll } from "bun:test";
-import { Collection, Connection, Model, Schema } from "../src/index.js";
+import { Collection, Connection, Model, ObserverRegistry, Schema } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 class BUser extends PermissiveModel {
@@ -465,5 +465,36 @@ describe("BelongsToMany", () => {
     const tags = await post.featuredTags().getResults();
     expect(tags).toHaveLength(4);
     expect(tags.every((tag) => tag.pivot.type === "featured")).toBe(true);
+  });
+
+  test("belongsToMany createQuietly helpers persist and attach without model events", async () => {
+    const post = await BPost.create({ title: "Quiet Bulk Helpers" });
+    const relationConnection = post.getConnection();
+    const wrongConnection = new Connection({ url: "sqlite://:memory:" });
+    post.setConnection(relationConnection);
+    Model.setConnection(wrongConnection);
+    let createdEvents = 0;
+    ObserverRegistry.register(BTag, { created() { createdEvents++; } });
+
+    try {
+      const one = await post.featuredTags().createQuietly({ name: "Wrong" }, { type: "manual" });
+      const many = await post.featuredTags().createManyQuietly([
+        { name: "Wrong 1" },
+        { name: "Wrong 2" },
+      ], { type: "manual" });
+
+      expect(createdEvents).toBe(0);
+      expect(one.getConnection()).toBe(relationConnection);
+      expect(many.every((tag) => tag.getConnection() === relationConnection)).toBe(true);
+      expect(one.getAttribute("name")).toBe("Featured");
+      expect(many).toHaveLength(2);
+      const tags = await post.featuredTags().getResults();
+      expect(tags).toHaveLength(3);
+      expect(tags.every((tag) => tag.pivot.type === "featured")).toBe(true);
+    } finally {
+      Model.setConnection(relationConnection);
+      await wrongConnection.close();
+      ObserverRegistry.unregister(BTag);
+    }
   });
 });

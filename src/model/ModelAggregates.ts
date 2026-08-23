@@ -162,6 +162,10 @@ export class ModelAggregates<T extends Record<string, any> = any> extends ModelQ
     return (this as any).query().lazyById(count, column as any) as AsyncGenerator<InstanceType<M>>;
   }
 
+  static lazyByIdDesc<M extends ModelConstructor>(this: M, count?: number, column?: string): AsyncGenerator<InstanceType<M>> {
+    return (this as any).query().lazyByIdDesc(count, column as any) as AsyncGenerator<InstanceType<M>>;
+  }
+
   // Instance load methods
   async load(...relations: (EagerLoadInput | EagerLoadInput[])[]): Promise<this> {
     const constructor = this.getModelConstructor() as typeof ModelAggregates;

@@ -218,19 +218,19 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
     return (this as any).query().addSelect(...columns);
   }
 
-  static whereNull<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>): Builder<InstanceType<M>> {
+  static whereNull<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().whereNull(column);
   }
 
-  static whereNotNull<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>): Builder<InstanceType<M>> {
+  static whereNotNull<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().whereNotNull(column);
   }
 
-  static orWhereNull<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>): Builder<InstanceType<M>> {
+  static orWhereNull<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().orWhereNull(column);
   }
 
-  static orWhereNotNull<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>): Builder<InstanceType<M>> {
+  static orWhereNotNull<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().orWhereNotNull(column);
   }
 
@@ -250,12 +250,18 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
     return (this as any).query().orWhereNotBetween(column, values);
   }
 
-  static whereColumn<M extends ModelConstructor>(this: M, first: string, operator: string, second: string): Builder<InstanceType<M>> {
-    return (this as any).query().whereColumn(first, operator, second);
+  static whereColumn<M extends ModelConstructor>(this: M, comparisons: readonly (readonly [ModelColumn<InstanceType<M>>, string, ModelColumn<InstanceType<M>>])[]): Builder<InstanceType<M>>;
+  static whereColumn<M extends ModelConstructor>(this: M, first: string, second: string): Builder<InstanceType<M>>;
+  static whereColumn<M extends ModelConstructor>(this: M, first: string, operator: string, second: string): Builder<InstanceType<M>>;
+  static whereColumn<M extends ModelConstructor>(this: M, first: string | readonly (readonly [ModelColumn<InstanceType<M>>, string, ModelColumn<InstanceType<M>>])[], operatorOrSecond?: string, second?: string): Builder<InstanceType<M>> {
+    return (this as any).query().whereColumn(first, operatorOrSecond, second);
   }
 
-  static orWhereColumn<M extends ModelConstructor>(this: M, first: string, operator: string, second: string): Builder<InstanceType<M>> {
-    return (this as any).query().orWhereColumn(first, operator, second);
+  static orWhereColumn<M extends ModelConstructor>(this: M, comparisons: readonly (readonly [ModelColumn<InstanceType<M>>, string, ModelColumn<InstanceType<M>>])[]): Builder<InstanceType<M>>;
+  static orWhereColumn<M extends ModelConstructor>(this: M, first: string, second: string): Builder<InstanceType<M>>;
+  static orWhereColumn<M extends ModelConstructor>(this: M, first: string, operator: string, second: string): Builder<InstanceType<M>>;
+  static orWhereColumn<M extends ModelConstructor>(this: M, first: string | readonly (readonly [ModelColumn<InstanceType<M>>, string, ModelColumn<InstanceType<M>>])[], operatorOrSecond?: string, second?: string): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereColumn(first, operatorOrSecond, second);
   }
 
   static whereRelation<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: ModelColumn<RelationRelatedModel<InstanceType<M>, R>>, operator: string | any, value?: any): Builder<InstanceType<M>>;

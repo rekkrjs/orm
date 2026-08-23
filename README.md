@@ -3,7 +3,7 @@
 > **Bun-only package.** Install with:
 >
 > ```bash
-> bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.3.2
+> bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.4.0
 > ```
 >
 > The repository is private, so GitHub read access and SSH authentication are
@@ -43,7 +43,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 ## Installation
 
 ```bash
-bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.3.2
+bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.4.0
 ```
 
 See [Installation](./docs/installation.md) for details.
@@ -81,15 +81,27 @@ Tables with camelCase timestamps can configure the model and migration directly:
 import { Model, Schema } from "@rekkr/orm";
 
 class CamelUser extends Model {
-  static override fillable = ["name"];
+  static override fillable = ["accountId", "name", "email", "role", "locale"];
   static override createdAtColumn = "createdAt";
   static override updatedAtColumn = "updatedAt";
+  static override softDeletes = true;
+  static override deletedAtColumn = "deletedAt";
 }
 
+// Assumes the accounts table already exists.
 await Schema.create("camel_users", (table) => {
-  table.increments("id");
+  table.id();
+  table.foreignId("accountId").constrained("accounts").cascadeOnDelete();
   table.string("name");
+  table.string("email");
+  table.string("role").default("member");
+  table.string("locale", 10).default("en");
+  table.timestamp("emailVerifiedAt").nullable();
+  table.softDeletes("deletedAt");
   table.timestamps("createdAt", "updatedAt");
+
+  table.unique(["accountId", "email"]);
+  table.index(["accountId", "createdAt"]);
 });
 ```
 
@@ -167,7 +179,7 @@ See the [Quickstart guide](./docs/quickstart.md) for the full walkthrough.
 | [Schema Builder](./docs/schema-builder.md) | Tables, columns, indexes, foreign keys. |
 | [Migrations](./docs/migrations.md) | Versioned schema changes, rollback, multi-tenant scopes, auto-create database / schema. |
 | [Seeders](./docs/seeders.md) | Populate development and test data. |
-| [Transactions](./docs/transactions.md) | `connection.transaction()` and nested savepoints. |
+| [Transactions](./docs/transactions.md) | `DB.transaction()`, explicit connection transactions, and nested savepoints. |
 
 ### Querying
 

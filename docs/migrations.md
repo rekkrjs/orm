@@ -13,30 +13,55 @@ See [Schema Builder](./schema-builder.md) for the full vocabulary you use inside
 A migration is a class extending `Migration` with `up()` and `down()` methods. `up()` applies the change; `down()` reverses it. Both are async.
 
 ```ts
-// database/migrations/20260101000000_create_users_table.ts
+// database/migrations/20260101000000_create_blog_tables.ts
 import { Migration, Schema } from "@rekkr/orm";
 
-export default class CreateUsersTable extends Migration {
+export default class CreateBlogTables extends Migration {
   async up() {
     await Schema.create("users", (table) => {
-      table.increments("id");
+      table.id();
       table.string("name");
       table.string("email").unique();
       table.timestamps();
     });
+
+    await Schema.create("posts", (table) => {
+      table.id();
+      table.foreignId("author_id").constrained("users").cascadeOnDelete();
+      table.string("title");
+      table.string("slug").unique();
+      table.text("body");
+      table.timestamp("published_at").nullable();
+      table.timestamps();
+    });
+
+    await Schema.create("comments", (table) => {
+      table.id();
+      table.foreignId("post_id").constrained().cascadeOnDelete();
+      table.foreignId("author_id").nullable().constrained("users").nullOnDelete();
+      table.text("body");
+      table.timestamps();
+      table.index(["post_id", "created_at"]);
+    });
   }
 
   async down() {
+    await Schema.dropIfExists("comments");
+    await Schema.dropIfExists("posts");
     await Schema.dropIfExists("users");
   }
 }
 ```
 
+Create referenced tables before their dependents and drop them in reverse order.
+Call `nullable()` before `constrained()` when a `nullOnDelete()` foreign key must
+accept `NULL`.
+
 Scaffold a new file with the CLI:
 
 ```bash
-bunx orm migrate:make CreateUsersTable
-# → ./database/migrations/20260101000000_create_users_table.ts
+bunx orm migrate:make CreateBlogTables
+# → ./database/migrations/20260101000000_create_blog_tables.ts
 
 bunx orm migrate:make AddBioToUsers ./database/migrations
 ```

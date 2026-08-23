@@ -145,6 +145,22 @@ describe("Eager Loading", () => {
     expect((found as any).books).toHaveLength(1);
   });
 
+  test("collection load eagerly loads every model and returns the collection", async () => {
+    const first = await EAuthor.create({ name: "Collection load A" });
+    const second = await EAuthor.create({ name: "Collection load B" });
+    await EBook.create({ author_id: first.getAttribute("id"), title: "Loaded A" });
+    await EBook.create({ author_id: second.getAttribute("id"), title: "Loaded B" });
+
+    const authors = await EAuthor.whereIn("id", [first.getAttribute("id"), second.getAttribute("id")])
+      .orderBy("id")
+      .get();
+    expect(await authors.load("books")).toBe(authors);
+    expect(authors.map((author) => author.getRelation("books").pluck("title"))).toEqual([
+      ["Loaded A"],
+      ["Loaded B"],
+    ]);
+  });
+
   test("loadMissing loads absent relations and preserves loaded ones", async () => {
     const author = await EAuthor.create({ name: "Missing loader" });
     await EBook.create({ author_id: author.getAttribute("id"), title: "Original book" });

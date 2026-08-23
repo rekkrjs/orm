@@ -14,7 +14,7 @@ import { Schema } from "@rekkr/orm";
 
 ```ts
 await Schema.create("products", (table) => {
-  table.increments("id");
+  table.id();
   table.uuid("uuid").unique();
   table.string("name", 100);
   table.text("description").nullable();
@@ -31,7 +31,7 @@ If the table might already exist, use `createIfNotExists`:
 
 ```ts
 await Schema.createIfNotExists("settings", (table) => {
-  table.increments("id");
+  table.id();
   table.string("key").unique();
   table.text("value");
 });
@@ -52,10 +52,14 @@ Every method on the blueprint adds a column. The first argument is always the co
 | `smallInteger(name)` | `SMALLINT` |
 | `integer(name)` | `INTEGER` |
 | `bigInteger(name)` | `BIGINT` |
+| `unsignedTinyInteger(name)` | Unsigned `TINYINT` |
+| `unsignedSmallInteger(name)` | Unsigned `SMALLINT` |
+| `unsignedInteger(name)` | Unsigned `INTEGER` |
+| `unsignedBigInteger(name)` | Unsigned `BIGINT` |
 
 ```ts
 table.id();                  // the primary key nearly every table wants
-table.integer("views").unsigned().default(0);
+table.unsignedInteger("views").default(0);
 table.bigInteger("file_size").nullable();
 ```
 
@@ -165,6 +169,7 @@ database charset.
 Do not add `.index()` or `.unique()` to the same column when it is already the primary key. The database creates the primary-key index for:
 
 ```ts
+table.id();
 table.uuid("id").primary();
 table.increments("id");
 table.bigIncrements("id");
@@ -192,7 +197,7 @@ table.string("slug").index();                // INDEX
 table.string("name").nullable();             // NULL allowed
 table.string("name").nullable(false);        // NOT NULL
 table.integer("role").default(1);            // DEFAULT 1
-table.timestamp("published_at").default(Schema.raw("CURRENT_TIMESTAMP"));
+table.timestamp("published_at").useCurrent();
 table.uuid("public_id").defaultUuid();        // database-generated UUID where supported
 table.string("code").comment("SKU code");    // COMMENT
 table.integer("user_id").unsigned();         // UNSIGNED (MySQL)
@@ -204,6 +209,7 @@ table.string("phone").after("email");        // Column position (MySQL)
 |---|---|
 | `.nullable(value = true)` | Allow `NULL` values, or enforce `NOT NULL` with `false` |
 | `.default(value?)` | Set or replace the default literal (or use `Schema.raw(...)` for expressions) |
+| `.useCurrent()` | Use the database's `CURRENT_TIMESTAMP` expression |
 | `.defaultUuid()` | Use `UUID()` on MySQL or `gen_random_uuid()` on PostgreSQL; emit no default on SQLite |
 | `.unique()` | Add a single-column UNIQUE constraint |
 | `.index()` | Add a single-column index |
@@ -221,7 +227,10 @@ itself should accept `NULL`. `.defaultUuid()` takes precedence over a literal
 `.default(...)`; enum columns reject it because a generated UUID cannot satisfy
 their declared values.
 
-String defaults are always literals, including `"CURRENT_TIMESTAMP"`. Use `Schema.raw(...)` only for a trusted database expression; its contents are inserted into migration SQL verbatim.
+String defaults are always literals, including `"CURRENT_TIMESTAMP"`. Use
+`.useCurrent()` for the database's current-timestamp expression. For any other
+trusted database expression, use `Schema.raw(...)`; its contents are inserted
+into migration SQL verbatim.
 
 ## Convenience helpers
 
@@ -229,13 +238,15 @@ String defaults are always literals, including `"CURRENT_TIMESTAMP"`. Use `Schem
 table.timestamps();        // adds nullable created_at + updated_at TIMESTAMP columns
 table.timestamps("createdAt", "updatedAt"); // explicit column names
 table.softDeletes();       // adds nullable deleted_at TIMESTAMP
+table.softDeletes("removed_at"); // custom soft-delete column
 table.rememberToken();     // adds nullable remember_token VARCHAR(100)
 ```
 
 `timestamps()` accepts exactly zero arguments or two non-empty, different column
 names. The zero-argument form creates ORM's defaults; the two-argument form
 matches models that configure `createdAtColumn` and `updatedAtColumn`.
-`softDeletes()` remains independent and always creates `deleted_at`.
+`softDeletes(name = "deleted_at")` remains independent from timestamp column
+customization and accepts its own column name.
 
 `rememberToken()` is the "remember me" column: a session cookie carries the token and the login lookup matches it. It is `string("remember_token", 100).nullable()`, and returns the blueprint with that column current, so modifiers still chain:
 
@@ -268,7 +279,7 @@ Use these on tables holding [`MorphTo`](./relationships.md#polymorphic-relations
 A single-column key is a modifier on the column:
 
 ```ts
-table.increments("id");        // implicit primary key
+table.id();                    // conventional bigint primary key
 table.uuid("id").primary();    // explicit
 ```
 
@@ -327,6 +338,10 @@ await Schema.table("posts", (table) => {
   table.dropIndex("posts_slug_index");
   table.dropUnique("posts_email_unique");
   table.dropForeign("posts_user_id_foreign");
+  table.dropTimestamps();
+  table.dropSoftDeletes();
+  table.dropRememberToken();
+  table.dropMorphs("commentable");
 });
 ```
 
@@ -339,6 +354,10 @@ await Schema.table("posts", (table) => {
 | `.dropIndex(name)` | Drop a named index |
 | `.dropUnique(name)` | Drop a unique constraint |
 | `.dropForeign(name)` | Drop a foreign key constraint |
+| `.dropTimestamps()` / `.dropTimestampsTz()` | Drop `created_at` and `updated_at` |
+| `.dropSoftDeletes(name?)` / `.dropSoftDeletesTz(name?)` | Drop the soft-delete column |
+| `.dropRememberToken()` | Drop `remember_token` |
+| `.dropMorphs(name, indexName?)` | Drop morph columns and their composite index |
 
 ## Foreign keys
 
@@ -346,8 +365,8 @@ await Schema.table("posts", (table) => {
 
 ```ts
 await Schema.create("posts", (table) => {
-  table.increments("id");
-  table.integer("user_id").unsigned();
+  table.id();
+  table.foreignId("user_id");
   table
     .foreign("user_id")
     .references("id")
@@ -399,7 +418,7 @@ table.foreign("user_id").references("id").on("users").onDelete("set null");
 table.foreign("user_id", "posts_user_fk").references("id").on("users");
 ```
 
-`onDelete` accepts `"cascade"`, `"restrict"`, `"set null"`, `"no action"`, or `"set default"`. The same options apply to `onUpdate`; other strings are rejected. `SET NULL` requires every local foreign-key column declared in the blueprint to be nullable.
+`onDelete` accepts `"cascade"`, `"restrict"`, `"set null"`, `"no action"`, or `"set default"`. The same options apply to `onUpdate`; other strings are rejected. `SET NULL` requires every local foreign-key column declared in the blueprint to be nullable. Convenience aliases include `restrictOnUpdate()`, `nullOnUpdate()`, `noActionOnUpdate()`, and `noActionOnDelete()` alongside the cascade/delete helpers.
 
 ## Altering tables
 

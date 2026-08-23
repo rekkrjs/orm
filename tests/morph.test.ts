@@ -1,5 +1,5 @@
 import { expect, test, describe, beforeAll } from "bun:test";
-import { Model, Schema, MorphMap, Builder, Connection, Collection } from "../src/index.js";
+import { Model, Schema, MorphMap, Builder, Connection, Collection, ObserverRegistry } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 class MComment extends PermissiveModel {
@@ -503,6 +503,37 @@ describe("Polymorphic Relations", () => {
     const tags = await post.importantTags().getResults();
     expect(tags).toHaveLength(4);
     expect(tags.every((tag) => tag.pivot.scope === "important")).toBe(true);
+  });
+
+  test("morphToMany createQuietly helpers persist and attach without model events", async () => {
+    const post = await MPost.create({ title: "Quiet Morph Helpers" });
+    const relationConnection = post.getConnection();
+    const wrongConnection = new Connection({ url: "sqlite://:memory:" });
+    post.setConnection(relationConnection);
+    Model.setConnection(wrongConnection);
+    let createdEvents = 0;
+    ObserverRegistry.register(MTag, { created() { createdEvents++; } });
+
+    try {
+      const one = await post.importantTags().createQuietly({ name: "Wrong" }, { scope: "manual" });
+      const many = await post.importantTags().createManyQuietly([
+        { name: "Wrong 1" },
+        { name: "Wrong 2" },
+      ], { scope: "manual" });
+
+      expect(createdEvents).toBe(0);
+      expect(one.getConnection()).toBe(relationConnection);
+      expect(many.every((tag) => tag.getConnection() === relationConnection)).toBe(true);
+      expect(one.getAttribute("name")).toBe("Important");
+      expect(many).toHaveLength(2);
+      const tags = await post.importantTags().getResults();
+      expect(tags).toHaveLength(3);
+      expect(tags.every((tag) => tag.pivot.scope === "important")).toBe(true);
+    } finally {
+      Model.setConnection(relationConnection);
+      await wrongConnection.close();
+      ObserverRegistry.unregister(MTag);
+    }
   });
 
   test("extended pivot helpers work on morphToMany relations", async () => {

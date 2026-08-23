@@ -58,6 +58,7 @@ type BaseModelInstanceKey =
   | "getAppends"
   | "save"
   | "update"
+  | "updateQuietly"
   | "updateTimestamps"
   | "touch"
   | "increment"

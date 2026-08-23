@@ -444,6 +444,9 @@ class User extends Model {
 
 If a key appears in both lists, `hidden` wins. These configuration properties
 also accept readonly arrays and tuples, but `as const` is not required.
+The rules apply to attributes, appended values, and loaded relations. When
+`visible` is non-empty, append and relation names must be included in it too;
+for example, add `fullName` to `visible` if it also appears in `appends`.
 
 Instance-level overrides:
 
@@ -576,6 +579,7 @@ await User.where("active", false).decrement("score", 2);   // bulk
 
 ```ts
 await user.saveQuietly();
+await user.updateQuietly({ name: "Imported name" });
 await user.deleteQuietly();
 await User.createMany(records, { events: false });
 await User.saveMany(models, { events: false });
@@ -679,7 +683,7 @@ user.$exists;             // true
 const created = await User.create({ name: "Bob" });
 created.$wasRecentlyCreated;  // true
 
-const fetched = await User.find(created.id);
+const fetched = await User.findOrFail(created.id);
 fetched.$wasRecentlyCreated;  // false
 ```
 
@@ -693,6 +697,7 @@ await user.save();
 
 user.wasChanged();        // true
 user.wasChanged("name");  // true
+user.wasChanged(["email", "name"]); // true if either changed
 user.wasChanged("email"); // false
 user.getChanges();        // { name: "Updated" }
 ```
@@ -704,6 +709,8 @@ In-memory attributes that haven't been saved yet:
 ```ts
 user.setAttribute("name", "Pending");
 user.isDirty();           // true
+user.isDirty("name");     // true
+user.isClean(["email", "phone"]); // true if neither is dirty
 user.isClean();           // false
 user.getDirty();          // { name: "Pending" }
 
@@ -714,14 +721,19 @@ user.isClean();           // true
 
 ### `is` / `isNot`
 
-Compare two instances by table and primary key:
+Compare two instances with non-null primary keys by table, resolved connection,
+and primary key:
 
 ```ts
-const a = await User.find(1);
-const b = await User.find(1);
+const a = await User.findOrFail(1);
+const b = await User.findOrFail(1);
 a.is(b);                  // true
 a.isNot(b);               // false
 ```
+
+Models from different tenant connections never compare equal, even when their
+table and primary key match. Two unsaved models without a primary key do not
+compare equal.
 
 ### `isInstanceOf`
 
@@ -859,9 +871,13 @@ user.json().fullName;             // included via static appends
 const withInitials = user.append("initials");
 withInitials.json().initials;     // included for this instance only
 
-user.setAppends(["initials"]);    // replace the list
+user.setAppends(["initials"]);    // replace instance appends; static appends remain
 user.getAppends();                // ["fullName", "initials"]
 ```
+
+`setAppends()` replaces only appends previously added to that instance. The
+model's `static appends` remain the baseline, and `getAppends()` returns the
+deduplicated combination of both lists.
 
 Visibility is applied before a getter runs, and a getter is evaluated at most
 once per serialization. Its result is never written to `$attributes`, marked

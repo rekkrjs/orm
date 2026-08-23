@@ -19,7 +19,7 @@ If you are new here, start with [Installation](./installation.md), then walk thr
 | [Schema Builder](./schema-builder.md) | Define tables, columns, indexes, and foreign keys programmatically. |
 | [Migrations](./migrations.md) | Versioned schema changes, batching, rollback, multi-tenant scopes, auto-create database / schema. |
 | [Seeders](./seeders.md) | Populate development and test data with reproducible scripts. |
-| [Transactions](./transactions.md) | `connection.transaction()`, nested savepoints, error handling. |
+| [Transactions](./transactions.md) | `DB.transaction()`, explicit connection transactions, nested savepoints, and error handling. |
 
 ## Querying
 
