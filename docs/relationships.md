@@ -25,14 +25,15 @@ One record has many related records. The related table holds the foreign key.
 ```ts
 // Schema
 await Schema.create("users", (t) => {
-  t.increments("id");
+  t.id();
   t.string("name");
   t.timestamps();
 });
 await Schema.create("posts", (t) => {
-  t.increments("id");
-  t.integer("user_id").unsigned(); // matches users.id on MySQL
+  t.id();
+  t.foreignId("user_id").constrained().cascadeOnDelete();
   t.string("title");
+  t.boolean("published").default(false);
   t.timestamps();
 });
 
@@ -42,9 +43,6 @@ class User extends Model {
   posts() {
     return this.hasMany(Post);
   } // FK: post.user_id
-  posts() {
-    return this.hasMany(Post, "author_id");
-  } // custom FK
 }
 
 class Post extends Model {
@@ -56,6 +54,9 @@ const posts = await user.posts().get(); // Collection<Post>
 const post = await user.posts().where("published", true).first();
 ```
 
+Pass a custom foreign key as the second argument when conventions do not fit:
+`this.hasMany(Post, "author_id")`.
+
 ## hasOne
 
 One record has exactly one related record.
@@ -63,8 +64,8 @@ One record has exactly one related record.
 ```ts
 // Schema
 await Schema.create("profiles", (t) => {
-  t.increments("id");
-  t.integer("user_id").unsigned(); // matches users.id on MySQL
+  t.id();
+  t.foreignId("user_id").constrained().cascadeOnDelete();
   t.string("bio").nullable();
   t.timestamps();
 });
@@ -114,14 +115,13 @@ class Post extends Model {
   author() {
     return this.belongsTo(User);
   } // FK: post.user_id
-  author() {
-    return this.belongsTo(User, "author_id");
-  } // custom FK
 }
 
 // Usage
 const author = await post.author().get(); // User | null
 ```
+
+For a custom key, use `this.belongsTo(User, "author_id")`.
 
 ### Constrained relations
 
@@ -195,7 +195,7 @@ author.getAttribute("name"); // "Anonymous"
 Persist related models via a `hasMany` relation. The FK is set automatically.
 
 ```ts
-const user = await User.find(1);
+const user = await User.findOrFail(1);
 
 // create — create a single model and return it
 const post = await user.posts().create({ title: "My Post" });
@@ -216,7 +216,18 @@ const posts = await user
   .createMany([{ title: "Alpha" }, { title: "Beta" }]);
 posts[0].$exists; // true
 posts[0].getAttribute("user_id"); // user.id
+
+// Quiet variants persist without firing related-model observers
+await user.posts().createQuietly({ title: "Imported" });
+await user.posts().createManyQuietly([
+  { title: "Imported 1" },
+  { title: "Imported 2" },
+]);
 ```
+
+Models constructed by the relation's `create*()` helpers inherit the parent's
+resolved connection. This keeps writes on the correct database when the parent
+came from a tenant-specific connection.
 
 ## hasManyThrough / hasOneThrough
 
@@ -225,18 +236,18 @@ Access distant records through an intermediate model.
 ```ts
 // Schema: countries → users → posts
 await Schema.create("countries", (t) => {
-  t.increments("id");
+  t.id();
   t.string("name");
 });
 await Schema.create("users", (t) => {
-  t.increments("id");
-  t.integer("country_id").unsigned();
+  t.id();
+  t.foreignId("country_id").constrained().cascadeOnDelete();
   t.string("name");
   t.timestamps();
 });
 await Schema.create("posts", (t) => {
-  t.increments("id");
-  t.integer("user_id").unsigned();
+  t.id();
+  t.foreignId("user_id").constrained().cascadeOnDelete();
   t.string("title");
   t.timestamps();
 });
@@ -268,19 +279,20 @@ Two models are linked through a pivot table.
 ```ts
 // Schema
 await Schema.create("users", (t) => {
-  t.increments("id");
+  t.id();
   t.string("name");
   t.timestamps();
 });
 await Schema.create("roles", (t) => {
-  t.increments("id");
+  t.id();
   t.string("name");
   t.timestamps();
 });
 await Schema.create("role_user", (t) => {
   // pivot: alphabetical model names
-  t.integer("user_id").unsigned();
-  t.integer("role_id").unsigned();
+  t.foreignId("user_id").constrained().cascadeOnDelete();
+  t.foreignId("role_id").constrained().cascadeOnDelete();
+  t.primary(["user_id", "role_id"]);
 });
 
 // Models
@@ -409,6 +421,8 @@ await post
 ```
 
 The constrained fields do not appear in IntelliSense for the create helpers, because ORM fills them from the relation itself.
+Use `createQuietly()` or `createManyQuietly()` when imported related models must
+be persisted and attached without firing their model observers.
 
 ### Updating Existing Pivot Rows
 
@@ -848,9 +862,8 @@ import { Model, MorphMap } from "@rekkr/orm";
 
 // Schema
 await Schema.create("comments", (t) => {
-  t.increments("id");
-  t.string("commentable_type"); // e.g. "Post" or "Video"
-  t.integer("commentable_id").unsigned();
+  t.id();
+  t.morphs("commentable"); // type + id columns and a composite index
   t.text("body");
   t.timestamps();
 });
@@ -910,6 +923,9 @@ await student.profilePicture().attach({
   filename: "profile.jpg",
 });
 ```
+
+Models constructed by these `attach*()` helpers inherit the parent's resolved
+connection.
 
 For `profilePicture()`, `collection` is injected from the relation constraint, so it does not appear in IntelliSense. Also avoid optional chaining on the relation call itself if you want method autocomplete; guard the model first, as above.
 
@@ -988,14 +1004,13 @@ class Post extends Model {
 ```ts
 // Schema
 await Schema.create("tags", (t) => {
-  t.increments("id");
+  t.id();
   t.string("name");
   t.timestamps();
 });
 await Schema.create("taggables", (t) => {
-  t.integer("tag_id").unsigned();
-  t.integer("taggable_id").unsigned();
-  t.string("taggable_type"); // "Post", "Video", etc.
+  t.foreignId("tag_id").constrained().cascadeOnDelete();
+  t.morphs("taggable"); // type + id columns and a composite index
 });
 
 // Models
@@ -1032,7 +1047,11 @@ await post.importantTags().create({ name: "Ignored" });
 await post.importantTags().save(new Tag({ name: "Ignored" }));
 ```
 
-`morphToMany()` supports the same `create`, `createMany`, `save`, and `saveMany` helpers as `belongsToMany()`. Relation constraints are applied automatically, and constrained fields stay out of IntelliSense for the write input.
+`morphToMany()` supports the same `create()`, `createMany()`, `createQuietly()`,
+`createManyQuietly()`, `save()`, and `saveMany()` helpers as `belongsToMany()`.
+Relation constraints are applied automatically, and constrained fields stay out
+of IntelliSense for the write input. Models constructed by `create*()` inherit
+the parent's resolved connection.
 
 ## Common pitfalls
 

@@ -63,8 +63,16 @@ preserved:
 
 ```ts
 const users = await User.select("id", "name").get();
-users.each((user) => user.makeHidden("internal_note"));
+users.makeHidden("internal_note");
 const payload = users.json();
+```
+
+Serialization helpers apply to every model and return the same collection:
+
+```ts
+users.makeHidden("email").makeVisible("name");
+users.append("display_name");
+users.setAppends(["display_name", "avatar_url"]);
 ```
 
 By contrast, `await User.select("id", "name").json()` is a query terminal. A
@@ -89,11 +97,19 @@ users.firstWhere("email", "alice@example.com");       // shortcut equality looku
 users.get(0);                                         // by index, null if missing
 users.get(99, defaultUser);                           // with default
 
+users.modelKeys();                                    // [1, 2, 3]
+users.find(2);                                        // model with primary key 2, or null
+users.find([1, 3]);                                   // Collection<User>
+users.findOrFail(99);                                 // throws ModelNotFoundError
+users.contains(2);                                    // primary-key check
 users.contains("role", "admin");                      // key/value check
 users.contains((u) => u.score > 90);                  // predicate check
 ```
 
-`first` and `firstWhere` are the cleanest way to look up one item from a fetched collection without re-running a query.
+Model-key helpers compare model class, resolved connection, and a non-null
+primary key, so separately hydrated instances of the same row still match but
+rows with the same ID in different tenant databases do not. Native
+`find(predicate)` remains available for callback searches.
 
 ## Transforming
 
@@ -133,7 +149,10 @@ const adults = users.filter((u) => u.age >= 18);
 const total = users.reduce((acc, u) => acc + u.score, 0);
 ```
 
-`map` and `filter` on a `Collection` return a plain `Array` because they come from the `Array` prototype. Re-wrap with `collect()` if you need helpers back:
+At runtime, `map` and `filter` preserve the `Collection` subclass. TypeScript's
+inherited `Array` signatures still describe their results as plain arrays,
+though, so re-wrap with `collect()` when you want to keep using Collection
+helpers without a cast:
 
 ```ts
 const adults = collect(users.filter((u) => u.age >= 18));
@@ -146,6 +165,12 @@ adults.groupBy("city");
 users.where("role", "admin");                  // equality
 users.whereIn("role", ["admin", "mod"]);       // IN set
 users.reject((u) => u.active === false);       // inverse of filter
+
+users.only([1, 3]);                            // keep primary keys
+users.except([1, 3]);                          // remove primary keys
+users.diff(otherUsers);                        // models absent from otherUsers
+users.intersect(otherUsers);                   // models shared with otherUsers
+users.unique();                                // unique model + connection + primary key
 ```
 
 These mirror the [query builder](./query-builder.md) names so the same vocabulary works whether you filter at the SQL layer or after retrieval.
@@ -199,6 +224,9 @@ users.forEach(...);                                  // inherited from Array
 When you already have a collection and discover you need a relation, load it without re-querying the parents:
 
 ```ts
+// Force a fresh eager load for every model
+await users.load("posts");
+
 // Load only the missing relation on whatever subset already has it
 await users.loadMissing("posts");
 await users.loadMissing("posts.comments", "manager");
@@ -228,11 +256,17 @@ These work the same as their query-builder counterparts (`with`, `withCount`, `w
 - You're building a response and only need certain aggregates conditionally.
 - You're iterating over a streaming `chunk` and want to attach relations per batch.
 
+Collections may contain models from more than one connection. Relation loading
+keeps those models grouped by resolved connection, so rows from one tenant are
+never used to hydrate another tenant's models.
+
 See [Relationships](./relationships.md#eager-loading) for the canonical eager-loading flow.
 
 ## Common pitfalls
 
-- **`Array` method returns lose helpers.** `users.map(...)` returns a plain `Array`, not a `Collection`. Re-wrap with `collect()` if you need Collection helpers.
+- **Inherited `Array` methods are typed as arrays.** At runtime `map` and
+  `filter` preserve the Collection subclass, but TypeScript exposes their
+  results as `T[]`. Re-wrap with `collect()` when chaining Collection helpers.
 - **Aggregates iterate in memory.** Collection `sum`/`avg`/etc. don't query the database. For huge result sets, push the aggregate down with `Model.sum("...")` instead.
 - **`pluck` returns a `Collection`, not a plain array.** Use `.all()` if a caller needs a plain `T[]`.
 - **`sortBy` is not in-place.** It returns a new collection; the original order is preserved.

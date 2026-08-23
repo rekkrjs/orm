@@ -16,7 +16,7 @@ bun --version
 ## Add the package
 
 ```bash
-bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.3.2
+bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.4.0
 ```
 
 Rekkr ORM is currently distributed from GitHub. The package name and every
@@ -27,7 +27,7 @@ where to install it from. The package ships with **zero runtime dependencies**
 
 The repository is private, so the developer or CI runner must have read access
 and a working GitHub SSH key (a read-only deploy key is sufficient in CI). Do
-not use `bun add @rekkr/orm` yet: the registry package is not the `v1.3.2`
+not use `bun add @rekkr/orm` yet: the registry package is not the `v1.4.0`
 release from this repository.
 
 ### Other Git revisions
@@ -36,7 +36,7 @@ A branch, tag, or commit works the same way — no build step, no `trustedDepend
 
 ```bash
 bun add git+ssh://git@github.com/rekkrjs/orm.git                # default branch
-bun add git+ssh://git@github.com/rekkrjs/orm.git#<tag>          # e.g. v1.3.2
+bun add git+ssh://git@github.com/rekkrjs/orm.git#<tag>          # e.g. v1.4.0
 bun add git+ssh://git@github.com/rekkrjs/orm.git#<commit-sha>   # exact commit
 ```
 
@@ -133,7 +133,7 @@ then confirm that SSH authentication works:
 
 ```bash
 ssh -T git@github.com
-git ls-remote git@github.com:rekkrjs/orm.git refs/tags/v1.3.2
+git ls-remote git@github.com:rekkrjs/orm.git refs/tags/v1.4.0
 ```
 
 **TypeScript complains about `Bun.SQL`** — install or upgrade `bun-types` (`bun add -d bun-types`) and ensure it is listed in `compilerOptions.types`.

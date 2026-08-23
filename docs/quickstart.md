@@ -8,7 +8,7 @@ Estimated time: ten minutes.
 
 ```bash
 bun init -y
-bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.3.2
+bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.4.0
 ```
 
 If you are using TypeScript, make sure `tsconfig.json` has `"target": "ESNext"`, `"module": "ESNext"`, and `"moduleResolution": "bundler"`. See [Installation](./installation.md) for the full setup.
@@ -47,7 +47,7 @@ import { Migration, Schema } from "@rekkr/orm";
 export default class CreateUsersTable extends Migration {
   async up() {
     await Schema.create("users", (table) => {
-      table.increments("id");
+      table.id();
       table.string("name");
       table.string("email").unique();
       table.timestamps();
@@ -67,8 +67,8 @@ import { Migration, Schema } from "@rekkr/orm";
 export default class CreatePostsTable extends Migration {
   async up() {
     await Schema.create("posts", (table) => {
-      table.increments("id");
-      table.integer("user_id").unsigned().references("id").on("users");
+      table.id();
+      table.foreignId("user_id").constrained().cascadeOnDelete();
       table.string("title");
       table.text("body").nullable();
       table.timestamps();
@@ -229,8 +229,8 @@ await User.where("id", alice.id).update({ name: "Alice S." });
 ### Delete
 
 ```ts
-const post = await Post.find(1);
-await post!.delete();
+const post = await Post.findOrFail(1);
+await post.delete();
 
 // Bulk delete
 await Post.where("user_id", 999).delete();

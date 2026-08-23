@@ -53,7 +53,7 @@ export class SendWelcomeEmail extends DispatchableJob {
   }
 
   async handle(): Promise<void> {
-    const user = await User.find(this.userId);
+    const user = await User.findOrFail(this.userId);
     await mailer.send({ to: user.email, subject: "Welcome!" });
   }
 }

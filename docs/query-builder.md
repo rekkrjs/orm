@@ -239,6 +239,7 @@ User.whereNot("status", "banned");                         // !=
 User.whereIn("role", ["admin", "mod"]);
 User.whereNotIn("status", ["banned", "spam"]);
 User.whereNull("deleted_at");
+User.whereNull(["deleted_at", "suspended_at"]);              // both must be null
 User.whereNotNull("email");
 User.whereBetween("age", [18, 65]);
 User.whereNotBetween("score", [0, 10]);
@@ -257,6 +258,14 @@ User.where("a", 1).orWhereNull("email");
 ```ts
 // Compare two columns
 User.whereColumn("updated_at", ">", "created_at");
+User.whereColumn("email", "backup_email");                  // equality shorthand
+User.whereColumn([
+  ["updated_at", ">", "created_at"],
+  ["login_count", ">=", "failed_login_count"],
+]);
+
+// Compare a value column against two bound columns
+Product.whereBetweenColumns("price", ["minimum_price", "maximum_price"]);
 
 // Raw SQL fragment; values belong in the bindings array
 User.whereRaw("LENGTH(name) > ?", [10]);
@@ -276,7 +285,16 @@ Event.whereYear("created_at", ">=", 2023);
 Event.whereMonth("birthday", 12);
 Event.whereDay("anniversary", 14);
 Event.whereTime("opened_at", "09:00:00");
+
+Event.wherePast("starts_at");
+Event.whereFuture("expires_at");
+Event.whereToday("published_at");
+Event.whereTodayOrAfter(["starts_at", "ends_at"]);
 ```
+
+On SQLite, relative timestamp comparisons normalize both ISO strings and the
+database's `CURRENT_TIMESTAMP` format before comparing them, so mixed formats
+remain chronological.
 
 ### JSON
 
@@ -303,7 +321,12 @@ User.whereFullText(["bio", "summary"], "laravel orm");
 ```ts
 User.whereAll(["first_name", "last_name"], "like", "%smith%");  // every col matches
 User.whereAny(["email", "phone"], "like", "%example%");         // any col matches
+User.whereNone(["email", "phone"], "like", "%blocked%");       // no col matches
 ```
+
+Passing an empty column list to these helpers adds no condition to the query.
+The same no-op rule applies to an empty comparison list passed to
+`whereColumn([])`.
 
 ### Primary-key shortcuts
 
@@ -328,6 +351,7 @@ DB.table("users").latest("createdAt"); // explicit generic custom column
 User.inRandomOrder();              // RANDOM() / RAND() — use sparingly on large tables
 User.orderBy("name").reorder();    // clear orders
 User.orderBy("name").reorder("id"); // replace
+User.orderBy("name").reorderDesc("created_at"); // replace descending
 ```
 
 ```ts
@@ -339,6 +363,10 @@ User.forPage(3, 15);               // offset 30, limit 15
 ```ts
 User.groupBy("role");
 User.groupBy("role").having("count", ">", 1);
+User.select("role")
+  .selectRaw("AVG(score) AS average_score")
+  .groupBy("role")
+  .havingBetween("average_score", [10, 20]);
 User.groupBy("role").havingRaw("COUNT(*) > 1");
 ```
 
@@ -847,7 +875,7 @@ await User.where("active", true).orDoesntHave("posts").get();
 await User.whereRelation("posts", "title", "like", "Hello%").get();
 
 // Polymorphic: filter a morphTo
-const author = await User.find(1);
+const author = await User.findOrFail(1);
 await Comment.whereMorphedTo("commentable", author).get();
 await Comment.whereMorphRelation("commentable", [Post, Video], "status", "published").get();
 ```
@@ -919,7 +947,12 @@ await User.chunkByIdDesc(100, (users) => users.pluck("id"));
 for await (const user of User.cursor()) { /* one at a time */ }
 for await (const user of User.lazy(500)) { /* chunked iteration */ }
 for await (const user of User.lazyById(500)) { /* keyset chunked */ }
+for await (const user of User.lazyByIdDesc(500)) { /* newest IDs first */ }
 ```
+
+The by-ID chunk and lazy helpers replace any existing `ORDER BY` clauses with
+the requested key order. This prevents conflicting ordering from duplicating or
+skipping rows during keyset traversal.
 
 **Avoid `offset` for large tables** — once you're past a few thousand rows, offset pagination becomes O(offset) on most engines. Reach for `chunkById` / `lazyById` instead.
 
@@ -996,7 +1029,7 @@ Combine with a [transaction](./transactions.md) — locks released on commit / r
 `skipLocked` is the idiomatic way to pull jobs off a queue without contention:
 
 ```ts
-await connection.transaction(async () => {
+await DB.transaction(async () => {
   const jobs = await Job
     .where("status", "pending")
     .orderBy("created_at")
@@ -1031,7 +1064,7 @@ await User.query().upsert(
 await User.where("active", false).update({ deleted: true });
 await User.where("active", false).orderBy("id").limit(10).update({ deleted: true });
 
-// Update with JOIN (Postgres / SQL Server)
+// Update with JOIN (MySQL)
 await Post.query().updateFrom("users", "users.id", "=", "posts.user_id");
 
 // Delete
@@ -1069,7 +1102,9 @@ await User.where("name", "Alice").explain(); // run EXPLAIN
 - **`offset` on huge tables.** Past a few thousand rows, `LIMIT/OFFSET` pagination scans linearly. Use `chunkById`, `lazyById`, or `cursorPaginate`.
 - **Builder writes are not instance writes.** They skip per-instance before-hooks and timestamps; use model instances when those lifecycle details matter.
 - **`distinct()` and `with()` together.** Eager-load joins can introduce duplicate parent rows. Add `distinct()` or use the relation aggregate variants (`withCount`, `withExists`) when you only need scalars.
-- **Locking outside a transaction is a no-op.** `lockForUpdate` releases at commit, so without a `connection.transaction(...)` wrapper there's nothing to release against.
+- **Locking outside a transaction is a no-op.** `lockForUpdate` releases at
+  commit, so wrap model queries in `DB.transaction(...)` or explicitly run them
+  through the `tx` passed to `connection.transaction(...)`.
 
 ## Method reference
 
@@ -1092,9 +1127,9 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `orWhereIn(...)` | OR `IN` |
 | `whereNotIn(col, vals)` | `NOT IN` |
 | `orWhereNotIn(...)` | OR `NOT IN` |
-| `whereNull(col)` | `IS NULL` |
+| `whereNull(col \| cols)` | `IS NULL` |
 | `orWhereNull(...)` | OR `IS NULL` |
-| `whereNotNull(col)` | `IS NOT NULL` |
+| `whereNotNull(col \| cols)` | `IS NOT NULL` |
 | `orWhereNotNull(...)` | OR `IS NOT NULL` |
 | `whereBetween(col, [a, b])` | `BETWEEN` |
 | `orWhereBetween(...)` | OR `BETWEEN` |
@@ -1104,16 +1139,19 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `orWhereExists(...)` | OR `EXISTS` |
 | `whereNotExists(sql)` | `NOT EXISTS` |
 | `orWhereNotExists(...)` | OR `NOT EXISTS` |
-| `whereColumn(a, op, b)` | Compare two columns |
+| `whereColumn(a, b)` / `whereColumn(a, op, b)` | Compare two columns |
+| `whereBetweenColumns(col, [low, high])` | Bounds are columns |
 | `orWhereColumn(...)` | OR column compare |
 | `whereRaw(sql, bindings?)` | Raw SQL where clause |
 | `orWhereRaw(...)` | OR raw SQL |
 | `whereDate / whereDay / whereMonth / whereYear / whereTime` | Date-part filters |
+| `wherePast / whereFuture / whereNowOrPast / whereNowOrFuture / where*Today` | Relative-date filters |
 | `whereJsonContains(col, val)` | JSON membership (cross-DB) |
 | `whereJsonLength(col, op, val)` | JSON array length |
 | `whereLike / whereNotLike / whereRegexp / whereFullText` | Pattern / FTS filters |
 | `whereAll(cols, op, val)` | Multi-column `AND` |
 | `whereAny(cols, op, val)` | Multi-column `OR` |
+| `whereNone(cols, op, val)` | Negated multi-column `OR` |
 | `whereKey(id \| ids)` | Filter by primary key |
 | `whereKeyNot(id \| ids)` | Exclude by primary key |
 | `orderBy(col, dir)` | Sort |
@@ -1121,9 +1159,9 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `orderByRaw(sql, bindings?)` | Raw `ORDER BY` |
 | `latest(col?)` / `oldest(col?)` | Order by timestamp |
 | `inRandomOrder()` | RANDOM ordering |
-| `reorder(col?, dir?)` | Clear / replace orders |
+| `reorder(col?, dir?)` / `reorderDesc(col?)` | Clear / replace orders |
 | `groupBy(...cols)` / `groupByRaw(sql, bindings?)` | Group |
-| `having / havingRaw / orHaving / orHavingRaw` | Group filters |
+| `having / havingBetween / havingRaw / orHaving*` | Group filters |
 | `join / leftJoin / rightJoin / crossJoin` | Joins |
 | `union(query)` / `unionAll(query)` | Set ops |
 | `select / addSelect / selectRaw / distinct / fromSub` | Column selection |
@@ -1134,7 +1172,7 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `count / sum / avg / average / min / max / exists / doesntExist` | Aggregates |
 | `paginate / simplePaginate / cursorPaginate` | Pagination |
 | `chunk / each / chunkById / chunkByIdDesc / eachById` | Streaming |
-| `cursor / lazy / lazyById` | Async iterators |
+| `cursor / lazy / lazyById / lazyByIdDesc` | Async iterators |
 | `create / forceCreate` | Persist and return a model (model-backed builders only) |
 | `insert / insertGetId / insertOrIgnore / upsert` | Inserts |
 | `update / updateFrom / increment / decrement` | Updates |

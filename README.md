@@ -3,7 +3,7 @@
 > **Bun-only package.** Install with:
 >
 > ```bash
-> bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.3.2
+> bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.4.0
 > ```
 >
 > The repository is private, so GitHub read access and SSH authentication are
@@ -43,7 +43,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 ## Installation
 
 ```bash
-bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.3.2
+bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.4.0
 ```
 
 See [Installation](./docs/installation.md) for details.
@@ -87,7 +87,7 @@ class CamelUser extends Model {
 }
 
 await Schema.create("camel_users", (table) => {
-  table.increments("id");
+  table.id();
   table.string("name");
   table.timestamps("createdAt", "updatedAt");
 });
@@ -167,7 +167,7 @@ See the [Quickstart guide](./docs/quickstart.md) for the full walkthrough.
 | [Schema Builder](./docs/schema-builder.md) | Tables, columns, indexes, foreign keys. |
 | [Migrations](./docs/migrations.md) | Versioned schema changes, rollback, multi-tenant scopes, auto-create database / schema. |
 | [Seeders](./docs/seeders.md) | Populate development and test data. |
-| [Transactions](./docs/transactions.md) | `connection.transaction()` and nested savepoints. |
+| [Transactions](./docs/transactions.md) | `DB.transaction()`, explicit connection transactions, and nested savepoints. |
 
 ### Querying
 

@@ -202,6 +202,24 @@ describe("saveQuietly()", () => {
   });
 });
 
+// ─── updateQuietly ───────────────────────────────────────────────────────────
+
+describe("updateQuietly()", () => {
+  beforeAll(setupArticles);
+
+  test("updates without firing observers", async () => {
+    let fired = false;
+    ObserverRegistry.register(Article, { async updating() { fired = true; } });
+
+    const article = await Article.create({ title: "Before quiet update" });
+    await article.updateQuietly({ title: "After quiet update" });
+
+    expect(fired).toBe(false);
+    expect((await Article.findOrFail(article.id)).title).toBe("After quiet update");
+    ObserverRegistry.unregister(Article);
+  });
+});
+
 // ─── deleteQuietly ───────────────────────────────────────────────────────────
 
 describe("deleteQuietly()", () => {
@@ -251,6 +269,22 @@ describe("wasChanged() / getChanges()", () => {
     expect(article.wasChanged()).toBe(true);
     expect(article.wasChanged("title")).toBe(true);
     expect(article.wasChanged("slug")).toBe(false);
+    expect(article.wasChanged(["slug", "title"])).toBe(true);
+    expect(article.wasChanged(["slug", "secret"])).toBe(false);
+  });
+
+  test("isDirty and isClean accept one or many attributes", async () => {
+    const article = await Article.create({ title: "Original", slug: "stable" });
+    article.setAttribute("title", "Changed");
+
+    expect(article.isDirty("title")).toBe(true);
+    expect(article.isDirty("slug")).toBe(false);
+    expect(article.isDirty(["slug", "title"])).toBe(true);
+    expect(article.isClean("slug")).toBe(true);
+    expect(article.isClean(["slug", "title"])).toBe(false);
+    expect(article.isDirty("toString")).toBe(false);
+    expect(article.wasChanged("constructor")).toBe(false);
+    expect(article.isClean("__proto__")).toBe(true);
   });
 
   test("getChanges() returns what changed in last save", async () => {

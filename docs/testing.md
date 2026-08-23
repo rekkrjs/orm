@@ -6,22 +6,28 @@ ORM ships with no built-in test harness — it's just a database library — but
 
 ```ts
 // tests/user.test.ts
-import { describe, expect, test, beforeAll } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Connection, Model, Schema } from "@rekkr/orm";
 import User from "../src/models/User";
 
 describe("User model", () => {
+  let connection: Connection;
+
   beforeAll(async () => {
-    const connection = new Connection({ url: "sqlite://:memory:" });
+    connection = new Connection({ url: "sqlite://:memory:" });
     Model.setConnection(connection);
     Schema.setConnection(connection);
 
     await Schema.create("users", (table) => {
-      table.increments("id");
+      table.id();
       table.string("name");
       table.string("email").unique();
       table.timestamps();
     });
+  });
+
+  afterAll(async () => {
+    await connection.close();
   });
 
   test("creates a user", async () => {
@@ -56,7 +62,7 @@ export function setupTestDb() {
 }
 
 export async function teardownTestDb(connection: Connection) {
-  await connection.driver.close();
+  await connection.close();
 }
 ```
 
@@ -132,12 +138,12 @@ beforeAll(async () => {
 
 ## Transactional isolation
 
-The fastest way to isolate test cases is to wrap each test in a transaction and roll back at the end. ORM's nested-transaction support makes this safe even when the system under test opens its own transactions:
+When the code under test only issues ordinary model or query-builder calls, the
+fastest isolation strategy is to open a manual transaction before each test and
+roll it back afterward:
 
 ```ts
-import { afterEach } from "bun:test";
-
-let outerCommit: (() => Promise<void>) | null = null;
+import { afterEach, beforeEach } from "bun:test";
 
 beforeEach(async () => {
   await connection.beginTransaction();
@@ -148,7 +154,14 @@ afterEach(async () => {
 });
 ```
 
-Inside a test, any nested `connection.transaction(...)` uses a savepoint that's rolled back when the outer transaction is. The next test starts with the original schema and seed data intact.
+The next test starts with the original schema and seed data intact. Do not use
+this harness when the code under test opens `DB.transaction()` or
+`connection.transaction()` itself: a callback transaction cannot be opened on
+top of an owned connection's manual root transaction. For those tests, use a
+fresh in-memory database per test or wrap the complete test body in
+`DB.transaction()` and deliberately throw a test-only sentinel at the end so
+the outer callback rolls back; nested callback transactions then use
+savepoints.
 
 ## Testing observers
 
@@ -203,10 +216,13 @@ on machines that only have SQLite available.
 - **Forgetting to close connections.** A test that doesn't close its connection makes `bun test` hang at the end. Always close in `afterAll` (or rely on `setupTestDb` / `teardownTestDb`).
 - **Cross-test observer state.** Observers register globally. Re-registering the same observer in `beforeEach` without unregistering in `afterEach` accumulates handlers and fires them multiple times.
 - **Tenant context bleed.** If a test opens `DB.tenant(...)` and the callback throws before completing, the next test inherits no tenant — but a careless `TenantContext.run` outside a `try` block can mask failures. Wrap tenant flows in `try / finally`.
-- **Tests sharing a single connection across files.** `bun test` parallelizes by default. If tests in two files share a global connection, expect race conditions. Either use one connection per file, or run with `bun test --concurrent false`.
+- **Concurrent tests sharing a connection.** Bun runs tests sequentially unless
+  you opt into `--concurrent` or `--parallel`. If you enable either mode, give
+  each test file its own connection and database.
 
 ## Where to next
 
 - [Library Usage](./library-usage.md) — running migrations and seeders programmatically for test setup.
 - [Seeders](./seeders.md) — factories and reusable fixture seeders.
-- [Transactions](./transactions.md) — the nested savepoint behavior that makes transactional isolation possible.
+- [Transactions](./transactions.md) — callback transactions, manual control,
+  and the savepoints available to nested callback transactions.

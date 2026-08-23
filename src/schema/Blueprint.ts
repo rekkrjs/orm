@@ -7,6 +7,7 @@ import type {
   ReferentialAction,
 } from "../types/index.js";
 import { snakeCase } from "../utils.js";
+import { SchemaRawExpression } from "./RawExpression.js";
 
 const REFERENTIAL_ACTIONS = new Set<ReferentialAction>([
   "cascade",
@@ -92,6 +93,22 @@ export class ForeignKeyBuilder {
 
   cascadeOnUpdate(): this {
     return this.onUpdate("cascade");
+  }
+
+  restrictOnUpdate(): this {
+    return this.onUpdate("restrict");
+  }
+
+  nullOnUpdate(): this {
+    return this.onUpdate("set null");
+  }
+
+  noActionOnUpdate(): this {
+    return this.onUpdate("no action");
+  }
+
+  noActionOnDelete(): this {
+    return this.onDelete("no action");
   }
 }
 
@@ -183,6 +200,22 @@ export class Blueprint {
     return this.addColumn("tinyInteger", name);
   }
 
+  unsignedBigInteger(name: string): this {
+    return this.bigInteger(name).unsigned();
+  }
+
+  unsignedInteger(name: string): this {
+    return this.integer(name).unsigned();
+  }
+
+  unsignedSmallInteger(name: string): this {
+    return this.smallInteger(name).unsigned();
+  }
+
+  unsignedTinyInteger(name: string): this {
+    return this.tinyInteger(name).unsigned();
+  }
+
   float(name: string, precision: number = 8, scale: number = 2): this {
     this.addColumn("float", name);
     this.currentColumn!.precision = precision;
@@ -265,6 +298,10 @@ export class Blueprint {
       this.currentColumn.default = value;
     }
     return this;
+  }
+
+  useCurrent(): this {
+    return this.default(new SchemaRawExpression("CURRENT_TIMESTAMP"));
   }
 
   defaultUuid(): this {
@@ -453,8 +490,8 @@ export class Blueprint {
     this.timestamp(updated).nullable();
   }
 
-  softDeletes(): void {
-    this.timestamp("deleted_at").nullable();
+  softDeletes(name: string = "deleted_at"): void {
+    this.timestamp(name).nullable();
   }
 
   /** The 100-character nullable remember_token column session cookies are matched against. */
@@ -542,6 +579,31 @@ export class Blueprint {
       name: "dropColumn",
       parameters: { column: Array.isArray(column) ? column : [column] },
     });
+  }
+
+  dropTimestamps(): void {
+    this.dropColumn(["created_at", "updated_at"]);
+  }
+
+  dropTimestampsTz(): void {
+    this.dropTimestamps();
+  }
+
+  dropSoftDeletes(column: string = "deleted_at"): void {
+    this.dropColumn(column);
+  }
+
+  dropSoftDeletesTz(column: string = "deleted_at"): void {
+    this.dropSoftDeletes(column);
+  }
+
+  dropRememberToken(): void {
+    this.dropColumn("remember_token");
+  }
+
+  dropMorphs(name: string, indexName: string | null = null): void {
+    this.dropIndex(indexName ?? `${this.table}_${name}_type_${name}_id_index`);
+    this.dropColumn([`${name}_type`, `${name}_id`]);
   }
 
   renameColumn(from: string, to: string): void {

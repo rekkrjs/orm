@@ -705,17 +705,21 @@ export class ModelCore<T extends Record<string, any> = any> {
     return dirty;
   }
 
-  isDirty(): boolean {
-    return Object.keys(this.getDirty()).length > 0;
+  isDirty(attributes?: string | readonly string[]): boolean {
+    const dirty = this.getDirty();
+    if (attributes === undefined) return Object.keys(dirty).length > 0;
+    const keys = typeof attributes === "string" ? [attributes] : attributes;
+    return keys.some((key) => Object.hasOwn(dirty, key));
   }
 
-  isClean(): boolean {
-    return !this.isDirty();
+  isClean(attributes?: string | readonly string[]): boolean {
+    return !this.isDirty(attributes);
   }
 
-  wasChanged(key?: string): boolean {
-    if (key !== undefined) return key in this.$changes;
-    return Object.keys(this.$changes).length > 0;
+  wasChanged(attributes?: string | readonly string[]): boolean {
+    if (attributes === undefined) return Object.keys(this.$changes).length > 0;
+    const keys = typeof attributes === "string" ? [attributes] : attributes;
+    return keys.some((key) => Object.hasOwn(this.$changes, key));
   }
 
   getChanges(): Partial<T> {
@@ -759,8 +763,13 @@ export class ModelCore<T extends Record<string, any> = any> {
     if (!other) return false;
     const ctor = this.getModelConstructor();
     const otherCtor = Object.getPrototypeOf(other).constructor as typeof ModelCore;
-    return ctor.getTable() === otherCtor.getTable() &&
-      String(this.getAttribute(ctor.primaryKey)) === String(other.getAttribute(otherCtor.primaryKey));
+    const key = this.getAttribute(ctor.primaryKey);
+    const otherKey = other.getAttribute(otherCtor.primaryKey);
+    return key !== null && key !== undefined &&
+      otherKey !== null && otherKey !== undefined &&
+      ctor.getTable() === otherCtor.getTable() &&
+      this.getConnection() === other.getConnection() &&
+      String(key) === String(otherKey);
   }
 
   isInstanceOf<M extends ModelConstructor<any>>(modelClass: M): this is InstanceType<M> {

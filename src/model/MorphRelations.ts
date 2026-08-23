@@ -20,6 +20,12 @@ function getModelConstructor(model: Model): typeof Model {
   return Object.getPrototypeOf(model).constructor as typeof Model;
 }
 
+function newRelatedInstance<T>(parent: Model, related: ModelConstructor, attributes: Record<string, any>): T {
+  const instance = new (related as any)(attributes) as T;
+  (instance as any).setConnection(parent.getConnection());
+  return instance;
+}
+
 export class MorphTo<T extends Record<string, any> = Model> {
   protected parent: Model;
   protected name: string;
@@ -288,7 +294,7 @@ export class MorphOne<T extends Record<string, any> = Model, N extends string = 
   }
 
   async attach(attributes: MorphRelationInput<T, N, Fixed>): Promise<T> {
-    const instance = new (this.related as any)(attributes) as T;
+    const instance = newRelatedInstance<T>(this.parent, this.related, attributes);
     for (const [key, value] of Object.entries(this.getDefaultAttributes())) {
       instance.setAttribute(key as any, value);
     }
@@ -476,7 +482,7 @@ export class MorphMany<T extends Record<string, any> = Model, N extends string =
   get(): Promise<Collection<T>> { return this.getResults(); }
 
   async attach(attributes: MorphRelationInput<T, N, Fixed>): Promise<T> {
-    const instance = new (this.related as any)(attributes) as T;
+    const instance = newRelatedInstance<T>(this.parent, this.related, attributes);
     for (const [key, value] of Object.entries(this.getDefaultAttributes())) {
       instance.setAttribute(key as any, value);
     }
@@ -970,9 +976,17 @@ export class MorphToMany<
   }
 
   async create(attributes: ModelMassAssignmentInputWithout<T, RelatedFixed>, pivotAttributes?: Record<string, any>): Promise<T> {
-    const instance = new (this.related as any)(attributes) as T;
+    const instance = newRelatedInstance<T>(this.parent, this.related, attributes);
     this.applyRelatedDefaults(instance);
     await instance.save();
+    await this.attach(instance.getAttribute(this.relatedKey), pivotAttributes);
+    return instance;
+  }
+
+  async createQuietly(attributes: ModelMassAssignmentInputWithout<T, RelatedFixed>, pivotAttributes?: Record<string, any>): Promise<T> {
+    const instance = newRelatedInstance<T>(this.parent, this.related, attributes);
+    this.applyRelatedDefaults(instance);
+    await instance.save({ events: false });
     await this.attach(instance.getAttribute(this.relatedKey), pivotAttributes);
     return instance;
   }
@@ -981,6 +995,14 @@ export class MorphToMany<
     const created: T[] = [];
     for (const record of records) {
       created.push(await this.create(record, pivotAttributes));
+    }
+    return created;
+  }
+
+  async createManyQuietly(records: ModelMassAssignmentInputWithout<T, RelatedFixed>[], pivotAttributes?: Record<string, any>): Promise<T[]> {
+    const created: T[] = [];
+    for (const record of records) {
+      created.push(await this.createQuietly(record, pivotAttributes));
     }
     return created;
   }

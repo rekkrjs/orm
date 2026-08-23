@@ -147,6 +147,110 @@ describe("Advanced Query Builder Features", () => {
     });
   });
 
+  describe("compact where helpers", () => {
+    test("whereNull and whereNotNull accept column arrays", () => {
+      const sql = new Builder(db, "products")
+        .whereNull(["category", "tags"])
+        .orWhereNotNull(["category", "tags"])
+        .toSql();
+
+      expect(sql).toContain('WHERE "category" IS NULL AND "tags" IS NULL');
+      expect(sql).toContain('OR "category" IS NOT NULL OR "tags" IS NOT NULL');
+    });
+
+    test("whereColumn accepts equality shorthand and comparison arrays", () => {
+      const sql = new Builder(db, "products")
+        .whereColumn("name", "category")
+        .whereColumn([
+          ["price", ">", "id"],
+          ["id", "<=", "price"],
+        ])
+        .orWhereColumn([
+          ["category", "=", "name"],
+          ["id", "<", "price"],
+        ])
+        .toSql();
+
+      expect(sql).toContain('WHERE "name" = "category"');
+      expect(sql).toContain('AND ("price" > "id" AND "id" <= "price")');
+      expect(sql).toContain('OR ("category" = "name" AND "id" < "price")');
+    });
+
+    test("whereBetweenColumns variants treat bounds as identifiers", () => {
+      const sql = new Builder(db, "products")
+        .whereBetweenColumns("price", ["id", "price"])
+        .whereNotBetweenColumns("price", ["id", "price"])
+        .orWhereBetweenColumns("price", ["id", "price"])
+        .orWhereNotBetweenColumns("price", ["id", "price"])
+        .toSql();
+
+      expect(sql).toContain('WHERE "price" BETWEEN "id" AND "price"');
+      expect(sql).toContain('AND "price" NOT BETWEEN "id" AND "price"');
+      expect(sql).toContain('OR "price" BETWEEN "id" AND "price"');
+      expect(sql).toContain('OR "price" NOT BETWEEN "id" AND "price"');
+    });
+
+    test("whereNone and the orWhere group variants preserve grouping", () => {
+      const sql = new Builder(db, "products")
+        .whereNone(["name", "category"], "=", "blocked")
+        .orWhereAny(["name", "category"], "=", "A")
+        .orWhereAll(["name", "category"], "!=", "")
+        .orWhereNone(["name", "category"], "=", "hidden")
+        .toSql();
+
+      expect(sql).toContain('WHERE NOT ("name" = \'blocked\' OR "category" = \'blocked\')');
+      expect(sql).toContain('OR ("name" = \'A\' OR "category" = \'A\')');
+      expect(sql).toContain('OR ("name" != \'\' AND "category" != \'\')');
+      expect(sql).toContain('OR NOT ("name" = \'hidden\' OR "category" = \'hidden\')');
+    });
+
+    test("empty multi-column groups add no invalid clause", () => {
+      const sql = new Builder(db, "products")
+        .whereAll([], "=", "A")
+        .whereAny([], "=", "A")
+        .whereNone([], "=", "A")
+        .orWhereAll([], "=", "A")
+        .orWhereAny([], "=", "A")
+        .orWhereNone([], "=", "A")
+        .whereColumn([])
+        .orWhereColumn([])
+        .toSql();
+
+      expect(sql).toBe('SELECT * FROM "products"');
+    });
+
+    test("relative date helpers choose timestamp or date comparisons", () => {
+      const timestampMethods = [
+        ["wherePast", "<"],
+        ["whereNowOrPast", "<="],
+        ["whereFuture", ">"],
+        ["whereNowOrFuture", ">="],
+      ] as const;
+      for (const [method, operator] of timestampMethods) {
+        const query = new Builder(db, "products");
+        (query[method] as any)(["created_at", "updated_at"]);
+        expect(query.wheres.every((where) => where.type === "raw")).toBe(true);
+        expect(query.wheres.every((where) => where.column.includes(` ${operator} julianday(?)`))).toBe(true);
+        expect(query.wheres.every((where) => where.bindings?.[0] instanceof Date)).toBe(true);
+      }
+
+      const dateMethods = [
+        ["whereToday", "="],
+        ["whereBeforeToday", "<"],
+        ["whereAfterToday", ">"],
+        ["whereTodayOrBefore", "<="],
+        ["whereTodayOrAfter", ">="],
+      ] as const;
+      for (const [method, operator] of dateMethods) {
+        const query = new Builder(db, "products");
+        (query[method] as any)("created_at");
+        expect(query.wheres[0].dateType).toBe("date");
+        expect(query.wheres[0].operator).toBe(operator);
+        expect(query.wheres[0].value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      }
+    });
+  });
+
   describe("Having variants", () => {
     test("havingRaw", async () => {
       const sql = new Builder(db, "products")
@@ -177,6 +281,28 @@ describe("Advanced Query Builder Features", () => {
         .toSql();
       expect(sql).toContain("OR SUM(price) > 10");
     });
+
+    test("havingBetween variants compile value bounds", async () => {
+      const results = await new Builder(db, "products")
+        .select("category")
+        .selectRaw("AVG(price) AS average_price")
+        .groupBy("category")
+        .havingBetween("average_price", [15, 35])
+        .get();
+      expect(results).toHaveLength(3);
+
+      const sql = new Builder(db, "products")
+        .groupBy("category")
+        .havingBetween("price", [10, 40])
+        .havingNotBetween("price", [20, 30])
+        .orHavingBetween("price", [10, 20])
+        .orHavingNotBetween("price", [30, 40])
+        .toSql();
+      expect(sql).toContain('HAVING "price" BETWEEN 10 AND 40');
+      expect(sql).toContain('AND "price" NOT BETWEEN 20 AND 30');
+      expect(sql).toContain('OR "price" BETWEEN 10 AND 20');
+      expect(sql).toContain('OR "price" NOT BETWEEN 30 AND 40');
+    });
   });
 
   describe("Order helpers", () => {
@@ -192,6 +318,12 @@ describe("Advanced Query Builder Features", () => {
 
     test("reorder with new column", async () => {
       const sql = new Builder(db, "products").orderBy("name").reorder("price", "desc").toSql();
+      expect(sql).toContain('ORDER BY "price" DESC');
+      expect(sql).not.toContain('"name"');
+    });
+
+    test("reorderDesc replaces existing orders with a descending order", () => {
+      const sql = new Builder(db, "products").orderBy("name").reorderDesc("price").toSql();
       expect(sql).toContain('ORDER BY "price" DESC');
       expect(sql).not.toContain('"name"');
     });

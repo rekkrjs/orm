@@ -120,6 +120,61 @@ describe("Schema Builder", () => {
     expect(sql).toContain('"expression_default" TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP');
   });
 
+  test("useCurrent uses a raw current timestamp default on every grammar", () => {
+    const blueprint = new Blueprint("events");
+    blueprint.timestamp("published_at").useCurrent();
+
+    for (const grammar of [new SQLiteGrammar(), new MySqlGrammar(), new PostgresGrammar()]) {
+      expect(grammar.compileCreate(blueprint, "events")).toContain("DEFAULT CURRENT_TIMESTAMP");
+    }
+  });
+
+  test("unsigned integer helpers reuse their signed column types", () => {
+    const blueprint = new Blueprint("counters");
+    blueprint.unsignedBigInteger("big");
+    blueprint.unsignedInteger("regular");
+    blueprint.unsignedSmallInteger("small");
+    blueprint.unsignedTinyInteger("tiny");
+
+    expect(blueprint.columns.map(({ type, unsigned }) => ({ type, unsigned }))).toEqual([
+      { type: "bigInteger", unsigned: true },
+      { type: "integer", unsigned: true },
+      { type: "smallInteger", unsigned: true },
+      { type: "tinyInteger", unsigned: true },
+    ]);
+  });
+
+  test("softDeletes accepts a custom column name", () => {
+    const blueprint = new Blueprint("posts");
+    blueprint.softDeletes("removed_at");
+
+    expect(blueprint.columns[0]).toMatchObject({
+      name: "removed_at",
+      type: "timestamp",
+      nullable: true,
+    });
+  });
+
+  test("drop helpers delegate to index and column commands", () => {
+    const blueprint = new Blueprint("posts");
+    blueprint.dropTimestamps();
+    blueprint.dropTimestampsTz();
+    blueprint.dropSoftDeletes("removed_at");
+    blueprint.dropSoftDeletesTz("purged_at");
+    blueprint.dropRememberToken();
+    blueprint.dropMorphs("imageable");
+
+    expect(blueprint.commands).toEqual([
+      { name: "dropColumn", parameters: { column: ["created_at", "updated_at"] } },
+      { name: "dropColumn", parameters: { column: ["created_at", "updated_at"] } },
+      { name: "dropColumn", parameters: { column: ["removed_at"] } },
+      { name: "dropColumn", parameters: { column: ["purged_at"] } },
+      { name: "dropColumn", parameters: { column: ["remember_token"] } },
+      { name: "dropIndex", parameters: { name: "posts_imageable_type_imageable_id_index" } },
+      { name: "dropColumn", parameters: { column: ["imageable_type", "imageable_id"] } },
+    ]);
+  });
+
   test("id() is the conventional big integer primary key", () => {
     const withId = new Blueprint("posts");
     withId.id();
@@ -402,6 +457,20 @@ describe("Schema Builder", () => {
     const nullable = new Blueprint("posts");
     nullable.foreignId("user_id").nullable();
     expect(() => nullable.constrained().onDelete("SET   NULL")).not.toThrow();
+  });
+
+  test("foreign key action helpers cover the remaining update and delete aliases", () => {
+    const blueprint = new Blueprint("posts");
+    blueprint.foreignId("owner_id");
+    const restricted = blueprint.constrained().restrictOnUpdate();
+    blueprint.foreignId("editor_id").nullable();
+    const nullable = blueprint.constrained().nullOnUpdate();
+    blueprint.foreignId("reviewer_id");
+    const noAction = blueprint.constrained().noActionOnUpdate().noActionOnDelete();
+
+    expect(restricted.fk.onUpdate).toBe("restrict");
+    expect(nullable.fk.onUpdate).toBe("set null");
+    expect(noAction.fk).toMatchObject({ onUpdate: "no action", onDelete: "no action" });
   });
 
   test("sqlite names its inline foreign keys", () => {

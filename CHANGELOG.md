@@ -1,5 +1,53 @@
 # Changelog
 
+## 1.4.0 - 2026-08-23
+
+### Added
+
+- Added Eloquent-style query helpers for relative dates, column bounds,
+  multi-column predicates, grouped ranges, descending keyset iteration,
+  ordering replacement, and builder pipelines.
+- Expanded model collections with primary-key identity helpers, set operations,
+  per-collection serialization controls, eager loading, and aggregate loading.
+- Added quiet model updates and quiet relationship creation across has-many,
+  belongs-to-many, and morph-to-many relations.
+- Added schema conveniences for unsigned integer columns, current-timestamp
+  defaults, custom soft-delete columns, foreign-key actions, and dropping
+  timestamp, soft-delete, remember-token, and morph columns.
+
+### Changed
+
+- Models and collections now include the resolved connection when comparing
+  model identity, keeping rows with the same primary key in different tenant
+  databases isolated.
+- Relationship-created models inherit their parent's resolved connection.
+- Keyset chunk and lazy helpers replace pre-existing ordering with their primary
+  key order, preventing duplicate or skipped rows.
+- Refreshed migration, schema, relationship, query, collection, transaction,
+  testing, queue, and quick-start documentation with valid, production-shaped
+  examples.
+
+### Fixed
+
+- Fixed SQLite relative-date filters when stored timestamps mix ISO 8601 and
+  database `CURRENT_TIMESTAMP` formats.
+- Prevented empty multi-column filters from emitting invalid SQL and avoided
+  inherited object properties being reported as dirty or changed attributes.
+- Corrected collection predicate lookup, mixed model/value membership, missing
+  model detection, and cross-connection relation and aggregate loading.
+
+### Compatibility
+
+- The release is additive except for corrected model identity and keyset-order
+  semantics. Code that intentionally compares same-ID rows across connections,
+  or combines custom ordering with by-ID iteration, should opt into an explicit
+  application-level comparison or ordering strategy instead.
+
+### Verification
+
+- Built the TypeScript package and ran the complete Bun test suite against the
+  available SQLite, MySQL, and PostgreSQL integrations.
+
 ## 1.3.2 - 2026-08-23
 
 ### Changed

@@ -76,6 +76,7 @@ interface ModelType<T extends Record<string, any> = any> {
   $wasRecentlyCreated: boolean;
   getAttribute(key: string): any;
   setAttribute(key: string, value: any): void;
+  setConnection(connection: any): this;
   getConnection(): any;
   getModelConstructor(): any;
   fill(attributes: Partial<T>): this;
@@ -94,7 +95,7 @@ type BaseModelInstanceKey =
   | "isFillable" | "getAttribute" | "setAttribute" | "castAttribute"
   | "serializeCastAttribute" | "mergeCasts" | "getDirty" | "isDirty" | "isClean"
   | "wasChanged" | "getChanges" | "getOriginal" | "replicate" | "makeHidden"
-  | "makeVisible" | "append" | "setAppends" | "getAppends" | "save" | "update"
+  | "makeVisible" | "append" | "setAppends" | "getAppends" | "save" | "update" | "updateQuietly"
   | "updateTimestamps" | "touch" | "increment" | "decrement" | "is" | "isNot" | "isInstanceOf"
   | "load" | "loadMissing" | "loadMorph" | "loadCount" | "loadSum" | "loadAvg" | "loadMin"
   | "loadMax" | "delete" | "saveQuietly" | "deleteQuietly" | "restore"
@@ -672,6 +673,12 @@ export abstract class Relation<T extends ModelType = ModelType> {
 
   getRelatedModelConstructor(): any { return this.related; }
 
+  protected newRelatedInstance(attributes: Record<string, any> = {}): T {
+    const instance = new this.related(attributes) as T;
+    instance.setConnection(this.parent.getConnection());
+    return instance;
+  }
+
   qualifyRelatedColumn(column: string): string {
     return column.includes(".") ? column : `${this.related.getQualifiedTable(this.parent.getConnection())}.${column}`;
   }
@@ -768,12 +775,22 @@ export class HasMany<T extends ModelType = ModelType, ForeignKey extends string 
   }
 
   async create(attributes: ModelMassAssignmentInputWithout<T, ForeignKey>): Promise<T> {
-    const instance = new (this.related as any)(attributes) as T;
+    const instance = this.newRelatedInstance(attributes);
     for (const [key, value] of Object.entries(this.getDefaultAttributes())) {
       instance.setAttribute(key as any, value);
     }
     instance.setAttribute(this.foreignKey as any, this.parent.getAttribute(this.localKey));
     await instance.save();
+    return instance;
+  }
+
+  async createQuietly(attributes: ModelMassAssignmentInputWithout<T, ForeignKey>): Promise<T> {
+    const instance = this.newRelatedInstance(attributes);
+    for (const [key, value] of Object.entries(this.getDefaultAttributes())) {
+      instance.setAttribute(key as any, value);
+    }
+    instance.setAttribute(this.foreignKey as any, this.parent.getAttribute(this.localKey));
+    await instance.save({ events: false });
     return instance;
   }
 
@@ -785,6 +802,14 @@ export class HasMany<T extends ModelType = ModelType, ForeignKey extends string 
     return models;
   }
 
+  async createManyQuietly(records: ModelMassAssignmentInputWithout<T, ForeignKey>[]): Promise<T[]> {
+    const models: T[] = [];
+    for (const record of records) {
+      models.push(await this.createQuietly(record));
+    }
+    return models;
+  }
+
   async createOrUpdate(attributes: ModelAttributeInputWithout<T, "">, values: ModelMassAssignmentInput<T> = {}): Promise<T> {
     const found = await this.getQuery().where(attributes as any).first();
     if (found) {
@@ -792,7 +817,7 @@ export class HasMany<T extends ModelType = ModelType, ForeignKey extends string 
       await found.save();
       return found;
     }
-    const instance = new (this.related as any)(values) as T;
+    const instance = this.newRelatedInstance(values);
     instance.forceFill(attributes as any);
     await this.saveMany([instance]);
     return instance;
@@ -906,7 +931,7 @@ export class BelongsTo<T extends ModelType = ModelType> extends Relation<T> {
 
   private makeDefault(): T | null {
     if (this.defaultAttributes === undefined) return null;
-    const instance = new (this.related as any)() as T;
+    const instance = this.newRelatedInstance();
     if (Object.keys(this.defaultAttributes).length > 0) instance.forceFill(this.defaultAttributes as any);
     return instance;
   }
@@ -1068,7 +1093,7 @@ export class HasOne<T extends ModelType = ModelType> extends Relation<T> {
 
   private makeDefault(): T | null {
     if (this.defaultAttributes === undefined) return null;
-    const instance = new (this.related as any)() as T;
+    const instance = this.newRelatedInstance();
     if (Object.keys(this.defaultAttributes).length > 0) instance.forceFill(this.defaultAttributes as any);
     return instance;
   }

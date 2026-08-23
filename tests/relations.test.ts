@@ -1,5 +1,5 @@
 import { expect, test, describe, beforeAll } from "bun:test";
-import { Collection, Model, Schema } from "../src/index.js";
+import { Collection, Connection, Model, ObserverRegistry, Schema } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 class Author extends PermissiveModel {
@@ -96,6 +96,35 @@ describe("Relations", () => {
     expect(books).toHaveLength(2);
     expect(books[0]).toBeInstanceOf(Book);
     expect(books[0].getAttribute("title")).toBe("Book A");
+  });
+
+  test("HasMany createQuietly helpers persist without model events", async () => {
+    const author = await Author.create({ name: "Quiet Author" });
+    const relationConnection = author.getConnection();
+    const wrongConnection = new Connection({ url: "sqlite://:memory:" });
+    author.setConnection(relationConnection);
+    Model.setConnection(wrongConnection);
+    let createdEvents = 0;
+    ObserverRegistry.register(Book, { created() { createdEvents++; } });
+
+    try {
+      const one = await author.books().createQuietly({ title: "Quiet One" });
+      const many = await author.books().createManyQuietly([
+        { title: "Quiet Two" },
+        { title: "Quiet Three" },
+      ]);
+
+      expect(createdEvents).toBe(0);
+      expect(one.getConnection()).toBe(relationConnection);
+      expect(many.every((book) => book.getConnection() === relationConnection)).toBe(true);
+      expect(one.getAttribute("author_id")).toBe(author.getAttribute("id"));
+      expect(many).toHaveLength(2);
+      expect(await author.books().getResults()).toHaveLength(3);
+    } finally {
+      Model.setConnection(relationConnection);
+      await wrongConnection.close();
+      ObserverRegistry.unregister(Book);
+    }
   });
 
   test("BelongsTo returns parent model", async () => {

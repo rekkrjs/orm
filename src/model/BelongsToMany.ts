@@ -41,6 +41,12 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
   protected pivotAccessor = "pivot";
   protected $skipEagerQuery = false;
 
+  protected newRelatedInstance(attributes: Record<string, any>): T {
+    const instance = new (this.related as any)(attributes) as T;
+    instance.setConnection(this.parent.getConnection());
+    return instance;
+  }
+
   protected decoratePivotQuery(builder: Builder<any>): Builder<any> & PivotQueryBuilder {
     const query = builder as Builder<any> & PivotQueryBuilder;
     const relation = this;
@@ -524,9 +530,17 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
   }
 
   async create(attributes: ModelMassAssignmentInputWithout<T, RelatedFixed>, pivotAttributes?: Record<string, any>): Promise<T> {
-    const instance = new (this.related as any)(attributes) as T;
+    const instance = this.newRelatedInstance(attributes);
     this.applyRelatedDefaults(instance);
     await instance.save();
+    await this.attach(instance.getAttribute(this.relatedKey), pivotAttributes);
+    return instance;
+  }
+
+  async createQuietly(attributes: ModelMassAssignmentInputWithout<T, RelatedFixed>, pivotAttributes?: Record<string, any>): Promise<T> {
+    const instance = this.newRelatedInstance(attributes);
+    this.applyRelatedDefaults(instance);
+    await instance.save({ events: false });
     await this.attach(instance.getAttribute(this.relatedKey), pivotAttributes);
     return instance;
   }
@@ -535,6 +549,14 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
     const created: T[] = [];
     for (const record of records) {
       created.push(await this.create(record, pivotAttributes));
+    }
+    return created;
+  }
+
+  async createManyQuietly(records: ModelMassAssignmentInputWithout<T, RelatedFixed>[], pivotAttributes?: Record<string, any>): Promise<T[]> {
+    const created: T[] = [];
+    for (const record of records) {
+      created.push(await this.createQuietly(record, pivotAttributes));
     }
     return created;
   }
