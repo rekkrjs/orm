@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.2 - 2026-08-23
+
+### Changed
+
+- Schema column `.nullable()` now accepts an optional boolean. Existing calls
+  still make the column nullable, while `.nullable(false)` explicitly restores
+  `NOT NULL`, which is useful for conditional migration definitions.
+
+### Verification
+
+- Added schema-builder coverage for default, implicit nullable, and explicit
+  non-nullable column definitions.
+
 ## 1.3.1 - 2026-08-23
 
 ### Fixed

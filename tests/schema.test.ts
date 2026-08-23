@@ -21,6 +21,15 @@ describe("Schema Builder", () => {
     expect(sql).toContain('"created_at" TEXT');
   });
 
+  test("nullable accepts an explicit boolean", () => {
+    const blueprint = new Blueprint("users");
+    blueprint.string("required_by_default");
+    blueprint.string("optional").nullable();
+    blueprint.string("required_explicitly").nullable(false);
+
+    expect(blueprint.columns.map((column) => column.nullable)).toEqual([false, true, false]);
+  });
+
   test("timestamps supports default or custom column pairs", () => {
     const defaults = new Blueprint("default_timestamps");
     defaults.timestamps();

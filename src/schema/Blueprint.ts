@@ -255,8 +255,8 @@ export class Blueprint {
     return this;
   }
 
-  nullable(): this {
-    if (this.currentColumn) this.currentColumn.nullable = true;
+  nullable(value: boolean = true): this {
+    if (this.currentColumn) this.currentColumn.nullable = value;
     return this;
   }
 

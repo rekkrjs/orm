@@ -190,6 +190,7 @@ Modifiers attach to the most recently added column.
 table.string("email").unique();              // UNIQUE constraint
 table.string("slug").index();                // INDEX
 table.string("name").nullable();             // NULL allowed
+table.string("name").nullable(false);        // NOT NULL
 table.integer("role").default(1);            // DEFAULT 1
 table.timestamp("published_at").default(Schema.raw("CURRENT_TIMESTAMP"));
 table.uuid("public_id").defaultUuid();        // database-generated UUID where supported
@@ -201,7 +202,7 @@ table.string("phone").after("email");        // Column position (MySQL)
 
 | Modifier | Effect |
 |---|---|
-| `.nullable()` | Allow `NULL` values |
+| `.nullable(value = true)` | Allow `NULL` values, or enforce `NOT NULL` with `false` |
 | `.default(value?)` | Set or replace the default literal (or use `Schema.raw(...)` for expressions) |
 | `.defaultUuid()` | Use `UUID()` on MySQL or `gen_random_uuid()` on PostgreSQL; emit no default on SQLite |
 | `.unique()` | Add a single-column UNIQUE constraint |
