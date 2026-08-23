@@ -222,7 +222,8 @@ Connection.defaultPostgresPoolMax = 20;
 ### Unique constraint errors
 
 Duplicate unique values and primary keys are normalized across SQLite, MySQL,
-and PostgreSQL:
+and PostgreSQL, including deferred constraints that PostgreSQL detects only
+when a transaction commits:
 
 ```ts
 import { UniqueConstraintViolationError } from "@rekkr/orm";

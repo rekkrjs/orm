@@ -7,3 +7,9 @@
   why it matters, relevant compatibility or opt-in details, and how the release
   was verified. Never publish a release containing only an auto-generated
   changelog link.
+
+# Git operations
+
+- Do not commit, create tags or releases, or push anything unless the user asks
+  for that operation explicitly in the current request. A previous request to
+  publish does not authorize later commits or pushes.

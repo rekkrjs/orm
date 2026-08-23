@@ -242,6 +242,26 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
       if (driver === "sqlite") expect(notNull).toBeInstanceOf(SQL.SQLiteError);
       else if (driver === "mysql") expect(notNull).toBeInstanceOf(SQL.MySQLError);
       else expect(notNull).toBeInstanceOf(SQL.PostgresError);
+
+      if (driver === "postgres") {
+        const table = connection.getGrammar().wrap(connection.qualifyTable("contract_deferred_unique"));
+        await connection.run(
+          `CREATE TABLE ${table} (email TEXT, UNIQUE (email) DEFERRABLE INITIALLY DEFERRED)`,
+        );
+
+        const callbackError = await caught(connection.transaction(async (transaction) => {
+          await new Builder(transaction, "contract_deferred_unique").insert({ email: "callback@example.test" });
+          await new Builder(transaction, "contract_deferred_unique").insert({ email: "callback@example.test" });
+        }));
+        expectDriverUniqueCause(driver, callbackError);
+
+        await connection.beginTransaction();
+        await new Builder(connection, "contract_deferred_unique").insert({ email: "manual@example.test" });
+        await new Builder(connection, "contract_deferred_unique").insert({ email: "manual@example.test" });
+        expectDriverUniqueCause(driver, await caught(connection.commit()));
+
+        expect(await new Builder(connection, "contract_deferred_unique").count()).toBe(0);
+      }
     });
 
     run("keeps raw and nested query values out of SQL text", async () => {

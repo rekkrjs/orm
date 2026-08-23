@@ -30,6 +30,12 @@ await connection.transaction(async (tx) => {
 });
 ```
 
+If PostgreSQL detects a deferred unique or primary-key violation only while
+committing, ORM rolls the transaction back and throws the same
+[`UniqueConstraintViolationError`](./configuration.md#unique-constraint-errors)
+used for an immediate duplicate write. This applies to both callback and
+manual transactions.
+
 The `tx` argument is a `Connection` scoped to the transaction. Any models or builder calls made inside the callback automatically use this connection — you do not need to thread `tx` through your code unless you want to.
 
 ## Nested transactions (savepoints)

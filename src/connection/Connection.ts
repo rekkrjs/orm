@@ -335,14 +335,17 @@ export class Connection {
     return bindings?.map((binding) => this.normalizeBinding(binding));
   }
 
+  private normalizeDriverError(error: unknown): unknown {
+    return isUniqueConstraintViolation(this.driverName, error)
+      ? new UniqueConstraintViolationError({ cause: error })
+      : error;
+  }
+
   private async executeStatement(driver: SQL, sqlString: string, bindings?: any[]): Promise<any> {
     try {
       return await this.keepEventLoopAlive(() => driver.unsafe(sqlString, bindings));
     } catch (error) {
-      if (isUniqueConstraintViolation(this.driverName, error)) {
-        throw new UniqueConstraintViolationError({ cause: error });
-      }
-      throw error;
+      throw this.normalizeDriverError(error);
     }
   }
 
@@ -569,7 +572,7 @@ export class Connection {
         await this.keepEventLoopAlive(() => this.getDriver().unsafe("COMMIT"));
       } catch (error) {
         await this.keepEventLoopAlive(() => this.getDriver().unsafe("ROLLBACK")).catch(() => null);
-        throw error;
+        throw this.normalizeDriverError(error);
       } finally {
         this.transactionDepth = 0;
         this.transactionActive = false;
@@ -628,7 +631,7 @@ export class Connection {
           return result;
         } catch (error) {
           await this.keepEventLoopAlive(() => this.getDriver().unsafe("ROLLBACK")).catch(() => null);
-          throw error;
+          throw this.normalizeDriverError(error);
         } finally {
           this.transactionDepth = 0;
           this.transactionActive = false;
@@ -647,7 +650,7 @@ export class Connection {
         await this.keepEventLoopAlive(() => this.getDriver().unsafe(`ROLLBACK TO SAVEPOINT ${savepointName}`)).catch(() => null);
         await this.keepEventLoopAlive(() => this.getDriver().unsafe(`RELEASE SAVEPOINT ${savepointName}`)).catch(() => null);
         this.savepointId--;
-        throw error;
+        throw this.normalizeDriverError(error);
       } finally {
         this.transactionDepth--;
       }
@@ -664,23 +667,27 @@ export class Connection {
       );
     }
 
-    return await this.keepEventLoopAlive(() => this.driver.begin(async (sql) => {
-      const connection = new Connection(this.config, {
-        driver: sql as unknown as SQL,
-        schema: this.schema,
-        ownsDriver: false,
-        sqliteDefaultsApplied: true,
-      });
-      connection.logQueries = this.logQueries;
-      connection.transactionActive = true;
-      connection.transactionRoot = false;
-      connection.dedicated = true;
-      try {
-        return await callback(connection);
-      } finally {
-        connection.transactionActive = false;
-      }
-    }));
+    try {
+      return await this.keepEventLoopAlive(() => this.driver.begin(async (sql) => {
+        const connection = new Connection(this.config, {
+          driver: sql as unknown as SQL,
+          schema: this.schema,
+          ownsDriver: false,
+          sqliteDefaultsApplied: true,
+        });
+        connection.logQueries = this.logQueries;
+        connection.transactionActive = true;
+        connection.transactionRoot = false;
+        connection.dedicated = true;
+        try {
+          return await callback(connection);
+        } finally {
+          connection.transactionActive = false;
+        }
+      }));
+    } catch (error) {
+      throw this.normalizeDriverError(error);
+    }
   }
 
   async withTenant<T>(

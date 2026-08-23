@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- PostgreSQL unique and primary-key violations raised only when a deferred
+  constraint is checked at commit are now normalized as
+  `UniqueConstraintViolationError`, just like violations raised by a write.
+  Callback, borrowed-connection, and manual transactions retain the original
+  Bun driver error as `cause`; other deferred constraint failures remain raw.
+
+### Verification
+
+- Added live PostgreSQL coverage for deferred unique violations through both
+  callback and manual transaction commits, including rollback verification.
+
 ## 1.3.0 - 2026-08-23
 
 ### Added
