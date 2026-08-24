@@ -271,6 +271,30 @@ describe("Model", () => {
     expect(instanceHidden.toJSON()).toEqual({ name: "Visible" });
   });
 
+  test("makeHiddenIf / makeVisibleIf apply only when the guard holds", async () => {
+    const attributes = { name: "Visible", secret: "shown" };
+
+    expect(new InstanceHiddenUser(attributes).makeHiddenIf(true, "secret").toJSON())
+      .toEqual({ name: "Visible" });
+    expect(new InstanceHiddenUser(attributes).makeHiddenIf(false, "secret").toJSON())
+      .toEqual({ name: "Visible", secret: "shown" });
+
+    expect(new HiddenVisibleUser(attributes).makeVisibleIf(true, "secret").toJSON())
+      .toEqual({ name: "Visible", secret: "shown" });
+    expect(new HiddenVisibleUser(attributes).makeVisibleIf(false, "secret").toJSON())
+      .toEqual({ name: "Visible" });
+
+    // A predicate receives the model, so the guard can read its own attributes.
+    const guarded = new InstanceHiddenUser(attributes)
+      .makeHiddenIf((model) => model.getAttribute("name") === "Visible", "secret");
+    expect(guarded.toJSON()).toEqual({ name: "Visible" });
+
+    // Same variadic shape as makeHidden/makeVisible, and chainable either way.
+    const untouched = new InstanceHiddenUser(attributes);
+    expect(untouched.makeHiddenIf(false, ["secret", "name"])).toBe(untouched);
+    expect(untouched.makeHiddenIf(true, "secret", ["name"]).toJSON()).toEqual({});
+  });
+
   test("json aliases toJSON", async () => {
     const user = await TestUser.create({ name: "Iris" });
     expect(user.json()).toEqual(user.toJSON());

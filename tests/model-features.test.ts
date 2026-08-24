@@ -155,17 +155,30 @@ describe("Fallback retrieval terminators", () => {
       .rejects.toBeInstanceOf(ModelNotFoundError);
   });
 
+  test("value returns null where valueOrFail throws", async () => {
+    expect(await LookupPost.value("title")).toBe("Existing");
+    expect(await LookupPost.where("title", "Existing").value("email")).toBeNull();
+
+    // The distinction between the two: a missing row is null, not a throw.
+    expect(await LookupPost.where("title", "Missing").value("title")).toBeNull();
+    await expect(LookupPost.where("title", "Missing").valueOrFail("title"))
+      .rejects.toBeInstanceOf(ModelNotFoundError);
+  });
+
   test("fallback terminators preserve result and callback types", async () => {
     const firstOrAsync = LookupPost.where("title", "Missing").firstOr(async () => "missing" as const);
     const firstOrSync = LookupPost.firstOr(() => 404 as const);
     const findOr = LookupToken.findOr("token-b", () => "missing" as const);
     const valueOrFail = LookupPost.valueOrFail("email");
+    const value = LookupPost.value("title");
 
     expectType<Promise<LookupPost | "missing">>(firstOrAsync);
     expectType<Promise<LookupPost | 404>>(firstOrSync);
     expectType<Promise<LookupToken | "missing">>(findOr);
     expectType<Promise<string | null>>(valueOrFail);
-    await Promise.all([firstOrAsync, firstOrSync, findOr, valueOrFail]);
+    // value() widens with null even on a non-nullable column: the row may be absent.
+    expectType<Promise<string | null>>(value);
+    await Promise.all([firstOrAsync, firstOrSync, findOr, valueOrFail, value]);
   });
 });
 

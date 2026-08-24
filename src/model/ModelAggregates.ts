@@ -92,8 +92,19 @@ export class ModelAggregates<T extends Record<string, any> = any> extends ModelQ
     return (this as any).query().exists();
   }
 
+  static async doesntExist<M extends ModelConstructor>(this: M): Promise<boolean> {
+    return (this as any).query().doesntExist();
+  }
+
   static async sole<M extends ModelConstructor>(this: M): Promise<InstanceType<M>> {
     return (this as any).query().sole();
+  }
+
+  static async value<M extends ModelConstructor, K extends ModelColumn<InstanceType<M>>>(
+    this: M,
+    column: K
+  ): Promise<ModelColumnValue<InstanceType<M>, K> | null> {
+    return (this as any).query().value(column);
   }
 
   static async valueOrFail<M extends ModelConstructor, K extends ModelColumn<InstanceType<M>>>(

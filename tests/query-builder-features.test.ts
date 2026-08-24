@@ -26,6 +26,15 @@ describe("Doesnt Exist", () => {
     const result = await Product.where("name", "NonExistent").doesntExist();
     expect(result).toBe(true);
   });
+
+  test("doesntExist works as a static, mirroring exists", async () => {
+    expect(await Product.doesntExist()).toBe(false);
+    expect(await Product.exists()).toBe(true);
+
+    await Product.query().delete();
+    expect(await Product.doesntExist()).toBe(true);
+    expect(await Product.exists()).toBe(false);
+  });
 });
 
 describe("Take / Skip", () => {
@@ -58,6 +67,18 @@ describe("Take / Skip", () => {
     expect(products.length).toBe(2);
     expect(products[0].name).toBe("Product 2");
     expect(products[1].name).toBe("Product 3");
+  });
+
+  test("limit and offset are the same statics under their SQL names", async () => {
+    const limited = await Product.limit(2).get();
+    expect(limited.length).toBe(2);
+
+    const offset = await Product.orderBy("id").offset(2).get();
+    expect(offset.length).toBe(3);
+    expect(offset[0].name).toBe("Product 3");
+
+    const both = await Product.orderBy("id").offset(1).limit(2).get();
+    expect(both.map((product) => product.name)).toEqual(["Product 2", "Product 3"]);
   });
 });
 

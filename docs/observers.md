@@ -128,6 +128,10 @@ Order of firing on `save()` of a new instance: `saving` → `creating` → INSER
 
 On `save()` of an existing instance: `saving` → `updating` → UPDATE → `updated` → `saved`.
 
+Changes made by `saving` or `updating` are included in that UPDATE. Changes
+made by `updated` or `saved` happen after SQL completes, so they remain dirty
+until another `save()` (including a nested save from the observer) persists them.
+
 On `delete()`: `deleting` → DELETE → `deleted`. For soft deletes, the row is updated rather than removed; `deleting` and `deleted` still fire.
 
 On `restore()` (soft deletes only): `restoring` → UPDATE → `restored`.

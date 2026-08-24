@@ -206,6 +206,7 @@ Use `sole()` to enforce uniqueness assumptions (one row per email, etc.) and sur
 
 ```ts
 const name = await User.where("id", 1).value("name");      // single column from first row
+const firstName = await User.value("name");                // static form, null if no row
 const requiredName = await User.where("id", 1).valueOrFail("name"); // throws only when no row exists
 const emails = await User.pluck("email");                  // string[] — one column from every row
 const idsByEmail = await User.pluck("email", "id");        // Record<id, email>
@@ -771,6 +772,7 @@ table.foreignUuid("parent_id").nullable().index();
 await User.where("active", true).count();
 await User.where("email", "test@example.com").exists();
 await User.where("email", "missing@example.com").doesntExist();
+await User.doesntExist();
 await Order.sum("amount");
 await Order.avg("amount");
 await Order.average("amount"); // alias of avg()
@@ -780,7 +782,11 @@ await Product.max("price");
 
 `exists()` runs a tiny `SELECT 1` and short-circuits — prefer it to `count() > 0` when you only need a boolean.
 
-`count`, `sum`, `avg`/`average`, `min`, `max`, `exists`, `sole` and `pluck` all run either straight off the model, as above, or off a constrained query — `User.sum("credits")` and `User.where("active", true).sum("credits")` are the same call with a different starting point.
+`count`, `sum`, `avg`/`average`, `min`, `max`, `exists`/`doesntExist`, `sole`,
+`value`/`valueOrFail`, and `pluck` all run either straight off the model or off
+a constrained query — `User.sum("credits")` and
+`User.where("active", true).sum("credits")` are the same call with a different
+starting point.
 
 `count()` always returns a JavaScript `number`. `sum()`, `avg()` and its `average()` alias preserve the
 driver's exact numeric representation and return `number | string | bigint`:

@@ -458,6 +458,16 @@ user.makeVisible("password"); // re-include without hiding other attributes
 `makeVisible()` extends an existing `visible` allow-list, if present, but does
 not create one on a model that only uses `hidden`.
 
+`makeHiddenIf()` and `makeVisibleIf()` apply the same change behind a guard,
+which is either a boolean or a predicate receiving the model:
+
+```ts
+user.makeHiddenIf(!viewer.isAdmin, "email", "phone");
+user.makeVisibleIf((model) => model.getAttribute("id") === viewer.id, "email");
+```
+
+When the guard is false the model is returned untouched, so both stay chainable.
+
 Hidden fields are also dropped from `json()` and `JSON.stringify(user)`.
 
 ## CRUD
@@ -473,9 +483,12 @@ const firstOrGuest = await User.firstOr(() => guestUser);
 const foundOrGuest = await User.findOr(1, () => guestUser);
 const many = await User.findMany([1, 2, 3]);
 const admin = await User.firstWhere("role", "admin");
+const firstEmail = await User.value("email");                 // null if no row
+const noUsers = await User.doesntExist();
 
 const selected = await User.whereKey([1, 3, 5]).get();
 const others = await User.whereKeyNot(1).get();
+const page = await User.orderBy("id").limit(25).offset(25).get();
 
 // Throw-on-miss
 const user = await User.findOrFail(1);
@@ -701,6 +714,38 @@ user.wasChanged(["email", "name"]); // true if either changed
 user.wasChanged("email"); // false
 user.getChanges();        // { name: "Updated" }
 ```
+
+### `discardChanges` / `syncOriginal`
+
+`discardChanges()` rolls the in-memory attributes back to the current baseline
+and forgets the pending edits. The row is never touched:
+
+```ts
+user.setAttribute("name", "Pending");
+user.isDirty();           // true
+
+user.discardChanges();
+user.getAttribute("name") // the value the baseline holds
+user.isDirty();           // false
+user.getChanges();        // {}
+```
+
+Values decoded by a `json` or `date` cast are rebuilt from the restored
+attributes, so an edit made in place on one of those objects is discarded too.
+
+That baseline is whatever the model last accepted as original — normally the
+last `save()`, but `syncOriginal()` moves it without writing anything:
+
+```ts
+user.forceFill(rowFromSomewhereElse);
+user.syncOriginal();
+user.isDirty();           // false — this is the baseline now
+
+user.discardChanges();    // rolls back to rowFromSomewhereElse, not to the row
+```
+
+In-place edits to a `json` or `date` cast are folded into the baseline too, so
+`syncOriginal()` sees a mutated object the same way `save()` does.
 
 ### `isDirty` / `isClean` / `getDirty`
 

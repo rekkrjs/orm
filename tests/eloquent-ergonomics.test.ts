@@ -149,9 +149,14 @@ describe("Eloquent-style ergonomics", () => {
       ErgUser.orWhereFullText("name", "user").get();
       ErgUser.whereAll(["name", "group_name"], "!=", "").get();
       ErgUser.select("name").addSelect("score").distinct().get();
+      ErgUser.limit(2).offset(1).get();
+      ErgUser.doesntExist();
 
       // Static aliases keep returning a Builder of ErgUser models.
       (await ErgUser.orWhereLike("name", "Admin%").get())[0]?.name.toUpperCase();
+      // value() widens with null even on a non-nullable column: the row may be absent.
+      (await ErgUser.value("name"))?.toUpperCase();
+      (await ErgUser.value("score"))?.toFixed();
       (await ErgUser.orWhereFullText(FULLTEXT_COLUMNS, "user").get())[0]?.score.toFixed();
 
       // @ts-expect-error JSON length requires a comparison value.

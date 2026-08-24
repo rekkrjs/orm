@@ -733,6 +733,84 @@ export class ModelCore<T extends Record<string, any> = any> {
     return { ...this.$original };
   }
 
+  /**
+   * Accept the current attributes as the baseline, so nothing reads as dirty
+   * until the next write. Nothing is written to the row — this moves what the
+   * model considers original, which is what `discardChanges()` rolls back to.
+   *
+   * A `json` or `date` cast decodes to an object the caller holds by reference,
+   * so an in-place edit lands in `$castCache` and never reaches `$attributes`.
+   * Copying `$attributes` alone would leave that edit outside the baseline and
+   * the key would keep reading dirty forever, so the cached values are folded
+   * back in first — exactly what `save()` does with the dirty set before it
+   * writes the row.
+   *
+   * `getDirty()` is what does the folding, rather than a second pass over the
+   * cache, because it already owns the rules: it re-serializes the cached value
+   * and compares dates by instant, so a `date` cast that was read but not
+   * changed keeps its stored "2026-01-02" instead of being rewritten as a full
+   * ISO timestamp. Models with no mutable cast skip the call entirely.
+   *
+   * Clearing `$dirtyKeys` is an optimisation, not a correctness requirement:
+   * `getDirty()` compares every tracked key against `$original` anyway, so a
+   * stale key would compare equal and drop out. Emptying the set just spares
+   * that work on the next call.
+   */
+  syncOriginal(): this {
+    const { json, date } = mutableCastKeys(this.$mergedCasts);
+    if (json.size > 0 || date.size > 0) Object.assign(this.$attributes, this.getDirty());
+    this.markAttributesPersisted();
+    return this;
+  }
+
+  /** Accept the supplied persisted snapshot while keeping later edits dirty. */
+  protected markAttributesPersisted(attributes: Partial<T> = this.$attributes): void {
+    this.$original = { ...attributes };
+    this.$dirtyKeys?.clear();
+    if (attributes === this.$attributes) return;
+
+    for (const key of Object.keys(this.$attributes)) {
+      if (!sameAttributeValue((this.$original as any)[key], (this.$attributes as any)[key])) {
+        (this.$dirtyKeys ??= new Set()).add(key);
+      }
+    }
+    for (const key of Object.keys(this.$original)) {
+      if (!Object.hasOwn(this.$attributes, key)) (this.$dirtyKeys ??= new Set()).add(key);
+    }
+  }
+
+  /** Accept only attributes that a partial persistence operation wrote. */
+  protected syncPersistedOriginal(keys: readonly string[]): void {
+    for (const key of keys) {
+      if (Object.hasOwn(this.$attributes, key)) {
+        (this.$original as any)[key] = (this.$attributes as any)[key];
+      } else {
+        delete (this.$original as any)[key];
+      }
+      this.$dirtyKeys?.delete(key);
+    }
+  }
+
+  /**
+   * Roll the in-memory attributes back to the current baseline, discarding
+   * every pending change. The row itself is untouched.
+   *
+   * The baseline is whatever `$original` holds — the last save, unless
+   * `syncOriginal()` moved it since.
+   *
+   * The cast cache goes with them: it holds decoded values keyed off the
+   * attributes being thrown away, and a `json`/`date` cast hands out a mutable
+   * object that `getDirty()` re-reads, so keeping it would resurrect the very
+   * edits this discards.
+   */
+  discardChanges(): this {
+    this.$attributes = { ...this.$original } as T;
+    this.$changes = {} as Partial<T>;
+    this.$castCache = {};
+    this.$dirtyKeys?.clear();
+    return this;
+  }
+
   replicate(except?: string[]): this {
     const constructor = this.getModelConstructor();
     const pk = constructor.primaryKey;

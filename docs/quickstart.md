@@ -8,7 +8,7 @@ Estimated time: ten minutes.
 
 ```bash
 bun init -y
-bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.5.0
+bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.6.0
 ```
 
 If you are using TypeScript, make sure `tsconfig.json` has `"target": "ESNext"`, `"module": "ESNext"`, and `"moduleResolution": "bundler"`. See [Installation](./installation.md) for the full setup.

@@ -316,6 +316,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
         const shouldGeneratePrimaryKey = keyStrategy.generate;
         const bulkModels: InstanceType<M>[] = [];
         for (const model of newModels) {
+          Object.assign(model.$attributes, model.getDirty());
           const pk = model.getAttribute(this.primaryKey);
           if (!shouldGeneratePrimaryKey && (pk === null || pk === undefined || pk === "")) {
             const record = await (this as any).prepareBulkRecord(
@@ -333,8 +334,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
             );
             if (id !== null && id !== undefined && id !== "") record[this.primaryKey] = id;
             model.$attributes = record as any;
-            model.$original = { ...record } as any;
-            model.$dirtyKeys?.clear();
+            model.markAttributesPersisted();
             model.$exists = true;
           } else {
             bulkModels.push(model);
@@ -350,8 +350,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
           await (this as any).query().insert(records as any);
           for (let index = 0; index < bulkModels.length; index++) {
             bulkModels[index].$attributes = records[index] as any;
-            bulkModels[index].$original = { ...records[index] } as any;
-            bulkModels[index].$dirtyKeys?.clear();
+            bulkModels[index].markAttributesPersisted();
             bulkModels[index].$exists = true;
           }
         }
@@ -368,8 +367,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
         }
         if (Object.keys(dirty).length === 0) continue;
         await (this as any).query().where(this.primaryKey, model.getAttribute(this.primaryKey)).update(dirty as any);
-        model.$original = { ...model.$attributes };
-        model.$dirtyKeys?.clear();
+        model.markAttributesPersisted();
       }
     }
 
@@ -461,14 +459,6 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       this.validateBackedEnumAttributes();
 
       let dirty = this.getDirty();
-      Object.assign(this.$attributes, dirty);
-      if (Object.keys(dirty).length > 0 && constructor.timestamps) {
-        const { updatedAt } = constructor.getTimestampColumns();
-        const now = this.freshTimestamp();
-        (this.$attributes as any)[updatedAt] = now;
-        delete this.$castCache[updatedAt];
-        (dirty as any)[updatedAt] = now;
-      }
       if (Object.keys(dirty).length > 0) {
         const pk = this.getAttribute(constructor.primaryKey);
         if (pk === null || pk === undefined || pk === "") {
@@ -478,18 +468,32 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
           );
         }
         if (events) await ObserverRegistry.dispatch("updating", this as any);
-        const connection = this.getConnection();
-        await new Builder(connection, constructor.getQualifiedTable(connection))
-          .where(constructor.primaryKey, pk)
-          .update(this.attributesForDriver(connection, dirty as Record<string, any>) as any);
-        this.$changes = { ...dirty };
-        if (events) await ObserverRegistry.dispatch("updated", this as any);
+        dirty = this.getDirty();
+        Object.assign(this.$attributes, dirty);
+        if (constructor.timestamps) {
+          const { updatedAt } = constructor.getTimestampColumns();
+          const now = this.freshTimestamp();
+          (this.$attributes as any)[updatedAt] = now;
+          delete this.$castCache[updatedAt];
+          (dirty as any)[updatedAt] = now;
+        }
+        if (Object.keys(dirty).length > 0) {
+          const persistedAttributes = { ...this.$attributes } as Partial<T>;
+          const connection = this.getConnection();
+          await new Builder(connection, constructor.getQualifiedTable(connection))
+            .where(constructor.primaryKey, pk)
+            .update(this.attributesForDriver(connection, dirty as Record<string, any>) as any);
+          this.$changes = { ...dirty };
+          this.markAttributesPersisted(persistedAttributes);
+          if (events) await ObserverRegistry.dispatch("updated", this as any);
+        } else {
+          this.$changes = {};
+          this.markAttributesPersisted();
+        }
       } else {
         this.$changes = {};
+        this.markAttributesPersisted();
       }
-
-      this.$original = { ...this.$attributes };
-      this.$dirtyKeys?.clear();
 
       if (events) await ObserverRegistry.dispatch("saved", this as any);
     } else {
@@ -505,6 +509,10 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
         delete this.$castCache[createdAt];
         delete this.$castCache[updatedAt];
       }
+
+      // Mutable casts live in the cast cache until they are read as dirty. An
+      // insert writes every attribute, so materialize those edits first.
+      Object.assign(this.$attributes, this.getDirty());
 
       const primaryKey = constructor.primaryKey;
       const primaryKeyValue = this.getAttribute(primaryKey);
@@ -536,9 +544,8 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
 
       this.$exists = true;
       this.$wasRecentlyCreated = true;
-      this.$original = { ...this.$attributes };
       this.$changes = {};
-      this.$dirtyKeys?.clear();
+      this.markAttributesPersisted();
 
       if (events) await ObserverRegistry.dispatch("created", this as any);
       if (events) await ObserverRegistry.dispatch("saved", this as any);
@@ -600,8 +607,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       .update(this.attributesForDriver(connection, { [updatedAt]: now }) as any);
     (this.$attributes as any)[updatedAt] = now;
     delete this.$castCache[updatedAt];
-    this.$original = { ...this.$attributes };
-    this.$dirtyKeys?.clear();
+    this.syncPersistedOriginal([updatedAt]);
     return true;
   }
 
@@ -631,8 +637,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       (this.$attributes as any)[key] = value;
       delete this.$castCache[key];
     }
-    this.$original = { ...this.$attributes };
-    this.$dirtyKeys?.clear();
+    this.syncPersistedOriginal([column, ...Object.keys(extra)]);
     if (IdentityMap.current()) {
       IdentityMap.set(constructor.getQualifiedTable(connection), pk, this as any, connection);
     }
@@ -657,8 +662,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
         .update(this.attributesForDriver(connection, { [constructor.deletedAtColumn]: deletedAt }) as any);
       (this.$attributes as any)[constructor.deletedAtColumn] = deletedAt;
       delete this.$castCache[constructor.deletedAtColumn];
-      this.$original = { ...this.$attributes };
-      this.$dirtyKeys?.clear();
+      this.syncPersistedOriginal([constructor.deletedAtColumn]);
     } else {
       const connection = this.getConnection();
       await new Builder(connection, constructor.getQualifiedTable(connection))
@@ -690,8 +694,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
         .update(this.attributesForDriver(connection, { [constructor.deletedAtColumn]: deletedAt }) as any);
       (this.$attributes as any)[constructor.deletedAtColumn] = deletedAt;
       delete this.$castCache[constructor.deletedAtColumn];
-      this.$original = { ...this.$attributes };
-      this.$dirtyKeys?.clear();
+      this.syncPersistedOriginal([constructor.deletedAtColumn]);
     } else {
       const connection = this.getConnection();
       await new Builder(connection, constructor.getQualifiedTable(connection))
@@ -719,8 +722,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       .update({ [constructor.deletedAtColumn]: null } as any);
     (this.$attributes as any)[constructor.deletedAtColumn] = null;
     delete this.$castCache[constructor.deletedAtColumn];
-    this.$original = { ...this.$attributes };
-    this.$dirtyKeys?.clear();
+    this.syncPersistedOriginal([constructor.deletedAtColumn]);
     this.$exists = true;
     if (IdentityMap.current()) {
       IdentityMap.set(constructor.getQualifiedTable(connection), pk, this as any, connection);
@@ -778,9 +780,8 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       .withoutGlobalScopes()
       .findOrFail(pk, constructor.primaryKey) as this;
     this.$attributes = { ...result.$attributes } as T;
-    this.$original = { ...result.$attributes } as Partial<T>;
     this.$castCache = {};
-    this.$dirtyKeys?.clear();
+    this.markAttributesPersisted();
     if (identityMap) IdentityMap.set(table, pk, this as any, connection);
     return this;
   }

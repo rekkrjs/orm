@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.6.0 - 2026-08-24
+
+### Added
+
+- Added static `doesntExist`, `value`, `limit`, and `offset` model helpers.
+- Added conditional `makeHiddenIf` and `makeVisibleIf` serialization helpers.
+- Added public `syncOriginal()` and `discardChanges()` model-state helpers.
+
+### Changed
+
+- Mutable `json` and `date` casts now keep in-place edits coherent across
+  inserts, bulk saves, dirty baselines, and partial persistence operations.
+- `updating` observer mutations are included in the pending UPDATE, while
+  mutations from `updated` and `saved` remain dirty until explicitly saved.
+
+### Fixed
+
+- Prevented `touch`, increment/decrement, soft delete, and restore from marking
+  unrelated in-memory changes as persisted.
+- Kept nested saves from having their newer dirty baseline overwritten by the
+  outer save.
+
+### Compatibility
+
+- All new model and query helpers are additive aliases over existing builder
+  behavior. No migration or configuration change is required.
+- `syncOriginal()` and `discardChanges()` only move or restore the in-memory
+  baseline; neither writes to the database.
+
+### Verification
+
+- Built the TypeScript package and ran the complete Bun test suite, including
+  the available SQLite, MySQL, and PostgreSQL integrations.
+
 ## 1.5.0 - 2026-08-24
 
 ### Added

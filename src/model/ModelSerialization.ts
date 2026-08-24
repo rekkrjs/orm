@@ -71,6 +71,11 @@ function deepPick(obj: Record<string, any>, paths: string[]): Record<string, any
   return result;
 }
 
+/** Resolve the guard of `makeHiddenIf` / `makeVisibleIf`, which takes a flag or a predicate. */
+function conditionHolds<M>(condition: boolean | ((model: M) => boolean), model: M): boolean {
+  return typeof condition === "function" ? Boolean(condition(model)) : Boolean(condition);
+}
+
 function findNativeGetter(model: object, key: string): (() => unknown) | undefined {
   let prototype = Object.getPrototypeOf(model);
   while (prototype) {
@@ -94,6 +99,14 @@ export class ModelSerialization<T extends Record<string, any> = any> extends Mod
     this.$visible = [...new Set([...this.$visible, ...flat])];
     this.$hidden = this.$hidden.filter((k) => !flat.includes(k));
     return this;
+  }
+
+  makeHiddenIf(condition: boolean | ((model: this) => boolean), ...keys: (string | readonly string[])[]): this {
+    return conditionHolds(condition, this) ? this.makeHidden(...keys) : this;
+  }
+
+  makeVisibleIf(condition: boolean | ((model: this) => boolean), ...keys: (string | readonly string[])[]): this {
+    return conditionHolds(condition, this) ? this.makeVisible(...keys) : this;
   }
 
   append<K extends string>(...keys: (K | readonly K[])[]): this & Record<K, any> {

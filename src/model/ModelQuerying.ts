@@ -491,6 +491,14 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().skip(count);
   }
 
+  static limit<M extends ModelConstructor>(this: M, count: number): Builder<InstanceType<M>> {
+    return (this as any).query().limit(count);
+  }
+
+  static offset<M extends ModelConstructor>(this: M, count: number): Builder<InstanceType<M>> {
+    return (this as any).query().offset(count);
+  }
+
   static inRandomOrder<M extends ModelConstructor>(this: M): Builder<InstanceType<M>> {
     return (this as any).query().inRandomOrder();
   }
