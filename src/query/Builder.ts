@@ -1318,19 +1318,32 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return (result || this) as this;
   }
 
-  when(condition: any, callback: (query: this) => void | this, defaultCallback?: (query: this) => void | this): this {
-    if (condition) {
-      const result = callback(this);
+  private resolveConditionalValue<TValue>(value: TValue | ((query: this) => TValue)): TValue {
+    return typeof value === "function" ? (value as (query: this) => TValue)(this) : value;
+  }
+
+  when<TValue>(value: TValue | ((query: this) => TValue), callback: (query: this, value: NonNullable<TValue>) => void | this, defaultCallback?: (query: this, value: TValue) => void | this): this {
+    const resolved = this.resolveConditionalValue(value);
+    if (resolved) {
+      const result = callback(this, resolved as NonNullable<TValue>);
       return (result || this) as this;
     } else if (defaultCallback) {
-      const result = defaultCallback(this);
+      const result = defaultCallback(this, resolved);
       return (result || this) as this;
     }
     return this;
   }
 
-  unless(condition: any, callback: (query: this) => void | this, defaultCallback?: (query: this) => void | this): this {
-    return this.when(!condition, callback, defaultCallback);
+  unless<TValue>(value: TValue | ((query: this) => TValue), callback: (query: this, value: TValue) => void | this, defaultCallback?: (query: this, value: NonNullable<TValue>) => void | this): this {
+    const resolved = this.resolveConditionalValue(value);
+    if (!resolved) {
+      const result = callback(this, resolved);
+      return (result || this) as this;
+    } else if (defaultCallback) {
+      const result = defaultCallback(this, resolved as NonNullable<TValue>);
+      return (result || this) as this;
+    }
+    return this;
   }
 
   tap(callback: (query: this) => void | this): this {

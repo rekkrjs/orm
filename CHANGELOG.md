@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.7.0 - 2026-08-24
+
+### Added
+
+- `when()` and `unless()` now hand the evaluated value to their callbacks as a
+  second argument, so optional filters no longer have to repeat the value inside
+  the closure.
+- `when()` and `unless()` accept a closure as their first argument. It is
+  invoked with the builder and its return value decides which branch runs.
+
+### Changed
+
+- The callback of `when()` (and the `defaultCallback` of `unless()`) receives
+  the value typed as `NonNullable<T>`, because that branch only runs when the
+  value is truthy. `.when(filters.name, (q, name) => q.where("name", name))` now
+  type-checks under `strict` without a non-null assertion.
+
+### Fixed
+
+- `unless()` forwarded the negated condition to its callbacks instead of the
+  original value, and its signature did not accept that second argument at all.
+  It is now implemented alongside `when()` instead of delegating to it.
+
+### Compatibility
+
+- Callbacks that take only the `query` parameter keep working unchanged; the
+  value is an extra trailing argument.
+- Passing a function as the first argument of `when()` / `unless()` previously
+  counted as an always-truthy value. It is now invoked as a predicate. Wrap it
+  as `() => fn` to keep the old behavior.
+
+### Verification
+
+- Built the TypeScript package and ran the complete Bun test suite (1481 tests
+  across 118 files), including the available SQLite, MySQL, and PostgreSQL
+  integrations.
+
 ## 1.6.0 - 2026-08-24
 
 ### Added

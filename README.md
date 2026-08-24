@@ -3,7 +3,7 @@
 > **Bun-only package.** Install with:
 >
 > ```bash
-> bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.6.0
+> bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.7.0
 > ```
 >
 > The repository is private, so GitHub read access and SSH authentication are
@@ -43,7 +43,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 ## Installation
 
 ```bash
-bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.6.0
+bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.7.0
 ```
 
 See [Installation](./docs/installation.md) for details.

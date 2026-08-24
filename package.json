@@ -1,6 +1,6 @@
 {
   "name": "@rekkr/orm",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "An Eloquent-inspired ORM for Bun's native SQL client supporting SQLite, MySQL, and PostgreSQL.",
   "license": "MIT",
   "packageManager": "bun@1.4.0",

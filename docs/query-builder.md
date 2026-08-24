@@ -1006,17 +1006,46 @@ table builders because those builders do not know which model to instantiate.
 `when()` and `unless()` let you compose filters from optional inputs without an `if`-ladder:
 
 ```ts
-const filters = { name: "Alice", role: undefined };
+const filters: { name?: string; role?: string } = { name: "Alice" };
 const showInactive = false;
 
 const users = await User
-  .when(filters.name,  (q) => q.where("name", filters.name))
-  .when(filters.role,  (q) => q.where("role", filters.role))
+  .when(filters.name,  (q, name) => q.where("name", name))
+  .when(filters.role,  (q, role) => q.where("role", role))
   .unless(showInactive, (q) => q.where("active", true))
   .get();
 ```
 
-The first argument can be any truthy / falsy value. Use this everywhere you'd otherwise write `if (filters.x) q.where(...)`.
+The first argument can be any value and follows JavaScript truthiness: `0`, `""`,
+`null`, `undefined`, `false`, and `NaN` select the default branch. Use this
+everywhere you'd otherwise write `if (filters.x) q.where(...)`.
+
+The value is also handed to the callback as its second argument, already
+narrowed to a non-nullable type, so you do not have to repeat `filters.name` (or
+assert it with `!`) inside the closure. `unless()` mirrors this and passes the
+**original** value, not the negated one:
+
+```ts
+User.unless(role, (q, value) => q.where("role", value ?? "guest"));
+```
+
+The `defaultCallback` receives the value too, so both branches can read it:
+
+```ts
+User.when(filters.role,
+  (q, role) => q.where("role", role),      // role is a string here
+  (q, role) => q.where("role", role ?? "guest"), // role is the falsy value
+);
+```
+
+The first argument may also be a closure, which is invoked with the builder and
+whose return value decides the branch. Use it when the condition is expensive or
+has to be evaluated lazily at the point of the call:
+
+```ts
+User.where("active", true)
+  .when(() => isPromoWeek(), (q) => q.where("promo", true));
+```
 
 ## Select, raw, and subqueries
 
@@ -1211,7 +1240,7 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `scope(name, ...args)` | Apply local scope |
 | `withoutGlobalScope(name) / withoutGlobalScopes()` | Drop global scopes |
 | `withTrashed() / withoutTrashed() / onlyTrashed()` | Soft delete visibility |
-| `when(cond, fn, elseFn?) / unless(...)` | Conditional |
+| `when(value, fn, elseFn?) / unless(...)` | Conditional; `value` may be a closure and is passed to the callbacks |
 | `tap(fn)` | Mutate and return |
 | `clone()` | Copy builder state |
 | `toSql() / dump() / dd() / explain()` | Debugging |

@@ -467,12 +467,12 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().oldest(column);
   }
 
-  static when<M extends ModelConstructor>(this: M, condition: any, callback: (query: Builder<InstanceType<M>>) => void | Builder<InstanceType<M>>, defaultCallback?: (query: Builder<InstanceType<M>>) => void | Builder<InstanceType<M>>): Builder<InstanceType<M>> {
-    return (this as any).query().when(condition, callback, defaultCallback);
+  static when<M extends ModelConstructor, TValue>(this: M, value: TValue | ((query: Builder<InstanceType<M>>) => TValue), callback: (query: Builder<InstanceType<M>>, value: NonNullable<TValue>) => void | Builder<InstanceType<M>>, defaultCallback?: (query: Builder<InstanceType<M>>, value: TValue) => void | Builder<InstanceType<M>>): Builder<InstanceType<M>> {
+    return (this as any).query().when(value, callback, defaultCallback);
   }
 
-  static unless<M extends ModelConstructor>(this: M, condition: any, callback: (query: Builder<InstanceType<M>>) => void | Builder<InstanceType<M>>, defaultCallback?: (query: Builder<InstanceType<M>>) => void | Builder<InstanceType<M>>): Builder<InstanceType<M>> {
-    return (this as any).query().unless(condition, callback, defaultCallback);
+  static unless<M extends ModelConstructor, TValue>(this: M, value: TValue | ((query: Builder<InstanceType<M>>) => TValue), callback: (query: Builder<InstanceType<M>>, value: TValue) => void | Builder<InstanceType<M>>, defaultCallback?: (query: Builder<InstanceType<M>>, value: NonNullable<TValue>) => void | Builder<InstanceType<M>>): Builder<InstanceType<M>> {
+    return (this as any).query().unless(value, callback, defaultCallback);
   }
 
   static tap<M extends ModelConstructor>(this: M, callback: (query: Builder<InstanceType<M>>) => void | Builder<InstanceType<M>>): Builder<InstanceType<M>> {

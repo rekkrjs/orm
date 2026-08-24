@@ -151,18 +151,68 @@ describe("Conditional Query Building", () => {
     expect(events.length).toBe(2);
   });
 
+  test("when passes its value to the callback", async () => {
+    const events = await Event.query()
+      .when("music", (query, category) => query.where("category", category))
+      .get();
+
+    expect(events.length).toBe(1);
+    expect(events[0].name).toBe("B");
+  });
+
   test("when skips clause when condition is false", async () => {
     const events = await Event.when(false, (query) => query.where("category", "sport")).get();
     expect(events.length).toBe(3);
   });
 
   test("when with default callback", async () => {
-    const events = await Event.when(false,
+    let received: unknown = "unset";
+    const events = await Event.when("",
       (query) => query.where("category", "sport"),
-      (query) => query.where("category", "music")
+      (query, value) => {
+        received = value;
+        return query.where("category", "music");
+      }
     ).get();
+    expect(received).toBe("");
     expect(events.length).toBe(1);
     expect(events[0].name).toBe("B");
+  });
+
+  test("when treats JavaScript falsy values as false", () => {
+    for (const value of [0, "", null, false, undefined, NaN]) {
+      let branch = "";
+      Event.query().when(
+        value,
+        () => { branch = "callback"; },
+        (_query, received) => {
+          expect(received).toBe(value);
+          branch = "default";
+        },
+      );
+      expect(branch).toBe("default");
+    }
+  });
+
+  test("when resolves a closure value before branching", async () => {
+    const events = await Event.when(() => false, (query) => query.where("category", "sport")).get();
+    expect(events.length).toBe(3);
+  });
+
+  test("when passes the resolved closure value to the callback", async () => {
+    const events = await Event.query()
+      .when(() => "music", (query, category) => query.where("category", category))
+      .get();
+
+    expect(events.length).toBe(1);
+    expect(events[0].name).toBe("B");
+  });
+
+  test("when closure receives the query instance", () => {
+    const query = Event.query();
+    let received: unknown;
+    query.when((builder) => { received = builder; return false; }, () => {});
+    expect(received).toBe(query);
   });
 
   test("unless adds clause when condition is false", async () => {
@@ -172,6 +222,31 @@ describe("Conditional Query Building", () => {
 
   test("unless skips clause when condition is true", async () => {
     const events = await Event.unless(true, (query) => query.where("category", "sport")).get();
+    expect(events.length).toBe(3);
+  });
+
+  test("unless passes the original value to the callback", async () => {
+    let received: unknown = "unset";
+    const events = await Event.query()
+      .unless(null, (query, value) => {
+        received = value;
+        return query.where("category", "music");
+      })
+      .get();
+
+    expect(received).toBeNull();
+    expect(events.length).toBe(1);
+    expect(events[0].name).toBe("B");
+  });
+
+  test("unless passes the original value to the default callback", () => {
+    let received: unknown = "unset";
+    Event.query().unless("admin", () => {}, (_query, value) => { received = value; });
+    expect(received).toBe("admin");
+  });
+
+  test("unless resolves a closure value before branching", async () => {
+    const events = await Event.unless(() => true, (query) => query.where("category", "sport")).get();
     expect(events.length).toBe(3);
   });
 

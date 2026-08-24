@@ -152,6 +152,19 @@ describe("Eloquent-style ergonomics", () => {
       ErgUser.limit(2).offset(1).get();
       ErgUser.doesntExist();
 
+      const optionalName = undefined as string | undefined;
+      ErgUser.when(optionalName, (query, name) => query.where("name", name.toUpperCase()));
+      ErgUser.query().when(
+        () => optionalName,
+        (query, name) => query.where("name", name.toUpperCase()),
+        (query, name) => query.where("name", name ?? "guest"),
+      );
+      ErgUser.unless(
+        optionalName,
+        (query, name) => query.where("name", name ?? "guest"),
+        (query, name) => query.where("name", name.toUpperCase()),
+      );
+
       // Static aliases keep returning a Builder of ErgUser models.
       (await ErgUser.orWhereLike("name", "Admin%").get())[0]?.name.toUpperCase();
       // value() widens with null even on a non-nullable column: the row may be absent.
