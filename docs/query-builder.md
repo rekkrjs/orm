@@ -299,22 +299,38 @@ remain chronological.
 ### JSON
 
 ```ts
-User.whereJsonContains("settings", { theme: "dark" });
+User.whereJsonContains("roles", "editor");
+User.whereJsonDoesntContain("roles", "banned");
+User.where("active", true).orWhereJsonContains("roles", "admin");
+User.where("active", false).orWhereJsonDoesntContain("roles", "staff");
 User.whereJsonLength("tags", ">", 2);
+User.where("featured", true).orWhereJsonLength("tags", ">=", 3);
 ```
 
-On Postgres these compile to `@>` / `jsonb_array_length`. On MySQL they use `JSON_CONTAINS` / `JSON_LENGTH`. SQLite uses the `json1` extension (built into Bun).
+These containment helpers provide portable JSON-array membership. On Postgres
+they compile to `@>` / `jsonb_array_length`. On MySQL they use
+`JSON_CONTAINS` / `JSON_LENGTH`. SQLite uses the `json1` extension built into
+Bun.
+
+Negative containment excludes SQL `NULL` on every driver; add an explicit
+`orWhereNull(...)` when null documents should match too.
 
 ### Pattern matching
 
 ```ts
 User.whereLike("name", "Ali%");
 User.whereNotLike("name", "Bot%");
+User.where("active", true).orWhereLike("name", "Admin%");
+User.where("active", true).orWhereNotLike("name", "Bot%");
 User.whereRegexp("email", "^alice");
 User.whereFullText(["bio", "summary"], "laravel orm");
+User.where("featured", true).orWhereFullText("bio", "bun orm");
 ```
 
-`whereFullText` uses Postgres `tsvector`, MySQL `MATCH … AGAINST`, and SQLite FTS5 — pick column types accordingly when designing your schema.
+`whereFullText` uses Postgres `tsvector` and MySQL `MATCH … AGAINST`. SQLite
+falls back to grouped `LIKE` predicates for portability; use the
+[SQLite FTS5 search engine](./search.md#engine-sqlitefts5engine) when an indexed
+full-text search is required.
 
 ### Multi-column
 
@@ -1146,9 +1162,11 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `orWhereRaw(...)` | OR raw SQL |
 | `whereDate / whereDay / whereMonth / whereYear / whereTime` | Date-part filters |
 | `wherePast / whereFuture / whereNowOrPast / whereNowOrFuture / where*Today` | Relative-date filters |
-| `whereJsonContains(col, val)` | JSON membership (cross-DB) |
-| `whereJsonLength(col, op, val)` | JSON array length |
-| `whereLike / whereNotLike / whereRegexp / whereFullText` | Pattern / FTS filters |
+| `whereJsonContains / whereJsonDoesntContain` | JSON-array membership (cross-DB) |
+| `orWhereJsonContains / orWhereJsonDoesntContain` | OR JSON-array membership |
+| `whereJsonLength / orWhereJsonLength` | JSON array length |
+| `whereLike / whereNotLike / orWhereLike / orWhereNotLike` | Pattern filters |
+| `whereRegexp / whereFullText / orWhereFullText` | Regular-expression and FTS filters |
 | `whereAll(cols, op, val)` | Multi-column `AND` |
 | `whereAny(cols, op, val)` | Multi-column `OR` |
 | `whereNone(cols, op, val)` | Negated multi-column `OR` |

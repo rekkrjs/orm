@@ -24,6 +24,8 @@ class ErgUser extends PermissiveModel.define<ErgUserAttrs>("erg_users") {
   };
 }
 
+const FULLTEXT_COLUMNS = ["name", "group_name"] as const;
+
 describe("Eloquent-style ergonomics", () => {
   beforeAll(async () => {
     setupTestDb();
@@ -64,7 +66,8 @@ describe("Eloquent-style ergonomics", () => {
     if (false) {
       const typed = await ErgUser.firstWhere("name", "User 1");
       typed?.name.toUpperCase();
-      // @ts-expect-error Unknown columns should not be suggested.
+      // Column names stay a LiteralUnion on purpose: known columns are
+      // suggested, but computed/joined names must remain callable.
       await ErgUser.firstWhere("missing", "value");
       // @ts-expect-error findMany returns ErgUser models, not arbitrary fields.
       found[0]?.missing;
@@ -137,13 +140,24 @@ describe("Eloquent-style ergonomics", () => {
       ErgUser.whereNotBetween("score", [1, 4]).get();
       ErgUser.orWhereNull("group_name").get();
       ErgUser.whereLike("name", "User%").get();
+      ErgUser.orWhereLike("name", "Admin%").get();
+      ErgUser.orWhereNotLike("name", "Bot%").get();
+      ErgUser.whereJsonDoesntContain("name", "blocked").get();
+      ErgUser.orWhereJsonContains("name", "allowed").get();
+      ErgUser.orWhereJsonDoesntContain("name", "blocked").get();
+      ErgUser.orWhereJsonLength("name", 2).get();
+      ErgUser.orWhereFullText("name", "user").get();
       ErgUser.whereAll(["name", "group_name"], "!=", "").get();
       ErgUser.select("name").addSelect("score").distinct().get();
 
-      // @ts-expect-error Static where helpers should keep model column IntelliSense.
-      ErgUser.whereBetween("missing", [1, 2]);
-      // @ts-expect-error Static select helpers should keep model column IntelliSense.
-      ErgUser.select("missing");
+      // Static aliases keep returning a Builder of ErgUser models.
+      (await ErgUser.orWhereLike("name", "Admin%").get())[0]?.name.toUpperCase();
+      (await ErgUser.orWhereFullText(FULLTEXT_COLUMNS, "user").get())[0]?.score.toFixed();
+
+      // @ts-expect-error JSON length requires a comparison value.
+      ErgUser.orWhereJsonLength("name");
+      // @ts-expect-error findMany returns ErgUser models, not arbitrary fields.
+      (await ErgUser.orWhereNotLike("name", "Bot%").get())[0]?.missing;
     }
   });
 

@@ -430,6 +430,52 @@ describe("Advanced Query Builder Features", () => {
       const sql = new Builder(db, "products").whereJsonLength("tags", 2).toSql();
       expect(sql.length).toBeGreaterThan(0);
     });
+
+    test("JSON contains and length variants preserve OR and NOT", async () => {
+      const sql = new Builder(db, "products")
+        .where("id", 1)
+        .whereJsonDoesntContain("tags", "blocked")
+        .orWhereJsonContains("tags", "red")
+        .orWhereJsonDoesntContain("tags", "blue")
+        .orWhereJsonLength("tags", ">", 1)
+        .toSql();
+
+      expect(sql).toContain("NOT (");
+      expect(sql).toContain("> 1");
+      expect(sql.match(/ OR /g)).toHaveLength(3);
+
+      const withoutRed = await new Builder(db, "products")
+        .whereJsonDoesntContain("tags", "red")
+        .orderBy("name")
+        .pluck("name");
+      expect(withoutRed).toEqual(["B"]); // null JSON is excluded on every driver
+
+      const redOrB = await new Builder(db, "products")
+        .where("name", "B")
+        .orWhereJsonContains("tags", "red")
+        .orderBy("name")
+        .pluck("name");
+      expect(redOrB).toEqual(["A", "B", "C"]);
+    });
+
+    test("whereJsonLength keeps its legacy boolean and not arguments", () => {
+      const sql = new Builder(db, "products")
+        .where("id", 1)
+        .whereJsonLength("tags", ">", 2, "or")
+        .whereJsonLength("tags", "<", 9, "and", true)
+        .whereJsonLength("tags", 3, undefined, "or")
+        .toSql();
+
+      expect(sql.match(/ OR /g)).toHaveLength(2);
+      expect(sql).toContain("NOT (");
+    });
+
+    test("JSON length requires a finite comparison value", () => {
+      const builder = new Builder(db, "products");
+      expect(() => (builder as any).whereJsonLength("tags")).toThrow("JSON length must be a finite number.");
+      expect(() => (builder as any).orWhereJsonLength("tags")).toThrow("JSON length must be a finite number.");
+      expect(() => (builder as any).whereJsonLength("tags", Number.NaN)).toThrow("JSON length must be a finite number.");
+    });
   });
 
   describe("Like / Regexp", () => {
@@ -443,6 +489,17 @@ describe("Advanced Query Builder Features", () => {
       expect(sql).toContain("NOT LIKE");
     });
 
+    test("orWhereLike variants compile OR LIKE clauses", () => {
+      const sql = new Builder(db, "products")
+        .where("id", 1)
+        .orWhereLike("name", "A%")
+        .orWhereNotLike("name", "B%")
+        .toSql();
+
+      expect(sql).toContain("OR \"name\" LIKE");
+      expect(sql).toContain("OR \"name\" NOT LIKE");
+    });
+
     test("whereRegexp compiles REGEXP SQL", () => {
       const sql = new Builder(db, "products").whereRegexp("name", "^A").toSql();
       expect(sql).toContain("REGEXP");
@@ -453,6 +510,32 @@ describe("Advanced Query Builder Features", () => {
     test("whereFullText compiles SQL", () => {
       const sql = new Builder(db, "products").whereFullText("name", "foo").toSql();
       expect(sql.length).toBeGreaterThan(0);
+    });
+
+    test("orWhereFullText compiles an OR clause", () => {
+      const sql = new Builder(db, "products")
+        .where("id", 1)
+        .orWhereFullText("name", "foo")
+        .toSql();
+      expect(sql).toContain(" OR ");
+    });
+
+    test("SQLite groups multi-column full-text fallbacks as one predicate", async () => {
+      const query = new Builder(db, "products")
+        .where("price", ">", 100)
+        .whereFullText(["name", "category"], "foo");
+
+      expect(query.toSql()).toContain("AND (");
+      expect(await query.get()).toHaveLength(0);
+    });
+
+    test("full-text filters reject an empty column list", () => {
+      expect(() => new Builder(db, "products").whereFullText([], "foo")).toThrow(
+        "whereFullText() requires at least one column.",
+      );
+      expect(() => new Builder(db, "products").orWhereFullText([], "foo")).toThrow(
+        "whereFullText() requires at least one column.",
+      );
     });
   });
 

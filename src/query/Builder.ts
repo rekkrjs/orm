@@ -793,13 +793,43 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this;
   }
 
-  whereJsonLength(column: ModelColumn<T>, operator: string | number = "=", value?: number, boolean: "and" | "or" = "and", not: boolean = false): this {
-    if (value === undefined) {
-      value = operator as number;
-      operator = "=";
+  whereJsonDoesntContain(column: ModelColumn<T>, value: any): this {
+    return this.whereJsonContains(column, value, "and", true);
+  }
+
+  orWhereJsonContains(column: ModelColumn<T>, value: any): this {
+    return this.whereJsonContains(column, value, "or");
+  }
+
+  orWhereJsonDoesntContain(column: ModelColumn<T>, value: any): this {
+    return this.whereJsonContains(column, value, "or", true);
+  }
+
+  whereJsonLength(column: ModelColumn<T>, value: number): this;
+  whereJsonLength(column: ModelColumn<T>, operator: string, value: number, boolean?: "and" | "or", not?: boolean): this;
+  whereJsonLength(column: ModelColumn<T>, value: number, noValue: undefined, boolean: "and" | "or", not?: boolean): this;
+  whereJsonLength(column: ModelColumn<T>, operatorOrValue: string | number, value?: number, boolean: "and" | "or" = "and", not: boolean = false): this {
+    return this.addJsonLengthWhere(column, operatorOrValue, value, boolean, not);
+  }
+
+  orWhereJsonLength(column: ModelColumn<T>, value: number): this;
+  orWhereJsonLength(column: ModelColumn<T>, operator: string, value: number): this;
+  orWhereJsonLength(column: ModelColumn<T>, operatorOrValue: string | number, value?: number): this {
+    return this.addJsonLengthWhere(column, operatorOrValue, value, "or", false);
+  }
+
+  private addJsonLengthWhere(column: ModelColumn<T>, operatorOrValue: string | number, value: number | undefined, boolean: "and" | "or", not: boolean): this {
+    const shorthand = value === undefined;
+    const expected = shorthand ? operatorOrValue : value;
+    if (typeof expected !== "number" || !Number.isFinite(expected)) {
+      throw new TypeError("JSON length must be a finite number.");
     }
+    if (!shorthand && typeof operatorOrValue !== "string") {
+      throw new TypeError("JSON length operator must be a string.");
+    }
+    const operator = shorthand ? "=" : validOperator(operatorOrValue as string);
     this.invalidateSqlCache();
-    this.wheres.push({ type: "json_length", column, operator: validOperator(operator), value, boolean: validBoolean(boolean), scope: undefined, not });
+    this.wheres.push({ type: "json_length", column, operator, value: expected, boolean: validBoolean(boolean), scope: undefined, not });
     return this;
   }
 
@@ -813,17 +843,30 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this.whereLike(column, value, "and", true);
   }
 
+  orWhereLike(column: ModelColumn<T>, value: string): this {
+    return this.whereLike(column, value, "or");
+  }
+
+  orWhereNotLike(column: ModelColumn<T>, value: string): this {
+    return this.whereLike(column, value, "or", true);
+  }
+
   whereRegexp(column: ModelColumn<T>, value: string, boolean: "and" | "or" = "and", not: boolean = false): this {
     this.invalidateSqlCache();
     this.wheres.push({ type: "regexp", column, value, boolean, scope: undefined, not });
     return this;
   }
 
-  whereFullText(columns: ModelColumn<T> | ModelColumn<T>[], value: string, boolean: "and" | "or" = "and", not: boolean = false): this {
+  whereFullText(columns: ModelColumn<T> | readonly ModelColumn<T>[], value: string, boolean: "and" | "or" = "and", not: boolean = false): this {
     const cols = Array.isArray(columns) ? columns : [columns];
+    if (cols.length === 0) throw new Error("whereFullText() requires at least one column.");
     this.invalidateSqlCache();
     this.wheres.push({ type: "fulltext", column: "", columns: cols as string[], value, boolean, scope: undefined, not });
     return this;
+  }
+
+  orWhereFullText(columns: ModelColumn<T> | readonly ModelColumn<T>[], value: string): this {
+    return this.whereFullText(columns, value, "or");
   }
 
   whereAll(columns: ModelColumn<T>[], operator: string, value: any, boolean: "and" | "or" = "and"): this {
@@ -1730,8 +1773,11 @@ export class Builder<T = Record<string, any>, TResult = T> {
       if (where.not) sql = `NOT (${sql})`;
       return `${prefix} ${sql}`;
     } else if (where.type === "json_contains") {
-      let sql = this.grammar.compileJsonContains(this.grammar.wrap(where.column), where.value, this.parameterize ? (v) => this.addBinding(v) : undefined);
-      if (where.not) sql = `NOT (${sql})`;
+      const column = this.grammar.wrap(where.column);
+      const binding = this.parameterize ? (v: any) => this.addBinding(v) : undefined;
+      const sql = where.not
+        ? this.grammar.compileJsonDoesntContain(column, where.value, binding)
+        : this.grammar.compileJsonContains(column, where.value, binding);
       return `${prefix} ${sql}`;
     } else if (where.type === "json_length") {
       let sql = this.grammar.compileJsonLength(this.grammar.wrap(where.column), validOperator(where.operator || "="), where.value, this.parameterize ? (v) => this.addBinding(v) : undefined);

@@ -85,6 +85,10 @@ export abstract class Grammar {
 
   abstract compileJsonContains(column: string, value: any, binding?: (value: any) => string): string;
 
+  compileJsonDoesntContain(column: string, value: any, binding?: (value: any) => string): string {
+    return `NOT (${this.compileJsonContains(column, value, binding)})`;
+  }
+
   abstract compileJsonLength(column: string, operator: string, value: any, binding?: (value: any) => string): string;
 
   compileLike(column: string, value: string, not: boolean, binding?: (value: any) => string): string {

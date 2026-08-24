@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.5.0 - 2026-08-24
+
+### Added
+
+- Added `orWhereLike`, `orWhereNotLike`, `whereJsonDoesntContain`,
+  `orWhereJsonContains`, `orWhereJsonDoesntContain`, `orWhereJsonLength`, and
+  `orWhereFullText` to both model and query-builder APIs.
+
+### Changed
+
+- Static pattern, JSON, and full-text helpers now retain model-column
+  IntelliSense, and full-text helpers accept readonly column lists.
+- SQLite's portable multi-column full-text fallback now groups its `LIKE`
+  predicates so surrounding filters keep their intended precedence.
+- JSON-length filters reject missing and non-finite comparison values instead
+  of compiling malformed SQL.
+
+### Fixed
+
+- Negative JSON containment now excludes SQL `NULL` consistently on SQLite,
+  MySQL, and PostgreSQL.
+
+### Compatibility
+
+- The new helpers are additive. The existing `whereJsonLength` boolean and
+  negation arguments remain supported; calls that previously omitted a numeric
+  length now fail early because they could only produce invalid SQL.
+- SQLite query-builder full-text matching remains a portable `LIKE` fallback.
+  Applications requiring an indexed SQLite search should opt into the existing
+  `SqliteFTS5Engine`.
+
+### Verification
+
+- Built the TypeScript package and ran the complete Bun test suite, including
+  the available SQLite, MySQL, and PostgreSQL integrations.
+
 ## 1.4.0 - 2026-08-23
 
 ### Added

@@ -375,28 +375,64 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().whereTodayOrAfter(columns);
   }
 
-  static whereJsonContains<M extends ModelConstructor>(this: M, column: any, value: any): Builder<InstanceType<M>> {
+  static whereJsonContains<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: any): Builder<InstanceType<M>> {
     return (this as any).query().whereJsonContains(column, value);
   }
 
-  static whereJsonLength<M extends ModelConstructor>(this: M, column: any, operator: string | number = "=", value?: number): Builder<InstanceType<M>> {
-    return (this as any).query().whereJsonLength(column, operator, value);
+  static whereJsonDoesntContain<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: any): Builder<InstanceType<M>> {
+    return (this as any).query().whereJsonDoesntContain(column, value);
   }
 
-  static whereLike<M extends ModelConstructor>(this: M, column: any, value: string): Builder<InstanceType<M>> {
+  static orWhereJsonContains<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: any): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereJsonContains(column, value);
+  }
+
+  static orWhereJsonDoesntContain<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: any): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereJsonDoesntContain(column, value);
+  }
+
+  static whereJsonLength<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: number): Builder<InstanceType<M>>;
+  static whereJsonLength<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator: string, value: number): Builder<InstanceType<M>>;
+  static whereJsonLength<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operatorOrValue: string | number, value?: number): Builder<InstanceType<M>> {
+    return value === undefined
+      ? (this as any).query().whereJsonLength(column, operatorOrValue)
+      : (this as any).query().whereJsonLength(column, operatorOrValue, value);
+  }
+
+  static orWhereJsonLength<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: number): Builder<InstanceType<M>>;
+  static orWhereJsonLength<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator: string, value: number): Builder<InstanceType<M>>;
+  static orWhereJsonLength<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operatorOrValue: string | number, value?: number): Builder<InstanceType<M>> {
+    return value === undefined
+      ? (this as any).query().orWhereJsonLength(column, operatorOrValue)
+      : (this as any).query().orWhereJsonLength(column, operatorOrValue, value);
+  }
+
+  static whereLike<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string): Builder<InstanceType<M>> {
     return (this as any).query().whereLike(column, value);
   }
 
-  static whereNotLike<M extends ModelConstructor>(this: M, column: any, value: string): Builder<InstanceType<M>> {
+  static whereNotLike<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string): Builder<InstanceType<M>> {
     return (this as any).query().whereNotLike(column, value);
   }
 
-  static whereRegexp<M extends ModelConstructor>(this: M, column: any, value: string): Builder<InstanceType<M>> {
+  static orWhereLike<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereLike(column, value);
+  }
+
+  static orWhereNotLike<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereNotLike(column, value);
+  }
+
+  static whereRegexp<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string): Builder<InstanceType<M>> {
     return (this as any).query().whereRegexp(column, value);
   }
 
-  static whereFullText<M extends ModelConstructor>(this: M, columns: any | any[], value: string): Builder<InstanceType<M>> {
+  static whereFullText<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[], value: string): Builder<InstanceType<M>> {
     return (this as any).query().whereFullText(columns, value);
+  }
+
+  static orWhereFullText<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[], value: string): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereFullText(columns, value);
   }
 
   static whereAll<M extends ModelConstructor>(this: M, columns: any[], operator: string, value: any): Builder<InstanceType<M>> {

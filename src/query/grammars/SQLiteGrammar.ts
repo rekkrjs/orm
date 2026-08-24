@@ -78,6 +78,10 @@ export class SQLiteGrammar extends Grammar {
     return `EXISTS (SELECT 1 FROM json_each(${column}) WHERE json_each.value = ${expected})`;
   }
 
+  compileJsonDoesntContain(column: string, value: any, binding?: (value: any) => string): string {
+    return `${column} IS NOT NULL AND NOT (${this.compileJsonContains(column, value, binding)})`;
+  }
+
   compileJsonLength(column: string, operator: string, value: any, binding?: (value: any) => string): string {
     return `(SELECT COUNT(*) FROM json_each(${column})) ${operator} ${binding ? binding(value) : this.escape(value)}`;
   }
@@ -88,7 +92,8 @@ export class SQLiteGrammar extends Grammar {
   }
 
   compileFullText(columns: string[], value: string, binding?: (value: any) => string): string {
-    return columns.map((c) => `${this.wrap(c)} LIKE ${binding ? binding(`%${value}%`) : this.escape(`%${value}%`)}`).join(" OR ");
+    const clauses = columns.map((c) => `${this.wrap(c)} LIKE ${binding ? binding(`%${value}%`) : this.escape(`%${value}%`)}`);
+    return clauses.length === 1 ? clauses[0] : `(${clauses.join(" OR ")})`;
   }
 
   compileExplain(sql: string): string {
