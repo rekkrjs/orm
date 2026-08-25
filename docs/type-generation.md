@@ -166,7 +166,7 @@ export interface UsersAttributes {
   id: number;
   name: string;
   email: string | null;
-  created_at: string;
+  created_at: Date;
 }
 
 declare module "../User" {
@@ -200,16 +200,23 @@ user!.name;                                                // ✓ string
 
 Column arguments still accept raw strings for joins, aliases, expressions, and SQL fragments, so the autocomplete doesn't block escape hatches.
 
-Generated attributes describe the raw values returned by the active driver.
+Generated attributes start with the raw values returned by the active driver.
 For MySQL this means native JSON is `any`, `DATE`/`DATETIME`/`TIMESTAMP` are
 `Date`, `DECIMAL` is `string`, booleans (`TINYINT(1)`) are `number`, and
 `BIGINT` is `number | string`. With `connection.bigint: true`, `BIGINT` becomes
 `number | bigint`. PostgreSQL emits JSON/JSONB as `any`, dates/timestamps as
 `Date`, `NUMERIC` as `string`, and `BIGINT` as `string` (or `bigint` when that
 connection option is enabled). SQLite exposes its native `INTEGER`/`REAL`
-values as `number` and JSON-backed `TEXT` as `string`. Model casts can
-intentionally expose a narrower application type, but the generator cannot
-infer those per-model transformations from the database schema.
+values as `number` and JSON-backed `TEXT` as `string`.
+
+When the generator discovers a model, it overlays the model's effective
+`date`/`datetime` read casts, including its active timestamp and soft-delete
+columns. Explicit casts take precedence; the write-only `"timestamp"` column
+hint does not become `Date`. Without a discovered model, declaration mode keeps
+the driver type because the model's configuration is unknown. Generated stubs
+do know their configuration: they extend `Model`, so their default
+`created_at`/`updated_at` pair is emitted as `Date`. Other custom cast return
+types cannot be inferred automatically.
 
 ### Stubs mode
 

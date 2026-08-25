@@ -221,7 +221,7 @@ export class Connection {
 
   // ---------------------------------------------------------------------------
   // WORKAROUND(bun-mysql-eventloop) — delete once Bun fixes the upstream bug.
-  // Full story, repro, probe and removal checklist: tmp_hacks/bun-mysql-event-loop.md
+  // Full story, repro, probe and removal checklist: .tmp_hacks/bun-mysql-event-loop.md
   //
   // Bun 1.4.0 stops holding the event loop open for an in-flight MySQL query as
   // soon as that client's pool has had more than one connection in play — a

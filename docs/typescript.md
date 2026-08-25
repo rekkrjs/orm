@@ -21,8 +21,8 @@ interface UserAttributes {
   name: string;
   email: string | null;
   active: boolean;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 class User extends Model.define<UserAttributes>("users") {

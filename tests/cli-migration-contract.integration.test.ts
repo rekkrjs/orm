@@ -7,7 +7,7 @@ import { Connection } from "../src/index.js";
  * The migration commands, driven the way a tool driving them would: as
  * subprocesses, reading stdout. Run against every driver that is reachable,
  * because the CLI has been broken on one driver while green on another —
- * see tmp_hacks/bun-mysql-event-loop.md.
+ * see .tmp_hacks/bun-mysql-event-loop.md.
  *
  * The load-bearing assertion in every case is the pair "exit code 0 **and**
  * output": a command that says it succeeded and printed nothing is the exact

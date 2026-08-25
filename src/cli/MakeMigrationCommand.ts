@@ -58,8 +58,8 @@ function buildModelStub(modelClass: string, tableName: string): string {
 
 interface ${modelClass}Attributes {
   id: number;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export class ${modelClass} extends Model.define<${modelClass}Attributes>("${tableName}") {}

@@ -2,6 +2,9 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import { dirname, join, relative, resolve } from "path";
 import { Connection } from "../connection/Connection.js";
 import { TypeMapper } from "./TypeMapper.js";
+
+/** A generated stub extends Model, whose default timestamp pair is active. */
+const DEFAULT_TIMESTAMP_COLUMNS = ["created_at", "updated_at"];
 import { discoverModelDeclarations, type ModelDeclarationInfo } from "./discoverModelTables.js";
 import { normalizePathList, snakeCase } from "../utils.js";
 
@@ -69,6 +72,18 @@ export class TypeGenerator {
         const lines: string[] = [];
 
         const modelDeclarations = this.getModelDeclarations(table, className, discovered, target.modelImportPrefix, tsconfigAliases);
+        // The SQL type alone cannot tell whether a model decodes a column. Ask
+        // the model when one was discovered. Only generated stubs have a safe
+        // fallback: they extend Model with its default timestamp pair active.
+        const discoveredDates = discovered.get(table)?.dateCastColumns;
+        const fallbackDates = !declarationOnly && this.options.stubs
+          ? DEFAULT_TIMESTAMP_COLUMNS
+          : [];
+        const dateColumns = new Set(discoveredDates ?? fallbackDates);
+        const columnType = (col: { name: string; type: string; nullable: boolean }): string =>
+          dateColumns.has(col.name)
+            ? (col.nullable ? "Date | null" : "Date")
+            : TypeMapper.sqlToTsType(col.type, col.nullable, driver, bigint);
 
         if (!declarationOnly) {
           lines.push(`import { Model } from "@rekkr/orm";`);
@@ -77,7 +92,7 @@ export class TypeGenerator {
 
         lines.push(`export interface ${interfaceName} {`);
         for (const col of columns) {
-          const tsType = TypeMapper.sqlToTsType(col.type, col.nullable, driver, bigint);
+          const tsType = columnType(col);
           lines.push(`  ${col.name}${col.nullable ? "?" : ""}: ${tsType};`);
         }
         lines.push("}");
@@ -103,7 +118,7 @@ export class TypeGenerator {
           lines.push("");
 
           for (const col of columns) {
-            const tsType = TypeMapper.sqlToTsType(col.type, col.nullable, driver, bigint);
+            const tsType = columnType(col);
             lines.push(`  get ${col.name}(): ${tsType} {`);
             lines.push(`    return this.getAttribute("${col.name}");`);
             lines.push(`  }`);

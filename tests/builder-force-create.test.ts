@@ -14,8 +14,8 @@ interface BuilderForceRecordAttributes {
   name: string;
   internal: string | null;
   state: "ready" | "done";
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 const BuilderForceState = backedEnum({ Ready: "ready", Done: "done" });

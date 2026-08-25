@@ -9,6 +9,7 @@ const DECL_OUT_DIR = join(process.cwd(), "tests", "temp_type_declarations");
 const MODEL_ROOT_A = join(process.cwd(), "tests", "temp_models_a");
 const MODEL_ROOT_B = join(process.cwd(), "tests", "temp_models_b");
 const MODEL_DISCOVERY_DIR = join(process.cwd(), "tests", "temp_model_discovery");
+const DATE_CAST_MODEL_DIR = join(process.cwd(), "tests", "temp_date_cast_models");
 const MODEL_LOWERCASE_DIR = join(process.cwd(), "tests", "temp_model_lowercase");
 const TSCONFIG_JSONC_DIR = join(process.cwd(), "tests", "temp_tsconfig_jsonc");
 
@@ -25,6 +26,7 @@ describe("TypeGenerator", () => {
       table.integer("login_count").default(0);
       table.json("metadata").nullable();
       table.timestamps();
+      table.timestamp("deleted_at").nullable();
     });
     await Schema.create("blog_posts", (table) => {
       table.increments("id");
@@ -34,7 +36,7 @@ describe("TypeGenerator", () => {
   });
 
   afterAll(async () => {
-    for (const dir of [OUT_DIR, DECL_OUT_DIR, MODEL_ROOT_A, MODEL_ROOT_B, MODEL_DISCOVERY_DIR, MODEL_LOWERCASE_DIR, TSCONFIG_JSONC_DIR]) {
+    for (const dir of [OUT_DIR, DECL_OUT_DIR, MODEL_ROOT_A, MODEL_ROOT_B, MODEL_DISCOVERY_DIR, DATE_CAST_MODEL_DIR, MODEL_LOWERCASE_DIR, TSCONFIG_JSONC_DIR]) {
       await rm(dir, { recursive: true, force: true });
     }
   });
@@ -57,8 +59,12 @@ describe("TypeGenerator", () => {
     expect(content).toContain("login_count: number;");
     // SQLite stores JSON as TEXT
     expect(content).toContain("metadata?: string | null;");
-    expect(content).toContain("created_at?: string | null;");
-    expect(content).toContain("updated_at?: string | null;");
+    // Timestamp columns decode to Date at runtime, so the generated types say
+    // Date. The stub below extends Model, which has timestamps on by default.
+    expect(content).toContain("created_at?: Date | null;");
+    expect(content).toContain("updated_at?: Date | null;");
+    expect(content).toContain("deleted_at?: string | null;");
+    expect(content).toContain("get created_at(): Date | null {");
 
     // Stubs
     expect(content).toContain("export class UsersBase extends Model<UsersAttributes> {");
@@ -91,6 +97,51 @@ describe("TypeGenerator", () => {
     expect(content).toContain("interface User extends UsersAttributes {");
     expect(content).toContain("getAttribute<K extends keyof UsersAttributes>");
     expect(content).toContain("name: string;");
+    // Without a discovered model, declarations cannot assume its timestamp or
+    // soft-delete configuration. Keep the SQLite driver's raw type.
+    expect(content).toContain("created_at?: string | null;");
+    expect(content).toContain("updated_at?: string | null;");
+    expect(content).toContain("deleted_at?: string | null;");
+  });
+
+  test("uses effective read casts rather than driver date columns", async () => {
+    await Schema.create("typegen_cast_records", (table) => {
+      table.increments("id");
+      table.timestamp("created_at").nullable();
+      table.timestamp("updated_at").nullable();
+      table.timestamp("deleted_at").nullable();
+      table.timestamp("stored_timestamp").nullable();
+      table.timestamp("decoded_datetime").nullable();
+    });
+    await mkdir(DATE_CAST_MODEL_DIR, { recursive: true });
+    await Bun.write(
+      join(DATE_CAST_MODEL_DIR, "DateCastRecord.ts"),
+      `import { Model } from "../../src/index.js";
+export default class DateCastRecord extends Model {
+  static table = "typegen_cast_records";
+  static casts = {
+    created_at: "string",
+    stored_timestamp: "timestamp",
+    decoded_datetime: "datetime",
+  };
+}
+`,
+    );
+
+    const generator = new TypeGenerator(connection, {
+      outDir: join(DATE_CAST_MODEL_DIR, "types"),
+      declarations: true,
+      modelDirectories: [DATE_CAST_MODEL_DIR],
+      allowedTables: ["typegen_cast_records"],
+    });
+    await generator.generate();
+
+    const content = await Bun.file(join(DATE_CAST_MODEL_DIR, "types", "typegen_cast_records.d.ts")).text();
+    expect(content).toContain("created_at?: string | null;");
+    expect(content).toContain("updated_at?: Date | null;");
+    expect(content).toContain("deleted_at?: string | null;");
+    expect(content).toContain("stored_timestamp?: string | null;");
+    expect(content).toContain("decoded_datetime?: Date | null;");
   });
 
   test("generates convention-based declaration mappings", async () => {

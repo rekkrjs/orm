@@ -12,7 +12,7 @@ const runIfMySql = mysqlUrl ? test.serial : test.skip;
  * the pool has had more than one connection in play, so a program that awaits
  * ORM calls without keeping the loop alive some other way exits 0 half way
  * through its work. `Connection` pins the loop open to compensate; this is the
- * regression test for that. Background: tmp_hacks/bun-mysql-event-loop.md
+ * regression test for that. Background: .tmp_hacks/bun-mysql-event-loop.md
  *
  * The work happens in a child process, on purpose: `bun test` keeps the loop
  * busy by itself, which would hide the very thing being asserted. The child

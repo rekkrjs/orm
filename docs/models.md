@@ -102,6 +102,19 @@ names. Model writes, `dateColumns()`, `schema()`, `replicate()`, `latest()`, and
 `oldest()` use these getters, so a model may override either the property or its
 getter. Names must be non-empty and different.
 
+Declaring the columns is enough to make them dates: they read back as `Date`
+without a matching `casts` entry, as does `deletedAtColumn` when `softDeletes`
+is on. This holds for the defaults too — a model that overrides nothing gets
+`created_at` and `updated_at` as dates. An explicit entry still wins, so
+`casts = { created_at: "date" }` narrows the cast and a custom cast replaces it
+outright. Set `timestamps = false` to opt out of the columns entirely.
+
+The implicit cast has the same parsing rules as an explicit `datetime` cast.
+Legacy free-form values, MySQL's `0000-00-00 00:00:00`, and Unix timestamps
+stored as strings therefore become an invalid `Date`; numeric Unix seconds are
+treated as JavaScript milliseconds. Normalize those values before upgrading or
+declare an explicit `"string"` cast while migrating them.
+
 Ordinary JavaScript static inheritance applies. An ORM base model can set both
 names once, and subclasses may override either name independently:
 

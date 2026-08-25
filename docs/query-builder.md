@@ -319,14 +319,45 @@ Negative containment excludes SQL `NULL` on every driver; add an explicit
 ### Pattern matching
 
 ```ts
-User.whereLike("name", "Ali%");
-User.whereNotLike("name", "Bot%");
-User.where("active", true).orWhereLike("name", "Admin%");
-User.where("active", true).orWhereNotLike("name", "Bot%");
+User.whereLike("name", "ali%");                              // case-insensitive
+User.whereLike("name", "Ali%", { caseSensitive: true });     // exact
+User.whereNotLike("name", "bot%");
+User.where("active", true).orWhereLike("name", "admin%");
+User.where("active", true).orWhereNotLike("name", "bot%");
 User.whereRegexp("email", "^alice");
 User.whereFullText(["bio", "summary"], "laravel orm");
 User.where("featured", true).orWhereFullText("bio", "bun orm");
 ```
+
+`whereLike` is **case-insensitive by default**, and each driver gets the operator
+that expresses it natively rather than `LOWER(column) LIKE LOWER(?)`, which would
+make an index on the column unusable everywhere to buy what two of the three
+already do:
+
+| | default | `{ caseSensitive: true }` |
+|---|---|---|
+| PostgreSQL | `ILIKE` | `LIKE` |
+| MySQL | `LIKE` | `LIKE BINARY` |
+| SQLite | `LIKE` | `GLOB` |
+
+SQLite has no case-sensitive `LIKE`, so the exact form switches to `GLOB` and
+translates the pattern — `%` and `_` become `*` and `?`, and a literal `*`, `?`
+or `[` is escaped so it stays literal.
+
+The default follows each driver's own configuration, which is what makes it
+index-friendly: SQLite honours `PRAGMA case_sensitive_like`, MySQL the column's
+collation. Under a case-sensitive pragma or a `_cs`/`_bin` collation the default
+stops ignoring case. Pass `caseSensitive: true` when the comparison must not
+depend on either, and note that SQLite's `LIKE` folds ASCII only.
+
+The and/or connector is not part of these signatures — `orWhereLike()` and
+`orWhereNotLike()` already express it — so the third argument is always the
+options object.
+
+`ILIKE` also remains available as a raw operator for PostgreSQL —
+`where("name", "ILIKE", "%a%")` — on the same footing as MySQL's `<=>` and
+SQLite's `GLOB`. The operator list is an injection allowlist, not a portability
+guarantee: it is the caller's business whether the target accepts what it emits.
 
 `whereFullText` uses Postgres `tsvector` and MySQL `MATCH … AGAINST`. SQLite
 falls back to grouped `LIKE` predicates for portability; use the
@@ -1200,7 +1231,7 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `whereJsonContains / whereJsonDoesntContain` | JSON-array membership (cross-DB) |
 | `orWhereJsonContains / orWhereJsonDoesntContain` | OR JSON-array membership |
 | `whereJsonLength / orWhereJsonLength` | JSON array length |
-| `whereLike / whereNotLike / orWhereLike / orWhereNotLike` | Pattern filters |
+| `whereLike / whereNotLike / orWhereLike / orWhereNotLike` | Pattern filters, case-insensitive by default |
 | `whereRegexp / whereFullText / orWhereFullText` | Regular-expression and FTS filters |
 | `whereAll(cols, op, val)` | Multi-column `AND` |
 | `whereAny(cols, op, val)` | Multi-column `OR` |

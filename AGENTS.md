@@ -13,3 +13,8 @@
 - Do not commit, create tags or releases, or push anything unless the user asks
   for that operation explicitly in the current request. A previous request to
   publish does not authorize later commits or pushes.
+
+# Repository conventions
+
+- Keep temporary workaround documentation in `.tmp_hacks/`, and point related
+  code, tests, and diagnostic scripts to that directory.

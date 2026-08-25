@@ -83,6 +83,19 @@ export class PostgresGrammar extends Grammar {
     return `jsonb_array_length(${column}) ${operator} ${binding ? binding(value) : this.escape(value)}`;
   }
 
+  /** `LIKE` is case-sensitive here, so the insensitive default needs `ILIKE`. */
+  override compileLike(
+    column: string,
+    value: string,
+    not: boolean,
+    binding?: (value: any) => string,
+    caseSensitive: boolean = false
+  ): string {
+    if (caseSensitive) return super.compileLike(column, value, not, binding, true);
+    const op = not ? "NOT ILIKE" : "ILIKE";
+    return `${column} ${op} ${binding ? binding(value) : this.escape(value)}`;
+  }
+
   compileRegexp(column: string, value: string, not: boolean, binding?: (value: any) => string): string {
     const op = not ? "!~" : "~";
     return `${column} ${op} ${binding ? binding(value) : this.escape(value)}`;

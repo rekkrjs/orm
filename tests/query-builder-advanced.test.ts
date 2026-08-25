@@ -484,6 +484,53 @@ describe("Advanced Query Builder Features", () => {
       expect(sql).toContain("LIKE");
     });
 
+    test("whereLike is case-insensitive by default", async () => {
+      // SQLite and MySQL match case-insensitively with plain LIKE; PostgreSQL
+      // needs ILIKE. This asserts the SQLite shape plus the behaviour.
+      const sql = new Builder(db, "products").whereLike("name", "%a%").toSql();
+      expect(sql).toContain("LIKE");
+      expect(sql).not.toContain("LOWER(");
+
+      const lower = await new Builder(db, "products").whereLike("name", "%a%").getArray();
+      const upper = await new Builder(db, "products").whereLike("name", "%A%").getArray();
+      expect(lower.length).toBeGreaterThan(0);
+      expect(upper.length).toBe(lower.length);
+    });
+
+    test("caseSensitive uses the dialect's exact operator", () => {
+      // GLOB on SQLite, which has no case-sensitive LIKE.
+      const sql = new Builder(db, "products").whereLike("name", "%a%", { caseSensitive: true }).toSql();
+      expect(sql).toContain("GLOB");
+      expect(sql).toContain("*a*");
+    });
+
+    test("caseSensitive escapes GLOB metacharacters instead of translating them", () => {
+      // A literal * ? or [ must not become a GLOB wildcard, while % and _ must.
+      const sql = new Builder(db, "products").whereLike("name", "a*b_c", { caseSensitive: true }).toSql();
+      expect(sql).toContain("a[*]b?c");
+    });
+
+    test("the or* variants carry the connector, so options are the third argument", () => {
+      // The and/or connector is not part of the public signature: orWhereLike()
+      // expresses it, and the third argument is always the options object.
+      const sql = new Builder(db, "products")
+        .where("id", 1)
+        .orWhereLike("name", "a%")
+        .orWhereNotLike("name", "b%", { caseSensitive: true })
+        .toSql();
+
+      expect(sql).toContain("OR \"name\" LIKE");
+      expect(sql).toContain("OR \"name\" NOT GLOB");
+    });
+
+    test("ILIKE stays accepted as a raw operator", () => {
+      // PostgreSQL-only, like <=> is MySQL-only and GLOB is SQLite-only. The
+      // operator list is an injection allowlist, not a portability guarantee,
+      // so this must keep compiling for the driver that accepts it.
+      const sql = new Builder(db, "products").where("name", "ILIKE", "%a%").toSql();
+      expect(sql).toContain("ILIKE");
+    });
+
     test("whereNotLike compiles NOT LIKE SQL", () => {
       const sql = new Builder(db, "products").whereNotLike("name", "%A%").toSql();
       expect(sql).toContain("NOT LIKE");
@@ -770,7 +817,13 @@ describe("Advanced Query Builder Features", () => {
       const direct = await query().json();
       const hydrated = (await query().get()).toJSON();
 
-      expect(direct).toEqual(hydrated);
+      // Compared as the JSON both paths actually emit. The fast path hands back
+      // raw driver values while the hydrated path decodes date casts to Date,
+      // a divergence that predates timestamp columns being cast — any model
+      // with a datetime cast has always had it — and that disappears the moment
+      // either side is serialized.
+      const wire = (value: unknown) => JSON.parse(JSON.stringify(value));
+      expect(wire(direct)).toEqual(wire(hydrated));
       expect(direct.map((folder) => (folder as any).path)).toEqual([
         "Root",
         "Root > Admissions",

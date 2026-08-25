@@ -1,4 +1,4 @@
-import { Builder } from "../query/Builder.js";
+import { Builder, type LikeOptions } from "../query/Builder.js";
 import { Collection } from "../support/Collection.js";
 import type {
   ModelConstructor,
@@ -407,20 +407,20 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
       : (this as any).query().orWhereJsonLength(column, operatorOrValue, value);
   }
 
-  static whereLike<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string): Builder<InstanceType<M>> {
-    return (this as any).query().whereLike(column, value);
+  static whereLike<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string, options?: LikeOptions): Builder<InstanceType<M>> {
+    return (this as any).query().whereLike(column, value, options);
   }
 
-  static whereNotLike<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string): Builder<InstanceType<M>> {
-    return (this as any).query().whereNotLike(column, value);
+  static whereNotLike<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string, options?: LikeOptions): Builder<InstanceType<M>> {
+    return (this as any).query().whereNotLike(column, value, options);
   }
 
-  static orWhereLike<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string): Builder<InstanceType<M>> {
-    return (this as any).query().orWhereLike(column, value);
+  static orWhereLike<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string, options?: LikeOptions): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereLike(column, value, options);
   }
 
-  static orWhereNotLike<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string): Builder<InstanceType<M>> {
-    return (this as any).query().orWhereNotLike(column, value);
+  static orWhereNotLike<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string, options?: LikeOptions): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereNotLike(column, value, options);
   }
 
   static whereRegexp<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, value: string): Builder<InstanceType<M>> {

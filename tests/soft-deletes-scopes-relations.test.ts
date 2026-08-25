@@ -129,7 +129,9 @@ describe("Soft Deletes, Scopes, and Relation Queries", () => {
     expect(await ScopedUser.find(id)).toBeNull();
     expect(await ScopedUser.withTrashed().find(id)).not.toBeNull();
     expect(observedDeletedAt).toBeDefined();
-    expect(typeof observedDeletedAt).toBe("string");
+    // deleted_at is a date the model declared through softDeletes, so an
+    // observer reads it as the same Date any other read of that column yields.
+    expect(observedDeletedAt).toBeInstanceOf(Date);
     expect(events).toEqual(["deleted"]);
 
     await ScopedUser.onlyTrashed().where("id", id).restore();

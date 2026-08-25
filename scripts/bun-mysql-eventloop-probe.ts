@@ -1,6 +1,6 @@
 // Does this Bun still drop the event-loop reference for in-flight MySQL queries?
 // Diagnostic only — not part of the test suite. Background and removal steps:
-// tmp_hacks/bun-mysql-event-loop.md
+// .tmp_hacks/bun-mysql-event-loop.md
 //
 // Usage: bun scripts/bun-mysql-eventloop-probe.ts [mysql-url]
 //        (falls back to $MYSQL_TEST_URL)
@@ -108,7 +108,7 @@ function runParent(url?: string): void {
   if (truncated === 0) {
     console.log("\nFIXED — every trigger resolved with nothing else holding the event loop open.");
     console.log("The workaround in src/connection/Connection.ts can be retired:");
-    console.log("see the removal checklist in tmp_hacks/bun-mysql-event-loop.md.");
+    console.log("see the removal checklist in .tmp_hacks/bun-mysql-event-loop.md.");
     process.exit(3);
   }
 

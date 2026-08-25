@@ -72,6 +72,8 @@ export interface WhereClause {
   boolean: "and" | "or";
   scope?: string;
   not?: boolean;
+  /** "like" clauses only: compile the exact-comparison form for the dialect. */
+  caseSensitive?: boolean;
   dateType?: string;
   query?: WhereClause[];
   bindings?: readonly unknown[];

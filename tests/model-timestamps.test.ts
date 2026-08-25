@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { DB, Model, Schema } from "../src/index.js";
-import { PermissiveModel, setupTestDb } from "./helpers.js";
+import { PermissiveModel, setupTestDb, teardownTestDb } from "./helpers.js";
 
 class SnakeTimestampModel extends PermissiveModel {
   static override table = "snake_timestamp_models";
@@ -111,7 +111,7 @@ function timestampMatrix(
 
       await model.upsert({ slug, name: "updated", count: 2 }, "slug");
       const updated = await find(slug);
-      expect(updated.getAttribute(createdAt)).toBe(originalCreatedAt);
+      expect(updated.getAttribute(createdAt)).toEqual(originalCreatedAt);
       expect(updated.getAttribute(updatedAt)).toBeDefined();
       expect(updated.getAttribute("name")).toBe("updated");
     });
@@ -125,7 +125,7 @@ function timestampMatrix(
 
       await model.updateOrInsert({ slug }, { name: "updated", count: 2 });
       const updated = await find(slug);
-      expect(updated.getAttribute(createdAt)).toBe(originalCreatedAt);
+      expect(updated.getAttribute(createdAt)).toEqual(originalCreatedAt);
       expect(updated.getAttribute(updatedAt)).toBeDefined();
       expect(updated.getAttribute("name")).toBe("updated");
     });
@@ -261,5 +261,62 @@ describe("Timestamp column metadata", () => {
       throw new Error("stop");
     })).rejects.toThrow("stop");
     expect(CamelTimestampModel.timestamps).toBe(true);
+  });
+});
+
+describe("implicit timestamp casts", () => {
+  test("an in-place Date mutation on a derived timestamp marks the model dirty", async () => {
+    const connection = setupTestDb();
+    try {
+      await Schema.create("implicit_a", (table) => {
+        table.increments("id");
+        table.string("name");
+        table.timestamps();
+      });
+      class Row extends PermissiveModel {
+        static override table = "implicit_a";
+      }
+
+      await Row.create({ name: "x" });
+      const row = (await Row.query().first())!;
+      // The derived cast puts a Date in the cast cache; mutating it in place
+      // never touches $attributes, so getDirty has to consult that cache or the
+      // change is lost on save with no error.
+      (row.getAttribute("created_at") as Date).setFullYear(1999);
+
+      expect(row.isDirty()).toBe(true);
+      await row.save();
+
+      const reread = (await Row.query().first())!;
+      expect((reread.getAttribute("created_at") as Date).getFullYear()).toBe(1999);
+    } finally {
+      await teardownTestDb(connection);
+    }
+  });
+
+  test("a model overriding the timestamp getters reads those columns as dates", async () => {
+    const connection = setupTestDb();
+    try {
+      await Schema.create("implicit_b", (table) => {
+        table.increments("id");
+        table.string("name");
+        table.timestamp("createdOn").nullable();
+        table.timestamp("updatedOn").nullable();
+      });
+      // Overriding the getter rather than the property is documented as
+      // supported, and the write path honours it through dateColumns().
+      class Row extends PermissiveModel {
+        static override table = "implicit_b";
+        static override getCreatedAtColumn() { return "createdOn"; }
+        static override getUpdatedAtColumn() { return "updatedOn"; }
+      }
+
+      await Row.create({ name: "y" });
+      const row = (await Row.query().first())!;
+      expect(row.getAttribute("createdOn")).toBeInstanceOf(Date);
+      expect(row.getAttribute("updatedOn")).toBeInstanceOf(Date);
+    } finally {
+      await teardownTestDb(connection);
+    }
   });
 });

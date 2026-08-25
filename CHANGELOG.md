@@ -1,5 +1,80 @@
 # Changelog
 
+## 1.8.0 - 2026-08-25
+
+### Added
+
+- `whereLike()` takes a `{ caseSensitive }` option, and each driver compiles the
+  operator that expresses the intent natively rather than
+  `LOWER(column) LIKE LOWER(?)`, which would make an index on the column
+  unusable. `whereNotLike()`, `orWhereLike()` and `orWhereNotLike()` accept it
+  too.
+
+  | | default | `{ caseSensitive: true }` |
+  |---|---|---|
+  | PostgreSQL | `ILIKE` | `LIKE` |
+  | MySQL | `LIKE` | `LIKE BINARY` |
+  | SQLite | `LIKE` | `GLOB` |
+
+  SQLite has no case-sensitive `LIKE`, so the exact form switches to `GLOB` and
+  translates the pattern; a literal `*`, `?` or `[` is escaped in the same pass.
+
+### Changed
+
+- The `like` family no longer takes the and/or connector or the `not` flag as
+  positional arguments. `orWhereLike()` and `orWhereNotLike()` already express
+  both, so the third argument is now always the options object and the connector
+  moved to a private helper. Unlike the semantic change below, this one surfaces
+  as a type error rather than a silent behaviour change.
+- **`whereLike()` is now case-insensitive by default.** On PostgreSQL it
+  previously compiled `LIKE`, which compares case-sensitively; it now compiles
+  `ILIKE`. SQLite and MySQL are unaffected, their `LIKE` already ignoring case.
+- A model's timestamp columns are cast to `Date` on read without a matching
+  `casts` entry. This covers the defaults, `created_at` and `updated_at`, as well
+  as any `createdAtColumn` / `updatedAtColumn` override — and `deletedAtColumn`
+  when `softDeletes` is on. The write path already derived exactly these columns
+  through `dateColumns()`; the read path ignored that derivation, so a model that
+  declared its timestamp columns wrote a `Date` and read back a string. An
+  explicit `casts` entry still wins.
+- Generated types say `Date` for the columns a discovered model actually
+  decodes through an effective `date` or `datetime` cast. Generated stubs use
+  the default `created_at` / `updated_at` pair; declaration generation without a
+  discovered model conservatively keeps the active driver's type.
+
+### Fixed
+
+- Type generation no longer uses write-path `dateColumns()` metadata to infer
+  read types. That metadata also includes the write-only `"timestamp"` column
+  hint, which remains a string at runtime, and previously treated an inactive
+  `deleted_at` fallback as a `Date`. Effective read casts are now the source of
+  truth, including explicit overrides.
+
+### Compatibility
+
+- **`whereLike()` on PostgreSQL changes results.** A query relying on it being
+  case-sensitive needs `{ caseSensitive: true }` to keep its old behaviour. This
+  is the one change here that alters results without a compiler error, so
+  PostgreSQL callers of `whereLike` are worth reviewing.
+- `whereLike(column, value, "or")` and `whereLike(column, value, "and", true)`
+  no longer compile. Use `orWhereLike(column, value)` and
+  `whereNotLike(column, value)`, which have always been the intended spellings.
+- Reading a timestamp column now yields a `Date` where it previously yielded the
+  raw string, on models that declared the columns without the matching cast.
+  Code comparing those values by identity (`===`, `toBe`) has to compare
+  instants instead. `toJSON()` returns a `Date` in that position, as it already
+  did for any explicitly cast column; the serialized JSON is unchanged.
+- The implicit cast parses exactly like an explicit `datetime` cast. Legacy
+  free-form values, MySQL zero-dates (`0000-00-00 00:00:00`), and Unix
+  timestamps stored as strings become an invalid `Date`; numeric Unix seconds
+  are interpreted as JavaScript milliseconds. Normalize them first or add an
+  explicit `"string"` cast while migrating.
+- Regenerate types after upgrading: columns that were emitted as `string` are now
+  `Date`.
+- The default stays subject to each driver's configuration, which is what keeps
+  it index-friendly: under `PRAGMA case_sensitive_like` on SQLite, or a `_cs` /
+  `_bin` collation on MySQL, it stops ignoring case. `caseSensitive: true` is
+  the form that does not depend on either.
+
 ## 1.7.0 - 2026-08-24
 
 ### Added

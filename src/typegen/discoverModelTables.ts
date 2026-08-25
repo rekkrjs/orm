@@ -52,6 +52,17 @@ export interface ModelDeclarationInfo {
   relativePath: string;
   relativeToRoot: string;
   absolutePath: string;
+  /** Columns whose effective model cast decodes them to a `Date`. */
+  dateCastColumns: string[];
+}
+
+/** Never let a misconfigured model abort discovery; it just gets no date columns. */
+function modelDateCastColumns(ctor: any): string[] {
+  try {
+    return typeof ctor.dateCastColumns === "function" ? ctor.dateCastColumns() : [];
+  } catch {
+    return [];
+  }
 }
 
 export async function discoverModelDeclarations(root: string, outDir: string, exclude?: string[]): Promise<Map<string, ModelDeclarationInfo>> {
@@ -71,7 +82,10 @@ export async function discoverModelDeclarations(root: string, outDir: string, ex
         if (isModelSubclass(exported)) {
           const table = (exported as any).table || snakeCase((exported as any).name) + "s";
           const className = (exported as any).name || exportName;
-          declarations.set(table, { table, className, relativePath, relativeToRoot, absolutePath: file });
+          declarations.set(table, {
+            table, className, relativePath, relativeToRoot, absolutePath: file,
+            dateCastColumns: modelDateCastColumns(exported),
+          });
         }
       }
 
@@ -79,7 +93,10 @@ export async function discoverModelDeclarations(root: string, outDir: string, ex
         const table =
           (mod.default as any).table || snakeCase(mod.default.name || basename(file, extname(file))) + "s";
         const className = mod.default.name || basename(file, extname(file));
-        declarations.set(table, { table, className, relativePath, relativeToRoot, absolutePath: file });
+        declarations.set(table, {
+          table, className, relativePath, relativeToRoot, absolutePath: file,
+          dateCastColumns: modelDateCastColumns(mod.default),
+        });
       }
     } catch {
       // Skip files that fail to import

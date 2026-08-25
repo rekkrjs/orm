@@ -97,6 +97,40 @@ function mutableCastKeys(casts: Record<string, any>): MutableCastKeys {
   return entry;
 }
 
+/**
+ * The datetime casts a model has already declared by declaring timestamps.
+ *
+ * Resolved through `getCreatedAtColumn()` / `getUpdatedAtColumn()` — the same
+ * getters `dateColumns()` uses for the write path — so a model that overrides
+ * the getter rather than the property is honoured on both sides. `dateColumns()`
+ * has always derived these for writes; deriving them here is what keeps a read
+ * and a write agreeing about which columns hold a Date.
+ *
+ * Merged into `$mergedCasts` at construction rather than consulted on each
+ * read, so everything keyed off that map — `getDirty()` above all, which has to
+ * see an in-place `Date` mutation — treats these exactly like a declared cast.
+ *
+ * Never throws. Those getters reject an empty or non-string column, but they do
+ * it on the paths that already validated; moving that failure into every
+ * constructor would change where a misconfigured model reports itself. An
+ * unusable column simply yields no implicit cast.
+ */
+function implicitDateCasts(ctor: typeof ModelCore): Record<string, CastDefinition> | undefined {
+  let casts: Record<string, CastDefinition> | undefined;
+  const add = (column: unknown) => {
+    if (typeof column === "string" && column.length > 0) (casts ??= {})[column] = "datetime";
+  };
+
+  if (ctor.timestamps) {
+    try {
+      add(ctor.getCreatedAtColumn());
+      add(ctor.getUpdatedAtColumn());
+    } catch { /* misconfigured columns report themselves on the write paths */ }
+  }
+  if (ctor.softDeletes) add(ctor.deletedAtColumn);
+  return casts;
+}
+
 /** Dates compare by instant: two Date objects for the same moment are equal. */
 function sameAttributeValue(before: unknown, after: unknown): boolean {
   if (before instanceof Date || after instanceof Date) {
@@ -199,7 +233,7 @@ export class ModelCore<T extends Record<string, any> = any> {
     // A copy, never the static object itself: `casts` is public, and code that
     // adds a cast in place would otherwise keep the identity that mutableCastKeys
     // caches against, so the new cast would stay invisible to getDirty.
-    this.$mergedCasts = { ...staticCasts, ...this.$casts };
+    this.$mergedCasts = { ...implicitDateCasts(ctor), ...staticCasts, ...this.$casts };
     const defaults = ctor.attributes || {};
     if (Object.keys(defaults).length > 0) {
       this.forceFill({ ...defaults } as any);
@@ -310,6 +344,12 @@ export class ModelCore<T extends Record<string, any> = any> {
     }
     if (this.softDeletes) keys.push(this.deletedAtColumn);
     return [...new Set(keys)];
+  }
+
+  /** Columns whose effective read cast decodes them to a Date. */
+  static dateCastColumns(): string[] {
+    const casts = { ...implicitDateCasts(this), ...(this.casts || {}) };
+    return [...mutableCastKeys(casts).date];
   }
 
   /** Columns whose portable in-memory 1/0 cast must become native booleans on PostgreSQL. */
@@ -576,7 +616,7 @@ export class ModelCore<T extends Record<string, any> = any> {
   mergeCasts(casts: Record<string, CastDefinition>): this {
     this.$casts = { ...this.$casts, ...casts };
     const ctor = this.getModelConstructor();
-    this.$mergedCasts = { ...(ctor.casts || {}), ...this.$casts };
+    this.$mergedCasts = { ...implicitDateCasts(ctor), ...(ctor.casts || {}), ...this.$casts };
     this.$castCache = {};
     return this;
   }

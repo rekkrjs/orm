@@ -91,7 +91,23 @@ export abstract class Grammar {
 
   abstract compileJsonLength(column: string, operator: string, value: any, binding?: (value: any) => string): string;
 
-  compileLike(column: string, value: string, not: boolean, binding?: (value: any) => string): string {
+  /**
+   * Pattern matching, case-insensitive by default.
+   *
+   * Each dialect gets the operator that expresses the intent natively rather
+   * than `LOWER(column) LIKE LOWER(?)`, which would make an index on the column
+   * unusable everywhere to buy what two of the three dialects already do. The
+   * cost is that the default follows the dialect's own configuration: SQLite
+   * honours `PRAGMA case_sensitive_like`, MySQL the column's collation. Pass
+   * `caseSensitive` when the comparison must not depend on either.
+   */
+  compileLike(
+    column: string,
+    value: string,
+    not: boolean,
+    binding?: (value: any) => string,
+    caseSensitive: boolean = false
+  ): string {
     const op = not ? "NOT LIKE" : "LIKE";
     return `${column} ${op} ${binding ? binding(value) : this.escape(value)}`;
   }

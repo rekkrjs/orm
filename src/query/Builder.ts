@@ -49,10 +49,16 @@ type RecursiveCteDefinition = {
   anchor: Builder<any> | string;
   recursive: Builder<any> | string;
 };
+export interface LikeOptions { caseSensitive?: boolean }
 type RawFragment = { sql: string; bindings: readonly unknown[] };
 type UnionDefinition = { query: Builder<any> | string; all: boolean };
 export type NumericAggregate = number | string | bigint;
 
+// Several of these are dialect-specific by design — `<=>` is MySQL, `GLOB` is
+// SQLite, `REGEXP` is neither on PostgreSQL. The list is an injection-safety
+// allowlist, not a portability guarantee: an operator passed here is emitted
+// verbatim and it is the caller's business whether the target accepts it. Use
+// whereLike()/whereRegexp() for the forms the grammars compile per dialect.
 const QUERY_OPERATORS = new Set([
   "=", "!=", "<>", "<", "<=", ">", ">=", "<=>",
   "LIKE", "NOT LIKE", "ILIKE", "NOT ILIKE",
@@ -833,22 +839,48 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this;
   }
 
-  whereLike(column: ModelColumn<T>, value: string, boolean: "and" | "or" = "and", not: boolean = false): this {
+  /**
+   * Pattern matching, **case-insensitive by default** — `ILIKE` on PostgreSQL,
+   * `LIKE` on SQLite and MySQL, whose `LIKE` already ignores case. Pass
+   * `{ caseSensitive: true }` for the exact comparison: `LIKE` on PostgreSQL,
+   * `LIKE BINARY` on MySQL, `GLOB` on SQLite.
+   */
+  whereLike(column: ModelColumn<T>, value: string, options?: LikeOptions): this {
+    return this.addLike(column, value, { boolean: "and", not: false, options });
+  }
+
+  whereNotLike(column: ModelColumn<T>, value: string, options?: LikeOptions): this {
+    return this.addLike(column, value, { boolean: "and", not: true, options });
+  }
+
+  orWhereLike(column: ModelColumn<T>, value: string, options?: LikeOptions): this {
+    return this.addLike(column, value, { boolean: "or", not: false, options });
+  }
+
+  orWhereNotLike(column: ModelColumn<T>, value: string, options?: LikeOptions): this {
+    return this.addLike(column, value, { boolean: "or", not: true, options });
+  }
+
+  /**
+   * The and/or connector stays here rather than in the four signatures above:
+   * `orWhereLike()` already expresses it, so a caller never has to name it.
+   */
+  private addLike(
+    column: ModelColumn<T>,
+    value: string,
+    { boolean, not, options }: { boolean: "and" | "or"; not: boolean; options?: LikeOptions }
+  ): this {
     this.invalidateSqlCache();
-    this.wheres.push({ type: "like", column, value, boolean, scope: undefined, not });
+    this.wheres.push({
+      type: "like",
+      column,
+      value,
+      boolean,
+      scope: undefined,
+      not,
+      caseSensitive: options?.caseSensitive ?? false,
+    });
     return this;
-  }
-
-  whereNotLike(column: ModelColumn<T>, value: string): this {
-    return this.whereLike(column, value, "and", true);
-  }
-
-  orWhereLike(column: ModelColumn<T>, value: string): this {
-    return this.whereLike(column, value, "or");
-  }
-
-  orWhereNotLike(column: ModelColumn<T>, value: string): this {
-    return this.whereLike(column, value, "or", true);
   }
 
   whereRegexp(column: ModelColumn<T>, value: string, boolean: "and" | "or" = "and", not: boolean = false): this {
@@ -1775,7 +1807,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
       const sql = this.compileWhereClauses(where.query || [], "");
       return `${prefix} (${sql})`;
     } else if (where.type === "like") {
-      const sql = this.grammar.compileLike(this.grammar.wrap(where.column), where.value as string, !!where.not, this.parameterize ? (v) => this.addBinding(v) : undefined);
+      const sql = this.grammar.compileLike(this.grammar.wrap(where.column), where.value as string, !!where.not, this.parameterize ? (v) => this.addBinding(v) : undefined, !!where.caseSensitive);
       return `${prefix} ${sql}`;
     } else if (where.type === "regexp") {
       const sql = this.grammar.compileRegexp(this.grammar.wrap(where.column), where.value as string, !!where.not, this.parameterize ? (v) => this.addBinding(v) : undefined);

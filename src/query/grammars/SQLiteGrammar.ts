@@ -86,6 +86,40 @@ export class SQLiteGrammar extends Grammar {
     return `(SELECT COUNT(*) FROM json_each(${column})) ${operator} ${binding ? binding(value) : this.escape(value)}`;
   }
 
+  /**
+   * SQLite has no case-sensitive LIKE operator — `LIKE` folds ASCII case unless
+   * `PRAGMA case_sensitive_like` is on, which the caller cannot be made to
+   * guarantee. `GLOB` always compares exactly, so the case-sensitive form
+   * switches operator and translates the pattern.
+   *
+   * `%` and `_` become `*` and `?`. GLOB's own metacharacters are escaped in the
+   * same pass, never a second one: translating first and escaping afterwards
+   * would re-escape the wildcards just produced and match them literally.
+   */
+  private static toGlobPattern(value: string): string {
+    let out = "";
+    for (const char of value) {
+      if (char === "%") out += "*";
+      else if (char === "_") out += "?";
+      else if (char === "*" || char === "?" || char === "[") out += `[${char}]`;
+      else out += char;
+    }
+    return out;
+  }
+
+  override compileLike(
+    column: string,
+    value: string,
+    not: boolean,
+    binding?: (value: any) => string,
+    caseSensitive: boolean = false
+  ): string {
+    if (!caseSensitive) return super.compileLike(column, value, not, binding);
+    const pattern = SQLiteGrammar.toGlobPattern(value);
+    const op = not ? "NOT GLOB" : "GLOB";
+    return `${column} ${op} ${binding ? binding(pattern) : this.escape(pattern)}`;
+  }
+
   compileRegexp(column: string, value: string, not: boolean, binding?: (value: any) => string): string {
     const op = not ? "NOT REGEXP" : "REGEXP";
     return `${column} ${op} ${binding ? binding(value) : this.escape(value)}`;

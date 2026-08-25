@@ -907,7 +907,7 @@ async function main() {
 // Top-level await rather than `main().catch(...)`: a pending top-level await is
 // a reference Bun counts, so the process cannot drain the event loop and exit 0
 // half way through a command. That is a second line of defence behind the MySQL
-// keep-alive in Connection — see tmp_hacks/bun-mysql-event-loop.md.
+// keep-alive in Connection — see .tmp_hacks/bun-mysql-event-loop.md.
 try {
   await main();
 } catch (err) {

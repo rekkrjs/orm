@@ -102,8 +102,8 @@ interface UserAttributes {
   id: number;
   name: string;
   email: string;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export default class User extends Model.define<UserAttributes>("users") {
@@ -123,8 +123,8 @@ interface PostAttributes {
   user_id: number;
   title: string;
   body: string | null;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export default class Post extends Model.define<PostAttributes>("posts") {

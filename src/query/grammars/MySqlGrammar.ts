@@ -75,6 +75,22 @@ export class MySqlGrammar extends Grammar {
     return `JSON_LENGTH(${column}) ${operator} ${binding ? binding(value) : this.escape(value)}`;
   }
 
+  /**
+   * `LIKE` follows the column's collation, which is case-insensitive under every
+   * default. `LIKE BINARY` forces a byte comparison for the case-sensitive form.
+   */
+  override compileLike(
+    column: string,
+    value: string,
+    not: boolean,
+    binding?: (value: any) => string,
+    caseSensitive: boolean = false
+  ): string {
+    if (!caseSensitive) return super.compileLike(column, value, not, binding);
+    const op = not ? "NOT LIKE BINARY" : "LIKE BINARY";
+    return `${column} ${op} ${binding ? binding(value) : this.escape(value)}`;
+  }
+
   compileRegexp(column: string, value: string, not: boolean, binding?: (value: any) => string): string {
     const op = not ? "NOT REGEXP" : "REGEXP";
     return `${column} ${op} ${binding ? binding(value) : this.escape(value)}`;
