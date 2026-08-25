@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.9.0 - 2026-08-25
+
+### Added
+
+- **`TransactionContext` is now exported.** It was the only mechanism for
+  joining an ambient transaction and it was private, with no wildcard in
+  `exports` to reach it. A package that receives a `Connection` — the shape
+  `@rekkr/cache` and `@rekkr/better-auth-adapter` use — could not tell whether
+  the caller had a transaction open, so its writes always went to the pooled
+  connection and survived a rollback on MySQL and PostgreSQL. Such a package now
+  resolves per call with `TransactionContext.current() ?? this.connection`.
+  `TenantContext` was already public; the two have the same role and the same
+  `current()` / `run()` surface.
+
+### Fixed
+
+- **`connection.transaction()` installs the ambient context.** Only
+  `DB.transaction()` did, so an unbound `Model` or `DB` query inside a
+  `connection.transaction()` callback resolved to `ConnectionManager.getDefault()`
+  and ran on a different pooled session — committing outside the transaction and
+  surviving its rollback. All three branches now publish the transaction:
+  borrowed-root, borrowed-savepoint and owned-driver. `withTenant()` delegates to
+  `transaction()` and inherits the fix.
+
+  The behavior was previously documented as a limitation of the lower-level form,
+  with `Model.on(tx)` as the workaround. That workaround still works and is still
+  correct for targeting a specific connection; it is simply no longer required.
+  The pitfall entry has been removed from `docs/transactions.md`.
+
+  This was invisible on SQLite, where a single connection makes the stray write
+  land inside the open transaction by accident — which is why the existing
+  `tests/transaction-context.test.ts` suite, running on `sqlite://:memory:`,
+  could not catch it. The new regression coverage asserts ambient identity as
+  well as rollback, so the failure remains visible on every driver.
+
+### Changed
+
+- `DB.transaction()` no longer wraps the callback itself. `Connection.transaction()`
+  installs the context for every entry point, so the facade just delegates.
+
+### Verification
+
+- Built the TypeScript package and type-checked the dedicated test
+  configuration.
+- Ran the complete Bun test suite: 1,503 tests passed across 118 files,
+  including live MySQL and PostgreSQL integrations.
+- `bun pm pack --dry-run` passed for version 1.9.0: 420 files, 2.69 MB
+  unpacked.
+
 ## 1.8.1 - 2026-08-25
 
 ### Fixed

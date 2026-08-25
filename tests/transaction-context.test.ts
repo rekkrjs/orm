@@ -1,5 +1,5 @@
 import { expect, test, describe, beforeEach } from "bun:test";
-import { DB, Model, Schema } from "../src/index.js";
+import { Builder, DB, Model, Schema, TransactionContext } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 class User extends PermissiveModel {
@@ -94,6 +94,86 @@ describe("TransactionContext", () => {
     const users = await User.all();
     expect(users).toHaveLength(1);
     expect(users[0].name).toBe("Outside");
+  });
+
+  test("connection.transaction() installs the ambient context", async () => {
+    const connection = await setupTables();
+
+    await connection.transaction(async (trx) => {
+      expect(TransactionContext.current()).toBe(trx);
+      expect((User as any).getConnection()).toBe(trx);
+      expect(Schema.getConnection()).toBe(trx);
+    });
+
+    expect(TransactionContext.current()).toBeUndefined();
+  });
+
+  test("unbound Model.create() inside connection.transaction() joins the transaction", async () => {
+    const connection = await setupTables();
+
+    await expect(
+      connection.transaction(async () => {
+        await User.create({ name: "Unbound" });
+        throw new Error("abort");
+      })
+    ).rejects.toThrow("abort");
+
+    expect(await User.count()).toBe(0);
+
+    await connection.transaction(async () => {
+      await User.create({ name: "Committed" });
+    });
+
+    expect(await User.count()).toBe(1);
+  });
+
+  test("a package holding the Connection can resolve the ambient transaction", async () => {
+    const connection = await setupTables();
+
+    // The shape @rekkr/cache and @rekkr/better-auth-adapter use: the package is
+    // handed a Connection and never sees the caller's transaction handle.
+    class HeldConnectionAdapter {
+      constructor(private readonly connection: import("../src/index.js").Connection) {}
+      private resolve() {
+        return TransactionContext.current() ?? this.connection;
+      }
+      write(name: string) {
+        return new Builder(this.resolve(), "users").insert({ name });
+      }
+    }
+
+    const adapter = new HeldConnectionAdapter(connection);
+
+    await expect(
+      DB.transaction(async () => {
+        await adapter.write("from-adapter");
+        throw new Error("abort");
+      })
+    ).rejects.toThrow("abort");
+
+    expect(await User.count()).toBe(0);
+  });
+
+  test("nested connection.transaction() savepoints keep the ambient context", async () => {
+    const connection = await setupTables();
+
+    await connection.transaction(async (trx) => {
+      await User.create({ name: "Outer" });
+
+      await expect(
+        trx.transaction(async (inner) => {
+          expect(TransactionContext.current()).toBe(inner);
+          await User.create({ name: "Inner" });
+          throw new Error("inner abort");
+        })
+      ).rejects.toThrow("inner abort");
+
+      expect(TransactionContext.current()).toBe(trx);
+    });
+
+    const users = await User.all();
+    expect(users).toHaveLength(1);
+    expect(users[0].name).toBe("Outer");
   });
 
   test("nested transactions use savepoints", async () => {

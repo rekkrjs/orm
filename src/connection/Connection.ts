@@ -5,6 +5,7 @@ import { SQLiteGrammar } from "../query/grammars/SQLiteGrammar.js";
 import { MySqlGrammar } from "../query/grammars/MySqlGrammar.js";
 import { PostgresGrammar } from "../query/grammars/PostgresGrammar.js";
 import { UniqueConstraintViolationError } from "./UniqueConstraintViolationError.js";
+import { TransactionContext } from "./TransactionContext.js";
 
 function isUniqueConstraintViolation(
   driverName: "sqlite" | "mysql" | "postgres",
@@ -626,7 +627,7 @@ export class Connection {
         this.transactionRoot = true;
         this.transactionDepth = 1;
         try {
-          const result = await callback(this);
+          const result = await TransactionContext.run(this, () => callback(this));
           await this.keepEventLoopAlive(() => this.getDriver().unsafe("COMMIT"));
           return result;
         } catch (error) {
@@ -643,7 +644,7 @@ export class Connection {
       await this.keepEventLoopAlive(() => this.getDriver().unsafe(`SAVEPOINT ${savepointName}`));
       this.transactionDepth++;
       try {
-        const result = await callback(this);
+        const result = await TransactionContext.run(this, () => callback(this));
         await this.keepEventLoopAlive(() => this.getDriver().unsafe(`RELEASE SAVEPOINT ${savepointName}`));
         return result;
       } catch (error) {
@@ -680,7 +681,7 @@ export class Connection {
         connection.transactionRoot = false;
         connection.dedicated = true;
         try {
-          return await callback(connection);
+          return await TransactionContext.run(connection, () => callback(connection));
         } finally {
           connection.transactionActive = false;
         }

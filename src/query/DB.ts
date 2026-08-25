@@ -35,9 +35,9 @@ export const DB = {
   },
 
   transaction<T>(callback: (connection: Connection) => T | Promise<T>): Promise<T> {
-    return resolveDefaultConnection().transaction((trx) =>
-      TransactionContext.run(trx, () => callback(trx))
-    );
+    // Connection.transaction() installs the ambient context for every branch,
+    // so unbound Model/DB queries inside the callback resolve to it.
+    return resolveDefaultConnection().transaction(callback);
   },
 
   raw<T = any>(sql: string, bindings: any[] = []): Promise<T[]> {

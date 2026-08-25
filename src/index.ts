@@ -2,6 +2,7 @@ export { Connection } from "./connection/Connection.js";
 export { UniqueConstraintViolationError } from "./connection/UniqueConstraintViolationError.js";
 export { ConnectionManager } from "./connection/ConnectionManager.js";
 export type { TenantCachePolicy, TenantResolution, TenantResolver } from "./connection/ConnectionManager.js";
+export { TransactionContext } from "./connection/TransactionContext.js";
 export { TenantContext } from "./connection/TenantContext.js";
 export type { ActiveTenantContext } from "./connection/TenantContext.js";
 export { configureOrm } from "./config/OrmConfig.js";

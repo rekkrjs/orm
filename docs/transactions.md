@@ -3,8 +3,8 @@
 A transaction groups a series of database operations so they either all succeed or all roll back. Use one whenever a single logical change requires more than one write — transferring money, copying related rows, or persisting a model with its dependents.
 
 ORM exposes transactions through the `DB` facade and directly on a
-`Connection`. Use `DB.transaction()` when model queries inside the callback
-should automatically share the transaction.
+`Connection`. Both install the transaction in the current async context, so
+unbound model and `DB` queries inside the callback share it automatically.
 
 ## The callback form (recommended)
 
@@ -41,17 +41,47 @@ manual transactions.
 `DB.transaction()` installs the transaction connection in the current async
 context, so model and `DB` queries inside the callback use it automatically.
 
-Calling `connection.transaction()` directly is lower-level. It passes a scoped
-`tx` connection to the callback, but it does not install that connection for
-unbound model queries. Bind those queries explicitly:
+`connection.transaction()` is the lower-level form and behaves the same way: it
+passes a scoped `tx` connection to the callback **and** installs it in the async
+context, so unbound queries inside join the transaction too. Use it when you
+already hold a `Connection` and do not want to go through the `DB` facade.
 
 ```ts
 await connection.transaction(async (tx) => {
-  const user = await User.on(tx).findOrFail(1);
-  user.active = true; // the hydrated model retains tx
+  const user = await User.findOrFail(1); // joins tx through the async context
+  user.active = true;
   await user.save();
+
+  await User.on(tx).where("id", 2).update({ active: true }); // explicit, also fine
 });
 ```
+
+Binding explicitly with `Model.on(tx)` still works and is still the right tool
+when a query must target a specific connection regardless of context.
+
+A package that is handed a `Connection` and never sees the caller's `tx` handle
+reads the context directly, resolving per call rather than capturing at
+construction:
+
+```ts
+import { TransactionContext, type Connection } from "@rekkr/orm";
+
+class ReportStore {
+  constructor(private readonly connection: Connection) {}
+
+  private resolve(): Connection {
+    return TransactionContext.current() ?? this.connection;
+  }
+
+  save(row: ReportRow) {
+    return new Builder(this.resolve(), "reports").insert(row);
+  }
+}
+```
+
+Without `resolve()`, the store writes on the pooled connection and its rows
+survive the caller's rollback on MySQL and PostgreSQL — while appearing correct
+on SQLite, where a single connection hides the difference.
 
 ## Nested transactions (savepoints)
 
@@ -143,9 +173,14 @@ For the schema-qualify strategy, all tables are in the same physical database, s
 - **Forgetting to `await`.** A missing `await` on `transaction(...)` lets the
   caller continue before commit or rollback finishes, and a later rejection can
   become unhandled.
-- **Using unbound models in `connection.transaction()`.** Direct connection
-  callbacks do not create ambient model context. Use `DB.transaction()` or
-  bind models with `Model.on(tx)`.
+- **A package that captures a `Connection` at construction.** It writes on the
+  pooled connection and escapes the caller's transaction. Resolve per call with
+  `TransactionContext.current() ?? this.connection`.
+- **`beginTransaction()` and unbound queries on another connection object.**
+  The manual form reserves the driver on the connection it is called on and
+  installs no async context, so unbound queries follow the default connection.
+  That is the same object in a single-connection setup and a different one
+  otherwise. Prefer the callback form.
 - **Throwing inside the callback aborts the whole tree.** Wrap nested transactions in `try / catch` if you want inner failures to be swallowed; otherwise the outer transaction rolls back too.
 - **Locks outside a transaction are no-ops.** `lockForUpdate` releases at commit; without an enclosing `transaction(...)`, there's nothing to release against and other sessions are not blocked.
 - **Connection pool exhaustion.** Each open transaction holds a connection. Don't sleep, fetch, or wait on user input inside a transaction — finish the SQL work and exit quickly.

@@ -1,6 +1,6 @@
 import { expect, test, describe } from "bun:test";
 import { join } from "path";
-import { Connection } from "../src/index.js";
+import { Connection, TransactionContext } from "../src/index.js";
 import { cleanupSqliteFile } from "./helpers.js";
 
 describe("Connection", () => {
@@ -268,6 +268,7 @@ describe("Connection", () => {
     const conn = new Connection({ url: "postgres://user:pass@localhost:5432/db" }, { driver: driver as any });
 
     await conn.transaction(async (tx) => {
+      expect(TransactionContext.current()).toBe(tx);
       expect(tx.isInTransaction()).toBe(true);
       await tx.transaction(async () => {});
     });
