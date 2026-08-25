@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.9.1 - 2026-08-25
+
+### Fixed
+
+- The PostgreSQL RLS tenancy integration test now switches to a temporary
+  `NOSUPERUSER NOBYPASSRLS` role when `POSTGRES_TEST_URL` authenticates as a
+  superuser or `BYPASSRLS` role. PostgreSQL always exempts those roles from row
+  security, even with `FORCE ROW LEVEL SECURITY`, so the old test failed against
+  a correct ORM depending only on the test role. The temporary role receives the
+  schema and table privileges needed for the policy check and is removed during
+  cleanup.
+
+### Verification
+
+- Ran the PostgreSQL tenancy integration suite with both a normal role and a
+  superuser: all four tests passed in both configurations.
+- Built the TypeScript package and ran the complete Bun suite: 1,503 tests
+  passed across 118 files.
+- `bun pm pack --dry-run` passed for version 1.9.1: 420 files, 2.69 MB
+  unpacked.
+
 ## 1.9.0 - 2026-08-25
 
 ### Added

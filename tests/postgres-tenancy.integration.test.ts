@@ -68,6 +68,8 @@ describe.serial("PostgreSQL tenant integration", () => {
     const table = `fluent_rls_items_${suffix}`;
     PgRlsItem.table = table;
     const grammar = connection.getGrammar();
+    let testRole: string | undefined;
+    let testSchema: string | undefined;
 
     try {
       await connection.run(`CREATE TABLE ${grammar.wrap(table)} (id INTEGER PRIMARY KEY, tenant_id TEXT NOT NULL, name TEXT NOT NULL)`);
@@ -77,11 +79,22 @@ describe.serial("PostgreSQL tenant integration", () => {
       await connection.run(
         `CREATE POLICY ${grammar.wrap(`${table}_tenant_policy`)} ON ${grammar.wrap(table)} USING (tenant_id = current_setting('app.tenant_id', true))`
       );
+      const [session] = await connection.query(
+        "SELECT current_schema() AS schema, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"
+      );
+      if (session.rolsuper || session.rolbypassrls) {
+        testRole = `fluent_rls_reader_${suffix}`;
+        testSchema = session.schema;
+        await connection.run(`CREATE ROLE ${grammar.wrap(testRole)} NOLOGIN NOSUPERUSER NOBYPASSRLS`);
+        await connection.run(`GRANT USAGE ON SCHEMA ${grammar.wrap(testSchema!)} TO ${grammar.wrap(testRole)}`);
+        await connection.run(`GRANT SELECT ON ${grammar.wrap(`${testSchema}.${table}`)} TO ${grammar.wrap(testRole)}`);
+      }
       ConnectionManager.setTenantResolver((tenantId) => ({
         strategy: "rls",
         name: "pg-rls:main",
         tenantId,
         setting: "app.tenant_id",
+        role: testRole,
       }));
 
       const acme = await TenantContext.run("acme", () => PgRlsItem.all());
@@ -91,7 +104,11 @@ describe.serial("PostgreSQL tenant integration", () => {
       expect(beta.map((row) => row.getAttribute("name"))).toEqual(["Beta Item"]);
     } finally {
       await connection.run("RESET ROLE").catch(() => null);
-      await connection.run(`DROP TABLE IF EXISTS ${grammar.wrap(table)} CASCADE`);
+      await connection.run(`DROP TABLE IF EXISTS ${grammar.wrap(table)} CASCADE`).catch(() => null);
+      if (testRole && testSchema) {
+        await connection.run(`REVOKE USAGE ON SCHEMA ${grammar.wrap(testSchema)} FROM ${grammar.wrap(testRole)}`).catch(() => null);
+        await connection.run(`DROP ROLE IF EXISTS ${grammar.wrap(testRole)}`).catch(() => null);
+      }
       await connection.close();
     }
   });
