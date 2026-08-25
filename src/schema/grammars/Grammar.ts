@@ -41,8 +41,16 @@ export abstract class Grammar {
   }
 
   compileAdd(blueprint: Blueprint, table: string): string[] {
-    const columns = this.getColumns(blueprint);
-    return columns.map((col) => `ALTER TABLE ${this.wrap(table)} ADD COLUMN ${col}`);
+    blueprint.validate();
+    return blueprint.columns
+      // A changed column already exists on the table; compileChange() rewrites
+      // it in place, so adding it again would fail as a duplicate.
+      .filter((column) => !column.changed)
+      .map((column) => this.compileAddColumn(blueprint, table, column));
+  }
+
+  protected compileAddColumn(blueprint: Blueprint, table: string, column: ColumnDefinition): string {
+    return `ALTER TABLE ${this.wrap(table)} ADD COLUMN ${this.getColumn(blueprint, column)}`;
   }
 
   protected getColumns(blueprint: Blueprint): string[] {
@@ -131,12 +139,27 @@ export abstract class Grammar {
           "Use an explicit driver-supported schema operation in a new migration.",
       );
     }
+    // MySQL would take `MODIFY COLUMN ... PRIMARY KEY` and either add the key or
+    // fail with "Multiple primary key defined" depending on what the table
+    // already has; Postgres has no ALTER COLUMN spelling for it at all. Refusing
+    // in one place keeps the same blueprint from meaning two different things.
+    if (column.primary) {
+      throw new Error(
+        `Changing column "${column.name}" into a primary key is not supported portably. ` +
+          "Add a table-level primary key with primary([...]) instead.",
+      );
+    }
   }
 
   compileIndexes(blueprint: Blueprint, table: string): string[] {
     const statements: string[] = [];
     for (const column of blueprint.columns) {
-      if (!column.unique) continue;
+      // A changed column keeps the indexes it already has: restating .unique()
+      // in a change() block describes the column as it should end up, it does
+      // not ask for a second index. uniqueIndex()/dropUnique() are how a
+      // migration actually adds or removes one, and uniqueIndex() lands in
+      // blueprint.indexes below under the very same generated name.
+      if (column.changed || !column.unique) continue;
       statements.push(this.compileIndex(table, {
         name: `${blueprint.table}_${column.name}_unique`,
         columns: [column.name],

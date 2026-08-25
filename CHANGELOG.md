@@ -1,5 +1,65 @@
 # Changelog
 
+## 1.8.1 - 2026-08-25
+
+### Fixed
+
+- `change()` no longer re-adds the column it is changing. A changed column is
+  marked on the blueprint, and `compileAdd()` skips it, so a migration that
+  altered a column no longer followed the `ALTER`/`MODIFY` with an `ADD COLUMN`
+  for a column that already exists.
+- **PostgreSQL drops a column's old default before changing its type.** The
+  previous order ran `ALTER COLUMN ... TYPE` while the old default was still
+  attached, and PostgreSQL refuses a type change whose default it cannot cast to
+  the new type: widening `integer("code").default(0)` into `string("code", 10)`
+  aborted with `default for column "code" cannot be cast automatically to type
+  character varying`. The statements are now `DROP DEFAULT`, `TYPE`, nullability,
+  then the new `SET DEFAULT` if the blueprint still declares one.
+
+### Changed
+
+- **`.primary().change()` now throws on every driver.** The check moved into the
+  shared `assertPortableChange()` next to the enum one. PostgreSQL has no
+  `ALTER COLUMN` spelling for a primary key, while MySQL accepted
+  `MODIFY COLUMN ... PRIMARY KEY` and either added the key or failed with
+  `Multiple primary key defined` depending on the table — the same blueprint
+  meant two different things. Use `primary([...])` at table level.
+- **PostgreSQL `change()` resets what the blueprint omits.** An omitted
+  `default()` now emits `DROP DEFAULT` and an omitted `comment()` emits
+  `COMMENT ON COLUMN ... IS NULL`, matching what MySQL's `MODIFY COLUMN` already
+  did implicitly. `change()` restates a column in full on both drivers, so
+  describe the column as it should end up rather than only the part that moves.
+- A column's fluent `.unique()` is ignored when that column is being changed: a
+  changed column keeps the indexes it already has, and restating `.unique()`
+  described the end state rather than requesting a second index. Use
+  `uniqueIndex()` / `dropUnique()` to actually add or remove one; `uniqueIndex()`
+  generates the same `<table>_<column>_unique` name.
+- `Schema.create()` and `createIfNotExists()` reject the blueprint commands that
+  only apply to an existing table — `change()`, `dropColumn()`,
+  `renameColumn()`, `dropIndex()`, `dropUnique()` and `dropForeign()`. They were
+  silently ignored, which could produce a table that did not match the migration
+  describing it: a `.change()` column was created but its fluent index was not.
+
+### Compatibility
+
+- Existing MySQL migrations using `.primary().change()` must move the primary
+  key declaration to `primary([...])`; PostgreSQL and SQLite could not express
+  the fluent form portably.
+- PostgreSQL migrations using `change()` must restate any default and comment
+  they intend to keep. This matches MySQL's existing full-column rewrite
+  semantics.
+- Alter-only commands inside `Schema.create()` or `createIfNotExists()` now fail
+  before SQL runs instead of being ignored.
+
+### Verification
+
+- Built the TypeScript package and type-checked the dedicated test
+  configuration.
+- Ran the complete Bun test suite: 1,499 tests passed across 118 files, including
+  live MySQL, PostgreSQL and Redis integrations. The PostgreSQL contract covers
+  changing an integer column with `DEFAULT 0` into `VARCHAR`.
+- `bun pm pack --dry-run` passed for version 1.8.1: 420 files, 2.69 MB unpacked.
+
 ## 1.8.0 - 2026-08-25
 
 ### Added

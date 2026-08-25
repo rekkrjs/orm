@@ -397,6 +397,7 @@ export class Blueprint {
           "Use an explicit driver-supported schema operation in a new migration.",
       );
     }
+    this.currentColumn.changed = true;
     this.commands.push({
       name: "change",
       parameters: { column: this.currentColumn },

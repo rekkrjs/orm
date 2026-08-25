@@ -215,7 +215,7 @@ table.string("phone").after("email");        // Column position (MySQL)
 | `.index()` | Add a single-column index |
 | `.primary()` | Make the column the primary key (see [Primary keys](#primary-keys) for composite ones) |
 | `.unsigned()` | Unsigned numeric (MySQL) |
-| `.comment(text)` | Column comment (MySQL / Postgres) |
+| `.comment(text)` | Column comment (MySQL; PostgreSQL with `change()`) |
 | `.after(column)` | Place a newly added column after another one (MySQL) |
 
 Modifiers are chainable in any order before the next column is added.
@@ -350,7 +350,7 @@ await Schema.table("posts", (table) => {
 | `.index()` | Single-column index, auto-named |
 | `.index(cols)` / `.index(cols, name)` | Composite index |
 | `.unique()` | Single-column unique constraint |
-| `.uniqueIndex(cols, name?)` | Composite unique index |
+| `.uniqueIndex(cols, name?)` | Explicit single-column or composite unique index |
 | `.dropIndex(name)` | Drop a named index |
 | `.dropUnique(name)` | Drop a unique constraint |
 | `.dropForeign(name)` | Drop a foreign key constraint |
@@ -441,13 +441,54 @@ await Schema.table("users", (table) => {
 
 PostgreSQL and SQLite cannot reorder columns — they always append, and `after()` is ignored there rather than failing, so the same migration runs on all three drivers.
 
-Modify an existing column (MySQL / PostgreSQL):
+### Modifying a column
+
+`change()` rewrites an existing column on MySQL and PostgreSQL. SQLite has no
+portable way to alter a column and rejects it.
 
 ```ts
 await Schema.table("users", (table) => {
   table.string("name", 150).nullable().change();
 });
 ```
+
+**`change()` restates the column in full.** Whatever the blueprint does not
+declare is reset, not preserved — an omitted `nullable()` makes the column
+`NOT NULL`, an omitted `default()` drops the existing default, and an omitted
+`comment()` clears the comment. Always describe the column as you want it to end
+up, not just the part you are changing:
+
+```ts
+// Widens the column AND drops its default and comment.
+table.string("name", 150).change();
+
+// Widens it and keeps them.
+table.string("name", 150).default("anonymous").comment("display name").change();
+```
+
+Three things `change()` will not do:
+
+- **Enums.** No portable rewrite exists across the three drivers, so
+  `table.enum(...).change()` throws. Use a driver-specific statement in its own
+  migration.
+- **Primary keys.** `.primary().change()` throws on every driver. Declare it at
+  table level with `table.primary(["id"])` instead — MySQL would otherwise
+  accept `MODIFY COLUMN ... PRIMARY KEY` and mean something PostgreSQL cannot
+  express at all.
+- **Indexes.** A changed column keeps the indexes it already has. Restating
+  `.unique()` inside a `change()` block describes the column as it should end up;
+  it does not ask for a second index and none is created. To actually add or
+  remove one, say so explicitly with `table.uniqueIndex("email")` or
+  `table.dropUnique("users_email_unique")` — `uniqueIndex()` picks the same
+  `<table>_<column>_unique` name the fluent `.unique()` would have used.
+
+`change()` belongs to `Schema.table()`. Calling it inside `Schema.create()` or
+`Schema.createIfNotExists()` throws, as do `dropColumn()`, `renameColumn()`,
+`dropIndex()`, `dropUnique()` and `dropForeign()` — they all describe edits to a
+table that already exists, while the create methods build the whole table in a
+single statement.
+
+### Renaming and dropping
 
 Rename or drop columns:
 

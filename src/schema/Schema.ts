@@ -99,6 +99,24 @@ export class Schema {
     return { schema: schemaPart, table: tableParts.join(".") };
   }
 
+  /**
+   * A blueprint's commands — change, dropColumn, renameColumn, dropIndex,
+   * dropUnique, dropForeign — all describe edits to a table that already
+   * exists. `create()` builds the whole table in one CREATE statement and never
+   * runs them, so accepting one silently would produce a table that does not
+   * match the migration that appears to describe it: a `.change()` column, for
+   * instance, would be created but skipped when its fluent index is compiled.
+   */
+  private static assertNoAlterCommands(blueprint: Blueprint): void {
+    const command = blueprint.commands[0];
+    if (!command) return;
+    throw new Error(
+      `${command.name}() only applies to an existing table and cannot be used in ` +
+        `Schema.create("${blueprint.table}") or Schema.createIfNotExists("${blueprint.table}"). ` +
+        "Move it to Schema.table().",
+    );
+  }
+
   private static getGrammar(connection?: Connection): Grammar {
     const driver = (connection ?? this.getConnection()).getDriverName();
     switch (driver) {
@@ -114,6 +132,7 @@ export class Schema {
   static async create(table: string, callback: (blueprint: Blueprint) => void, conn?: Connection): Promise<void> {
     const blueprint = new Blueprint(table);
     callback(blueprint);
+    this.assertNoAlterCommands(blueprint);
     const connection = conn ?? this.getConnection();
     const grammar = this.getGrammar(connection);
     const sql = grammar.compileCreate(blueprint, connection.qualifyTable(table));
@@ -133,6 +152,7 @@ export class Schema {
   static async createIfNotExists(table: string, callback: (blueprint: Blueprint) => void, conn?: Connection): Promise<void> {
     const blueprint = new Blueprint(table);
     callback(blueprint);
+    this.assertNoAlterCommands(blueprint);
     const connection = conn ?? this.getConnection();
     const grammar = this.getGrammar(connection);
     const sql = grammar.compileCreateIfNotExists(blueprint, connection.qualifyTable(table));

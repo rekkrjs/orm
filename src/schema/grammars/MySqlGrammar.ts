@@ -1,4 +1,5 @@
 import { Grammar } from "./Grammar.js";
+import type { Blueprint } from "../Blueprint.js";
 import type { ColumnDefinition } from "../../types/index.js";
 import { SchemaRawExpression } from "../RawExpression.js";
 
@@ -119,13 +120,9 @@ export class MySqlGrammar extends Grammar {
     return sql;
   }
 
-  compileAdd(blueprint: any, table: string): string[] {
-    blueprint.validate();
-    return blueprint.columns.map((column: ColumnDefinition) => {
-      let sql = `ALTER TABLE ${this.wrap(table)} ADD COLUMN ${this.getColumn(blueprint, column)}`;
-      if (column.after) sql += ` AFTER ${this.wrap(column.after)}`;
-      return sql;
-    });
+  protected compileAddColumn(blueprint: Blueprint, table: string, column: ColumnDefinition): string {
+    const sql = super.compileAddColumn(blueprint, table, column);
+    return column.after ? `${sql} AFTER ${this.wrap(column.after)}` : sql;
   }
 
   compileColumnRename(table: string, from: string, to: string): string {

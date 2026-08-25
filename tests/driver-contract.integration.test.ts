@@ -181,6 +181,42 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
       expect(await ContractPost.find(post.getAttribute("id"))).toBeNull();
     });
 
+    if (driver !== "sqlite") {
+      run("change replaces a column definition without adding it again", async () => {
+        const connection = context.connection;
+        await Schema.create("contract_changed_columns", (table) => {
+          table.increments("id");
+          table.string("name");
+          table.timestamp("deleted_at").nullable().useCurrent();
+        }, connection);
+
+        await Schema.table("contract_changed_columns", (table) => {
+          table.timestamp("deleted_at").nullable().default(null).change();
+        }, connection);
+
+        await new Builder(connection, "contract_changed_columns").insert({ name: "active" });
+        expect((await new Builder(connection, "contract_changed_columns").first())!.deleted_at).toBeNull();
+      });
+
+      run("change retypes a column whose old default cannot cast to the new type", async () => {
+        const connection = context.connection;
+        await Schema.create("contract_retyped_columns", (table) => {
+          table.increments("id");
+          table.integer("code").default(0);
+        }, connection);
+
+        // The old DEFAULT 0 is an integer literal: Postgres aborts the type
+        // change unless it is dropped before ALTER COLUMN ... TYPE runs.
+        await Schema.table("contract_retyped_columns", (table) => {
+          table.string("code", 10).nullable().change();
+        }, connection);
+
+        await new Builder(connection, "contract_retyped_columns").insert({ code: "A-1" });
+        const row = (await new Builder(connection, "contract_retyped_columns").first())!;
+        expect(row.code).toBe("A-1");
+      });
+    }
+
     run("normalizes only unique violations across every write path", async () => {
       const connection = context.connection;
       await Schema.create("contract_unique_records", (table) => {

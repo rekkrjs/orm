@@ -740,6 +740,104 @@ describe("Schema Builder", () => {
     expect(mysql.compileChange("users", column)).toContain("ALTER TABLE `users` MODIFY COLUMN `name` VARCHAR(150)");
     expect(postgres.compileChange("users", column)).toContain('ALTER TABLE "users" ALTER COLUMN "name" TYPE VARCHAR(150)');
   });
+
+  test("Schema.table changes a column without adding it or its unique index again", async () => {
+    for (const driver of ["mysql", "postgres"] as const) {
+      const statements: string[] = [];
+      const connection = {
+        getDriverName: () => driver,
+        qualifyTable: (table: string) => table,
+        run: async (sql: string) => statements.push(sql),
+      } as unknown as Connection;
+
+      await Schema.table("users", (table) => {
+        table.timestamp("deleted_at").nullable().default(null).unique().change();
+      }, connection);
+
+      expect(statements.some((sql) => sql.includes("ADD COLUMN"))).toBe(false);
+      expect(statements.some((sql) => sql.includes("UNIQUE INDEX"))).toBe(false);
+    }
+  });
+
+  test("postgres change resets omitted modifiers and applies PostgreSQL modifiers", () => {
+    const grammar = new PostgresGrammar();
+    const reset = new Blueprint("users");
+    reset.timestamp("deleted_at").nullable().default(null).change();
+
+    expect(grammar.compileChange("users", reset.columns[0]!)).toContain(
+      'ALTER TABLE "users" ALTER COLUMN "deleted_at" DROP DEFAULT',
+    );
+    expect(grammar.compileChange("users", reset.columns[0]!)).toContain(
+      'COMMENT ON COLUMN "users"."deleted_at" IS NULL',
+    );
+
+    const configured = new Blueprint("users");
+    configured.uuid("public_id").defaultUuid().comment("owner's id").change();
+    const statements = grammar.compileChange("users", configured.columns[0]!);
+    expect(statements).toContain(
+      'ALTER TABLE "users" ALTER COLUMN "public_id" SET DEFAULT gen_random_uuid()',
+    );
+    expect(statements).toContain(
+      'COMMENT ON COLUMN "users"."public_id" IS \'owner\'\'s id\'',
+    );
+  });
+
+  test("every grammar rejects inline primary keys during change", () => {
+    const blueprint = new Blueprint("users");
+    blueprint.uuid("id").primary().change();
+    const column = blueprint.columns[0]!;
+
+    // MySQL would otherwise take MODIFY COLUMN ... PRIMARY KEY and quietly mean
+    // something Postgres cannot express at all.
+    for (const grammar of [new PostgresGrammar(), new MySqlGrammar(), new SQLiteGrammar()]) {
+      expect(() => grammar.compileChange("users", column)).toThrow(/table-level primary key/i);
+    }
+  });
+
+  test("postgres drops the old default before changing a column's type", () => {
+    const blueprint = new Blueprint("users");
+    blueprint.string("code", 10).nullable().change();
+    const statements = new PostgresGrammar().compileChange("users", blueprint.columns[0]!);
+
+    // Postgres refuses `ALTER COLUMN ... TYPE` while a default it cannot cast to
+    // the new type is still attached, so DROP DEFAULT has to come first.
+    const dropped = statements.indexOf('ALTER TABLE "users" ALTER COLUMN "code" DROP DEFAULT');
+    const retyped = statements.indexOf('ALTER TABLE "users" ALTER COLUMN "code" TYPE VARCHAR(10)');
+    expect(dropped).toBeGreaterThanOrEqual(0);
+    expect(dropped).toBeLessThan(retyped);
+  });
+
+  test("postgres restates a kept default after the type change", () => {
+    const blueprint = new Blueprint("users");
+    blueprint.integer("hits").default(0).change();
+    const statements = new PostgresGrammar().compileChange("users", blueprint.columns[0]!);
+
+    const retyped = statements.indexOf('ALTER TABLE "users" ALTER COLUMN "hits" TYPE INTEGER');
+    const set = statements.indexOf('ALTER TABLE "users" ALTER COLUMN "hits" SET DEFAULT 0');
+    expect(set).toBeGreaterThan(retyped);
+    expect(statements.filter((sql) => sql.includes("DEFAULT"))).toHaveLength(2);
+  });
+
+  test("Schema.create rejects commands that only apply to an existing table", async () => {
+    const connection = {
+      getDriverName: () => "postgres",
+      qualifyTable: (table: string) => table,
+      run: async () => {},
+    } as unknown as Connection;
+
+    // Left to run, change() would create the column but skip its fluent index.
+    await expect(
+      Schema.create("users", (table) => {
+        table.string("email").unique().change();
+      }, connection),
+    ).rejects.toThrow(/change\(\) only applies to an existing table/i);
+
+    await expect(
+      Schema.createIfNotExists("users", (table) => {
+        table.dropColumn("legacy");
+      }, connection),
+    ).rejects.toThrow(/dropColumn\(\) only applies to an existing table/i);
+  });
 });
 
 describe("Schema.table pre-flight validation", () => {

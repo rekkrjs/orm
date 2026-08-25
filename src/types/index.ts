@@ -39,6 +39,7 @@ export interface ColumnDefinition {
   comment?: string;
   defaultUuid?: boolean;
   after?: string;
+  changed?: boolean;
 }
 
 export interface PrimaryKeyDefinition {

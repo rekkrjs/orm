@@ -95,13 +95,25 @@ export class PostgresGrammar extends Grammar {
 
   compileChange(table: string, column: ColumnDefinition): string[] {
     this.assertPortableChange(column);
+    const alter = `ALTER TABLE ${this.wrap(table)} ALTER COLUMN ${this.wrap(column.name)}`;
+    // The old default is still attached while TYPE runs, and Postgres refuses a
+    // type change whose existing default cannot be cast to the new type. Drop it
+    // first, then restate it in the new type's terms. DROP DEFAULT on a column
+    // that has none is a no-op, so it is safe to emit unconditionally — and it
+    // is what resets a default the blueprint no longer declares.
     const statements = [
-      `ALTER TABLE ${this.wrap(table)} ALTER COLUMN ${this.wrap(column.name)} TYPE ${this.getType(column)}`,
-      `ALTER TABLE ${this.wrap(table)} ALTER COLUMN ${this.wrap(column.name)} ${column.nullable ? "DROP" : "SET"} NOT NULL`,
+      `${alter} DROP DEFAULT`,
+      `${alter} TYPE ${this.getType(column)}`,
+      `${alter} ${column.nullable ? "DROP" : "SET"} NOT NULL`,
     ];
-    if (column.default !== null && column.default !== undefined) {
-      statements.push(`ALTER TABLE ${this.wrap(table)} ALTER COLUMN ${this.wrap(column.name)} SET DEFAULT ${this.getDefaultValue(column.default)}`);
+    if (column.defaultUuid) {
+      statements.push(`${alter} SET${this.modifyDefaultUuid(column)}`);
+    } else if (column.default !== null && column.default !== undefined) {
+      statements.push(`${alter} SET DEFAULT ${this.getColumnDefault(column)}`);
     }
+    statements.push(
+      `COMMENT ON COLUMN ${this.wrap(table)}.${this.wrap(column.name)} IS ${this.getDefaultValue(column.comment ?? null)}`,
+    );
     return statements;
   }
 
