@@ -247,7 +247,7 @@ export function configureOrm(config: OrmConfig): ConfiguredOrm {
       if (!config.seedersPath) {
         throw new Error("No seedersPath configured.");
       }
-      await buildSeeder().runPaths(config.seedersPath);
+      await buildSeeder().runDefault(config.seedersPath);
     },
   };
 }

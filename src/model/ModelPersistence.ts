@@ -24,6 +24,7 @@ interface BulkInsertModelRecordsOptions {
   trusted: boolean;
   events: boolean;
   chunkSize?: number;
+  connection?: Connection;
 }
 
 export function validateBulkInsertChunkSize(chunkSize?: number): number {
@@ -42,9 +43,10 @@ export async function bulkInsertModelRecords<M extends ModelConstructor>(
   const chunkSize = validateBulkInsertChunkSize(options.chunkSize);
   if (records.length === 0) return;
 
-  if (options.events && ObserverRegistry.hasAny(model)) {
+  if (options.events && !ObserverRegistry.eventsMuted() && ObserverRegistry.hasAny(model)) {
     const models = records.map((attributes) => {
       const instance = new model() as InstanceType<M>;
+      if (options.connection) instance.setConnection(options.connection);
       options.trusted ? instance.forceFill(attributes as any) : instance.fill(attributes as any);
       return instance;
     });
@@ -52,8 +54,8 @@ export async function bulkInsertModelRecords<M extends ModelConstructor>(
     return models;
   }
 
-  const prepared = await (model as any).prepareBulkRecords(records, undefined, options.trusted);
-  const connection = (model as any).getConnection();
+  const prepared = await (model as any).prepareBulkRecords(records, undefined, options.trusted, options.connection);
+  const connection = options.connection ?? (model as any).getConnection();
   const builder = new Builder(connection, (model as any).getQualifiedTable(connection)).setModel(model);
   let result: any;
   for (let i = 0; i < prepared.length; i += chunkSize) {
@@ -80,8 +82,8 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     return { generate: shouldGeneratePrimaryKeyForColumn(column), column };
   }
 
-  static async shouldAutoGeneratePrimaryKey(): Promise<boolean> {
-    return (await this.primaryKeyStrategy()).generate;
+  static async shouldAutoGeneratePrimaryKey(connection?: Connection): Promise<boolean> {
+    return (await this.primaryKeyStrategy(connection)).generate;
   }
 
   static async prepareBulkRecords<M extends ModelConstructor>(
@@ -89,14 +91,16 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     records: ModelAttributeInput<InstanceType<M>>[],
     resolvedTimestampColumns?: TimestampColumns | null,
     trusted = false,
+    connection?: Connection,
   ): Promise<Record<string, any>[]> {
-    const generatePk = await (this as any).shouldAutoGeneratePrimaryKey();
+    const generatePk = await (this as any).shouldAutoGeneratePrimaryKey(connection);
     const timestampColumns = resolvedTimestampColumns === undefined
       ? (this.timestamps ? (this as any).getTimestampColumns() as TimestampColumns : null)
       : resolvedTimestampColumns;
     const now = timestampColumns ? new Date().toISOString() : null;
     const prepared: Record<string, any>[] = [];
     const trustedValidator = trusted ? new this() as InstanceType<M> : null;
+    if (connection) trustedValidator?.setConnection(connection);
 
     for (const record of records) {
       let attributes: Record<string, any>;
@@ -105,6 +109,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
         trustedValidator!.validateBackedEnumAttributes(attributes);
       } else {
         const instance = new this() as InstanceType<M>;
+        if (connection) instance.setConnection(connection);
         instance.fill(record as any);
         attributes = { ...(instance.$attributes as Record<string, any>) };
       }

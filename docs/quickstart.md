@@ -141,12 +141,12 @@ Plain `extends Model` also works if you have generated declarations or don't nee
 Create the seeder file under the configured `seedersPath`:
 
 ```ts
-// database/seeders/UserSeeder.ts
+// database/seeders/DatabaseSeeder.ts
 import { Seeder } from "@rekkr/orm";
 import User from "../../src/models/User";
 import Post from "../../src/models/Post";
 
-export default class UserSeeder extends Seeder {
+export default class DatabaseSeeder extends Seeder {
   async run() {
     const alice = await User.create({ name: "Alice", email: "alice@example.com" });
     await Post.create({ user_id: alice.id, title: "Hello world", body: "First post." });

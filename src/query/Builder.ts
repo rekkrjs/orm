@@ -3164,7 +3164,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
   }
 
   private shouldDispatchObservers(): boolean {
-    return Boolean(this.model) && ObserverRegistry.hasAny(this.model as any);
+    return Boolean(this.model) && !ObserverRegistry.eventsMuted() && ObserverRegistry.hasAny(this.model as any);
   }
 
   private async pluckAffectedIds(): Promise<any[]> {

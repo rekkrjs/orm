@@ -2,16 +2,19 @@ import { existsSync } from "fs";
 import { readdir, stat } from "fs/promises";
 import { basename, extname, resolve } from "path";
 import { pathToFileURL } from "url";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Connection } from "../connection/Connection.js";
 import { ConnectionManager } from "../connection/ConnectionManager.js";
 import { TenantContext } from "../connection/TenantContext.js";
 import { Model } from "../model/Model.js";
+import { ObserverRegistry } from "../model/Observer.js";
 import { Schema } from "../schema/Schema.js";
 import { normalizePathList, toPosixPath } from "../utils.js";
 
 type SeederClass = new (connection?: Connection) => Seeder;
 type SeederEntry = Seeder | SeederClass;
 type SeederInput = SeederEntry | SeederEntry[] | Record<string, SeederEntry>;
+const seederRunContext = new AsyncLocalStorage<{ calledOnce: Set<SeederClass> }>();
 
 function isSeederClass(value: unknown): value is SeederClass {
   return typeof value === "function";
@@ -34,15 +37,43 @@ function normalizeSeederEntries(input: SeederInput | SeederInput[]): SeederEntry
   return seeders;
 }
 
+async function runSeederEntry(entry: SeederEntry, connection: Connection): Promise<void> {
+  const instance = typeof entry === "function" ? new entry(connection) : entry.setConnection(connection);
+  const run = () => instance.run();
+  if ((instance.constructor as typeof Seeder).withoutModelEvents) {
+    await ObserverRegistry.withoutEvents(run);
+  } else {
+    await run();
+  }
+}
+
 export abstract class Seeder {
+  static withoutModelEvents = false;
+
   constructor(protected connection: Connection = Schema.getConnection()) {}
 
   abstract run(): Promise<void> | void;
 
+  setConnection(connection: Connection): this {
+    this.connection = connection;
+    return this;
+  }
+
   protected async call(...seeders: SeederInput[]): Promise<void> {
+    const called = seederRunContext.getStore()?.calledOnce;
     for (const seeder of normalizeSeederEntries(seeders)) {
-      const instance = typeof seeder === "function" ? new seeder(this.connection) : seeder;
-      await instance.run();
+      const seederClass = (isSeederClass(seeder) ? seeder : seeder.constructor) as SeederClass;
+      called?.add(seederClass);
+      await runSeederEntry(seeder, this.connection);
+    }
+  }
+
+  protected async callOnce(...seeders: SeederInput[]): Promise<void> {
+    const called = seederRunContext.getStore()?.calledOnce;
+    for (const seeder of normalizeSeederEntries(seeders)) {
+      const seederClass = (isSeederClass(seeder) ? seeder : seeder.constructor) as SeederClass;
+      if (called?.has(seederClass)) continue;
+      await this.call(seeder);
     }
   }
 }
@@ -99,38 +130,32 @@ export class SeederRunner {
   }
 
   async run(...seeders: SeederInput[]): Promise<void> {
-    await this.runAtomic(async (txConnection) => {
-      for (const seeder of normalizeSeederEntries(seeders)) {
-        const instance = typeof seeder === "function" ? new seeder(txConnection) : seeder;
-        await instance.run();
-      }
-      return undefined;
+    await seederRunContext.run({ calledOnce: new Set() }, async () => {
+      await this.runAtomic(async (txConnection) => {
+        for (const seeder of normalizeSeederEntries(seeders)) {
+          await runSeederEntry(seeder, txConnection);
+        }
+        return undefined;
+      });
     });
   }
 
   async runPaths(paths: string | string[]): Promise<void> {
-    const files = await this.getSeederFiles(paths);
-    const seeders: SeederClass[] = [];
-    for (const file of files) {
-      const resolved = resolve(file);
-      const module = await import(/* @vite-ignore */ pathToFileURL(resolved).href);
-      const SeederClass = module.default || Object.values(module)[0];
-      if (!SeederClass) {
-        throw new Error(`Seeder ${file} does not export a class.`);
-      }
-      seeders.push(SeederClass as SeederClass);
+    await this.runFiles(await this.getSeederFiles(paths));
+  }
+
+  async runDefault(paths: string | string[]): Promise<void> {
+    const files: string[] = [];
+    for (const path of normalizePathList(paths)) {
+      const candidates = await this.getSeederFiles(path);
+      const roots = candidates.filter((file) => basename(file, extname(file)) === "DatabaseSeeder");
+      files.push(...(roots.length > 0 ? roots : candidates));
     }
-    await this.run(...seeders);
+    await this.runFiles(files);
   }
 
   async runFile(file: string): Promise<void> {
-    const resolved = resolve(file);
-    const module = await import(/* @vite-ignore */ pathToFileURL(resolved).href);
-    const SeederClass = module.default || Object.values(module)[0];
-    if (!SeederClass) {
-      throw new Error(`Seeder ${file} does not export a class.`);
-    }
-    await this.run(SeederClass as SeederClass);
+    await this.run(await this.loadSeederClass(file));
   }
 
   async runTarget(target: string, searchPaths: string | string[] = "./database/seeders"): Promise<void> {
@@ -152,6 +177,20 @@ export class SeederRunner {
     }
 
     await this.runFile(match);
+  }
+
+  private async runFiles(files: string[]): Promise<void> {
+    const seeders: SeederClass[] = [];
+    for (const file of files) seeders.push(await this.loadSeederClass(file));
+    await this.run(...seeders);
+  }
+
+  private async loadSeederClass(file: string): Promise<SeederClass> {
+    const resolved = resolve(file);
+    const module = await import(/* @vite-ignore */ pathToFileURL(resolved).href);
+    const SeederClass = module.default || Object.values(module)[0];
+    if (!SeederClass) throw new Error(`Seeder ${file} does not export a class.`);
+    return SeederClass as SeederClass;
   }
 
   private async getSeederFiles(paths: string | string[]): Promise<string[]> {

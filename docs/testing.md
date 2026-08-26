@@ -117,7 +117,7 @@ class UserFactory extends Factory<User> {
 Factory.register(User, UserFactory);
 
 test("paginates users", async () => {
-  await User.factory().count(50).create();
+  await User.factory().count(50).createMany();
   const page = await User.orderBy("id").paginate(15, 1);
   expect(page.total).toBe(50);
   expect(page.data.length).toBe(15);

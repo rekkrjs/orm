@@ -1,11 +1,14 @@
 import { expect, test, describe, beforeAll } from "bun:test";
-import { Model, Schema, Factory, ObserverRegistry, Sequence, backedEnum } from "../src/index.js";
+import { Connection, Model, Schema, Factory, ObserverRegistry, Sequence, backedEnum } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 class FUser extends PermissiveModel {
   static table = "f_users";
   posts() {
     return this.hasMany(FPost);
+  }
+  roles() {
+    return this.belongsToMany(FRole, "f_role_f_user").withPivot("source");
   }
 }
 
@@ -14,6 +17,13 @@ class FPost extends PermissiveModel {
   fuser() {
     return this.belongsTo(FUser);
   }
+  roles() {
+    return this.belongsToMany(FRole, "f_post_role");
+  }
+}
+
+class FRole extends PermissiveModel {
+  static table = "f_roles";
 }
 
 // Class-based factories — model carries no factory code.
@@ -35,8 +45,41 @@ class FPostFactory extends Factory<FPost> {
   }
 }
 
+class FRoleFactory extends Factory<FRole> {
+  definition(seq: number) {
+    return { name: `Role ${seq}` };
+  }
+}
+
+class FSoftUser extends PermissiveModel {
+  static table = "f_soft_users";
+  static softDeletes = true;
+  static deletedAtColumn = "removed_at";
+}
+
+class FSoftUserFactory extends Factory<FSoftUser> {
+  definition(seq: number) {
+    return { name: `Soft ${seq}` };
+  }
+}
+
+class ConfiguredFUser extends FUser {}
+
+class ConfiguredFUserFactory extends Factory<ConfiguredFUser> {
+  definition() {
+    return { name: "Before configure", email: "configured@test.com", role: "member", active: true };
+  }
+
+  configure() {
+    return this.afterMaking((user) => user.setAttribute("name", "Configured"));
+  }
+}
+
 Factory.register(FUser, FUserFactory);
 Factory.register(FPost, FPostFactory);
+Factory.register(FRole, FRoleFactory);
+Factory.register(FSoftUser, FSoftUserFactory);
+Factory.register(ConfiguredFUser, ConfiguredFUserFactory);
 
 const FactoryStatus = backedEnum({ Draft: "draft", Published: "published" });
 
@@ -100,6 +143,28 @@ describe("Factory (class-based, Laravel parity)", () => {
       t.string("title");
       t.timestamps();
     });
+    await Schema.create("f_roles", (t) => {
+      t.increments("id");
+      t.string("name");
+      t.timestamps();
+    });
+    await Schema.create("f_role_f_user", (t) => {
+      t.increments("id");
+      t.integer("f_user_id");
+      t.integer("f_role_id");
+      t.string("source").nullable();
+    });
+    await Schema.create("f_post_role", (t) => {
+      t.increments("id");
+      t.integer("f_post_id");
+      t.integer("f_role_id");
+    });
+    await Schema.create("f_soft_users", (t) => {
+      t.increments("id");
+      t.string("name");
+      t.dateTime("removed_at").nullable();
+      t.timestamps();
+    });
     await Schema.create("guarded_factory_users", (t) => {
       t.increments("id");
       t.boolean("admin").default(false);
@@ -133,6 +198,32 @@ describe("Factory (class-based, Laravel parity)", () => {
     expect(Array.isArray(FUser.factory().make())).toBe(false);
     const many = FUser.factory().count(3).make() as FUser[];
     expect(many.map((m) => m.getAttribute("name"))).toEqual(["User 1", "User 2", "User 3"]);
+  });
+
+  test("typed one/many terminals override or preserve count as advertised", async () => {
+    expect(FUser.factory().count(3).rawOne()).toMatchObject({ name: "User 1" });
+    expect(FUser.factory().count(3).makeOne()).toBeInstanceOf(FUser);
+
+    const before = await FUser.query().count();
+    const one = await FUser.factory().count(3).createOne({ email: "create-one@test.com" });
+    const many = await FUser.factory().count(3).createMany({ email: "create-many@test.com" });
+
+    expect(one).toBeInstanceOf(FUser);
+    expect(many).toHaveLength(3);
+    expect(await FUser.query().count()).toBe(before + 4);
+    expect(await FUser.factory().count(0).createMany()).toEqual([]);
+  });
+
+  test("count() rejects values that cannot represent a finite record count", () => {
+    for (const amount of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => FUser.factory().count(amount)).toThrow("non-negative integer");
+    }
+    expect(FUser.factory().count(0).make()).toEqual([]);
+  });
+
+  test("configure() registers default factory hooks", () => {
+    const user = ConfiguredFUser.factory().make() as ConfiguredFUser;
+    expect(user.getAttribute("name")).toBe("Configured");
   });
 
   test("create() persists; raw() returns attributes only", async () => {
@@ -221,6 +312,13 @@ describe("Factory (class-based, Laravel parity)", () => {
     await f.create();
     expect(made).toEqual([1, 2]);
     expect(createdNames).toEqual(["User 1", "User 2"]);
+  });
+
+  test("make() rejects async afterMaking hooks instead of starting unawaited work", () => {
+    let started = false;
+    expect(() => FUser.factory().afterMaking(async () => { started = true; }).make())
+      .toThrow("cannot run asynchronous afterMaking hooks");
+    expect(started).toBe(false);
   });
 
   test("insert awaits afterMaking, skips model events and afterCreating", async () => {
@@ -379,10 +477,41 @@ describe("Factory (class-based, Laravel parity)", () => {
     expect(post.getAttribute("f_user_id")).toBe(parent.getAttribute("id"));
   });
 
+  test("make() applies .for(model) and rejects parents that require I/O", async () => {
+    const parent = await FUser.factory().createOne({ email: "make-parent@test.com" });
+    const post = FPost.factory().for(parent, "fuser").makeOne();
+
+    expect(post.$exists).toBe(false);
+    expect(post.getAttribute("f_user_id")).toBe(parent.getAttribute("id"));
+    expect(() => FPost.factory().for(new FUser(), "fuser").make())
+      .toThrow("requires models passed to for() to be persisted");
+    expect(() => FPost.factory().for(FUser.factory(), "fuser").make())
+      .toThrow("cannot resolve a parent Factory");
+  });
+
   test(".for() accepts a parent Factory (created lazily)", async () => {
     const post = (await FPost.factory().for(FUser.factory(), "fuser").create()) as FPost;
     const owner = await FUser.find(post.getAttribute("f_user_id"));
     expect(owner).not.toBeNull();
+  });
+
+  test(".for() resolves one parent factory per generated batch", async () => {
+    const created = await FPost.factory()
+      .count(3)
+      .for(FUser.factory().state({ email: "shared-create-parent@test.com" }), "fuser")
+      .create({ title: "Shared create parent" }) as FPost[];
+
+    expect(new Set(created.map((post) => post.getAttribute("f_user_id"))).size).toBe(1);
+    expect(await FUser.where("email", "shared-create-parent@test.com").count()).toBe(1);
+
+    await FPost.factory()
+      .count(3)
+      .for(FUser.factory().state({ email: "shared-insert-parent@test.com" }), "fuser")
+      .insert({ title: "Shared insert parent" });
+    const inserted = await FPost.where("title", "Shared insert parent").get();
+
+    expect(new Set(inserted.map((post) => post.getAttribute("f_user_id"))).size).toBe(1);
+    expect(await FUser.where("email", "shared-insert-parent@test.com").count()).toBe(1);
   });
 
   test("insert resolves belongsTo models and factories in bulk", async () => {
@@ -403,8 +532,127 @@ describe("Factory (class-based, Laravel parity)", () => {
     expect(posts).toHaveLength(3);
   });
 
+  test("hasAttached() creates and attaches many-to-many models with pivot attributes", async () => {
+    const user = await FUser.factory()
+      .hasAttached(FRole.factory().count(2), { source: "factory" }, "roles")
+      .create({ email: "attached@test.com" }) as FUser;
+
+    const roles = await user.roles().get();
+    expect(roles).toHaveLength(2);
+    expect(roles.map((role) => role.pivot.source)).toEqual(["factory", "factory"]);
+  });
+
+  test("recycle() reuses models through nested for() and hasAttached() factories", async () => {
+    const parent = await FUser.factory().createOne({ email: "recycled-parent@test.com" });
+    const usersBefore = await FUser.query().count();
+    const posts = await FPost.factory()
+      .count(2)
+      .for(FUser.factory(), "fuser")
+      .recycle(parent)
+      .createMany({ title: "Recycled parent" });
+
+    expect(await FUser.query().count()).toBe(usersBefore);
+    expect(posts.every((post) => post.getAttribute("f_user_id") === parent.getAttribute("id"))).toBe(true);
+
+    const choices = await FUser.factory().count(2).createMany({ email: "recycled-choice@test.com" });
+    const originalRandom = Math.random;
+    (Math as any).random = () => 0.999;
+    try {
+      const selected = await FPost.factory()
+        .for(FUser.factory().count(99), "fuser")
+        .recycle(choices)
+        .createOne({ title: "Random recycled parent" });
+      expect(selected.getAttribute("f_user_id")).toBe(choices[1].getAttribute("id"));
+    } finally {
+      (Math as any).random = originalRandom;
+    }
+
+    const roles = await FRole.factory().count(3).createMany();
+    const rolesBefore = await FRole.query().count();
+    await FUser.factory()
+      .count(2)
+      .has(FPost.factory().count(2).hasAttached(FRole.factory().count(3), "roles"), "posts")
+      .recycle(roles)
+      .createMany({ email: "recycled-graph@test.com" });
+
+    expect(await FRole.query().count()).toBe(rolesBefore);
+    const pivots = await Schema.getConnection().query("SELECT f_role_id FROM f_post_role");
+    expect(pivots).toHaveLength(12);
+    expect(new Set(pivots.map((pivot: any) => pivot.f_role_id))).toEqual(
+      new Set(roles.map((role) => role.getAttribute("id")))
+    );
+  });
+
+  test("trashed() creates a restorable soft-deleted model", async () => {
+    const user = await FSoftUser.factory().trashed().createOne();
+    expect(user.getAttribute("removed_at")).toBeInstanceOf(Date);
+    expect(await FSoftUser.find(user.getAttribute("id"))).toBeNull();
+
+    const trashed = await FSoftUser.withTrashed().findOrFail(user.getAttribute("id"));
+    await trashed.restore();
+    expect(await FSoftUser.find(user.getAttribute("id"))).not.toBeNull();
+    expect(() => FUser.factory().trashed()).toThrow("enable soft deletes");
+  });
+
+  test("connection() keeps create graphs and bulk inserts off the default connection", async () => {
+    const alternate = new Connection({ url: "sqlite://:memory:" });
+    await alternate.run("CREATE TABLE f_users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, email TEXT, role TEXT, active INTEGER, created_at TEXT, updated_at TEXT)");
+    await alternate.run("CREATE TABLE f_posts (id INTEGER PRIMARY KEY AUTOINCREMENT, f_user_id INTEGER, title TEXT, created_at TEXT, updated_at TEXT)");
+
+    try {
+      const email = "alternate-connection@test.com";
+      const user = await FUser.factory()
+        .connection(alternate)
+        .has(FPost.factory(), "posts")
+        .createOne({ email });
+      await FUser.factory().connection(alternate).count(2).insert({ email: "alternate-bulk@test.com" });
+
+      expect(user.getConnection()).toBe(alternate);
+      expect((await alternate.query("SELECT COUNT(*) AS total FROM f_users"))[0].total).toBe(3);
+      expect((await alternate.query("SELECT COUNT(*) AS total FROM f_posts"))[0].total).toBe(1);
+      expect(await FUser.where("email", email).count()).toBe(0);
+    } finally {
+      await alternate.close();
+    }
+  });
+
+  test("createQuietly() suppresses observers across parents and children but keeps factory hooks", async () => {
+    const events: string[] = [];
+    let factoryCallbacks = 0;
+    ObserverRegistry.register(FUser, { created: () => { events.push("user"); } });
+    ObserverRegistry.register(FPost, { created: () => { events.push("post"); } });
+    ObserverRegistry.register(FRole, { created: () => { events.push("role"); } });
+
+    try {
+      await FUser.factory()
+        .has(FPost.factory(), "posts")
+        .hasAttached(FRole.factory(), "roles")
+        .afterCreating(() => { factoryCallbacks++; })
+        .createQuietly({ email: "quiet-factory@test.com" });
+
+      expect(events).toEqual([]);
+      expect(factoryCallbacks).toBe(1);
+
+      await FUser.factory().create({ email: "events-restored@test.com" });
+      expect(events).toEqual(["user"]);
+
+      events.length = 0;
+      await Promise.all([
+        FUser.factory().afterMaking(async () => { await Promise.resolve(); }).createQuietly({ email: "parallel-quiet@test.com" }),
+        FUser.factory().afterMaking(async () => { await Promise.resolve(); }).create({ email: "parallel-loud@test.com" }),
+      ]);
+      expect(events).toEqual(["user"]);
+    } finally {
+      ObserverRegistry.unregister(FUser);
+      ObserverRegistry.unregister(FPost);
+      ObserverRegistry.unregister(FRole);
+    }
+  });
+
   test("insert rejects .has() instead of silently dropping children", async () => {
     await expect(FUser.factory().has(FPost.factory(), "posts").insert())
+      .rejects.toThrow("Factory.insert() cannot create child relationships");
+    await expect(FUser.factory().hasAttached(FRole.factory(), "roles").insert())
       .rejects.toThrow("Factory.insert() cannot create child relationships");
   });
 

@@ -29,16 +29,34 @@ A seeder can call models, run raw SQL via `this.connection`, or invoke other see
 import { Seeder } from "@rekkr/orm";
 import UserSeeder from "./UserSeeder";
 import PostSeeder from "./PostSeeder";
+import RoleSeeder from "./RoleSeeder";
 
 export default class DemoSeeder extends Seeder {
   async run() {
     await this.call([UserSeeder, PostSeeder]);  // run other seeders in order
+    await this.callOnce(RoleSeeder);            // deduplicated in this runner execution
     await this.connection.run("ANALYZE");
   }
 }
 ```
 
 `this.connection` is the active connection — including any tenant scoping. Inside `DB.tenant("acme", ...)` it is the tenant-qualified connection.
+
+`callOnce()` prevents a shared dependency from running twice in a diamond-shaped seeder graph. Its deduplication set belongs to one `SeederRunner` execution, so a later `runner.run(...)` starts fresh. Use `call()` when repeated execution is intentional.
+
+To suppress model observers for a seeder and every seeder it calls, set the static flag on the root seeder:
+
+```ts
+export default class DatabaseSeeder extends Seeder {
+  static withoutModelEvents = true;
+
+  async run() {
+    await this.call([UserSeeder, PostSeeder]);
+  }
+}
+```
+
+Factory callbacks such as `afterCreating` still run; only model observers are muted.
 
 ## Configuring the seeder path
 
@@ -60,14 +78,14 @@ export default {
 };
 ```
 
-The CLI walks every file in these directories that ends in `.ts` or `.js` and looks for a default export extending `Seeder`.
+The CLI looks for a `DatabaseSeeder` module in each configured root. When present, that class is the entry point and should call its child seeders explicitly. A root without `DatabaseSeeder` falls back to running every supported seeder module in filename order. Supported extensions are `.ts`, `.js`, `.mts`, `.mjs`, `.cts`, and `.cjs`; declaration and test files are ignored.
 
 ## Running seeders
 
 ### CLI
 
 ```bash
-# All seeders in seedersPath, in filename order
+# DatabaseSeeder in each configured root, or every file when no root exists
 bunx orm db:seed
 
 # A single seeder by class name (found under seedersPath)
@@ -80,9 +98,12 @@ bunx orm db:seed ./database/seeders/UserSeeder.ts
 bunx orm db:seed --tenant acme
 bunx orm db:seed --tenant acme UserSeeder
 bunx orm db:seed --tenants                 # iterate every tenant from listTenants()
+
+# Skip the production confirmation (including tenant-wide runs)
+NODE_ENV=production bunx orm db:seed --force
 ```
 
-When the command runs in a tenant context, `SeederRunner` automatically uses the tenant's connection. Seeder runs are wrapped in a transaction — if any seeder throws, the entire run rolls back.
+When `NODE_ENV=production`, `db:seed` asks for confirmation before resolving either landlord or tenant targets; non-interactive runs fail unless `--force` is present. When the command runs in a tenant context, `SeederRunner` automatically uses the tenant's connection. Seeder runs are wrapped in a transaction — if any seeder throws, the entire run rolls back.
 
 ### Programmatic — `SeederRunner`
 
@@ -90,6 +111,9 @@ When the command runs in a tenant context, `SeederRunner` automatically uses the
 import { SeederRunner } from "@rekkr/orm";
 
 const runner = new SeederRunner();
+
+// Laravel-style root entry point, with all-files fallback
+await runner.runDefault("./database/seeders");
 
 // Run every seeder in one or more paths
 await runner.runPaths("./database/seeders");
@@ -143,6 +167,13 @@ export class UserFactory extends Factory<User> {
   admin() {
     return this.state({ role: "admin" });
   }
+
+  // Called automatically whenever Model.factory() resolves this factory.
+  configure() {
+    return this.afterCreating(async (user) => {
+      // Factory-specific follow-up work.
+    });
+  }
 }
 
 Factory.register(User, UserFactory);
@@ -152,8 +183,17 @@ Factory.register(User, UserFactory);
 const raw = User.factory().raw();                 // attribute object
 const model = User.factory().make();              // unsaved User
 const created = await User.factory().create();    // saved User
+const quiet = await User.factory().createQuietly(); // saved, no model observers
 await User.factory().count(1_000).insert();        // bulk insert, no model events
 ```
+
+| Method | Result | Persists | Model observers | Factory hooks |
+|---|---|---:|---:|---|
+| `raw()` | Attributes | No | No | None |
+| `make()` | Unsaved model(s) | No | No | `afterMaking` (synchronous) |
+| `create()` | Hydrated model(s) | Yes | Yes | `afterMaking`, `afterCreating` |
+| `createQuietly()` | Hydrated model(s) | Yes | No | `afterMaking`, `afterCreating` |
+| `insert()` | `void` | Yes, bulk | No | `afterMaking` |
 
 ### Counts and state overrides
 
@@ -174,19 +214,27 @@ const mixed = await User.factory()
 
 // Per-call override (highest precedence)
 const owner = await User.factory().create({ role: "owner" });
+
+// Stable scalar/array return types, regardless of a previous count()
+const one = await User.factory().count(5).createOne();   // User; creates one
+const list = await User.factory().count(5).createMany(); // User[]; creates five
+const made = User.factory().count(5).makeOne();          // User; unsaved
+const attrs = User.factory().count(5).rawOne();          // FactoryAttributes<User>
 ```
+
+`count()` accepts non-negative integers, including zero. Fractions, negative numbers, `NaN`, and infinity throw before any model is generated.
 
 Precedence: `definition()` → states (in order) → per-call override.
 
 Factory attributes are trusted and may set guarded columns such as IDs or administrative flags. Normal model APIs such as `Model.create()` and `Model.insert()` still enforce mass-assignment protection.
 
-`raw()`, `make()`, `create()`, and `insert()` each respect the count and state. A factory can also build unsaved fixtures for a test:
+`raw()`, `make()`, `create()`, `createQuietly()`, and `insert()` each respect the count and state. Their scalar-or-array result follows the count; use `rawOne()`, `makeOne()`, `createOne()`, or `createMany()` when the caller needs a stable return type. A factory can also build unsaved fixtures for a test:
 
 ```ts
 const fixtures = User.factory().count(3).make();   // User[] — unsaved
 ```
 
-### Typing / intellisense
+### Typing / IntelliSense
 
 `Model.factory()` has two overloads:
 
@@ -196,6 +244,8 @@ User.factory<UserFactory>()     // UserFactory  — also surfaces custom state m
 ```
 
 The default returns `Factory<User>`, so `make()`/`create()` are typed to the model and `definition(seq: number)` gets a typed sequence. To get autocomplete for your own state methods (`.admin()`, etc.) in a chain, pass the factory class as the type argument: `User.factory<UserFactory>().admin()`. Chaining preserves the concrete type.
+
+Relationship names are checked too: `for()` accepts `belongsTo` methods, `has()` accepts `hasMany`, `hasOne`, `morphMany`, or `morphOne` methods, and `hasAttached()` accepts many-to-many methods.
 
 ### Relationships, sequences, hooks
 
@@ -207,6 +257,19 @@ await Post.factory().for(User.factory(), "author").create();
 
 // hasMany/hasOne children: .has(childFactory, relationName)
 await User.factory().has(Post.factory().count(3), "posts").create();
+
+// belongsToMany/morphToMany with optional pivot attributes
+await User.factory()
+  .hasAttached(Role.factory().count(3), { active: true }, "roles")
+  .create();
+
+// Reuse three tags throughout the nested graph
+const tags = await Tag.factory().count(3).createMany();
+await User.factory()
+  .count(10)
+  .has(Post.factory().count(5).hasAttached(Tag.factory().count(3), "tags"), "posts")
+  .recycle(tags)
+  .createMany();
 
 // Cycle values across a batch
 await User.factory()
@@ -221,7 +284,27 @@ await User.factory()
   .create();
 ```
 
-`insert(overrides?, { chunkSize? })` writes in chunks of 100 by default and returns `Promise<void>`; `chunkSize` must be a positive integer. It awaits `afterMaking` hooks, but skips model observers and `afterCreating`. It supports `.for()`, including a parent factory. It rejects `.has()` because bulk inserts do not hydrate parent keys; use `create()` when child relationships are required.
+A parent factory passed to `.for()` is resolved once per operation, so `Post.factory().count(3).for(User.factory(), "author")` creates one user shared by all three posts.
+
+`hasAttached()` accepts either a factory, one persisted model, or an array of persisted models. Pivot attributes are applied to every attachment.
+
+`make()` applies `.for(savedModel)` without persisting anything. It rejects an unsaved parent or `.for(parentFactory)` because resolving either would require database I/O. Since `make()` is synchronous, its `afterMaking` hooks must also be synchronous; `create()` and `insert()` await asynchronous hooks.
+
+`recycle(modelOrModels)` accepts persisted models, propagates them through nested factories, and randomly reuses matching types in `for()` and `hasAttached()` instead of creating duplicates. When `hasAttached()` requests fewer records than the recycled pool contains, it uses a random subset of that size.
+
+For soft-delete fixtures and explicit database targets:
+
+```ts
+const deleted = await User.factory().trashed().createOne();
+const landlord = await User.factory().connection("landlord").createOne();
+const tenant = await User.factory().connection(tenantConnection).createOne();
+```
+
+`trashed()` requires the model to enable soft deletes and uses its configured `deletedAtColumn`. `connection()` accepts either a registered connection name or a `Connection`; that connection is propagated to parents, children, attachments, and bulk `insert()` calls.
+
+Use `createQuietly()` when the factory must return hydrated models or create relationships without dispatching model observers. It still runs `afterMaking` and `afterCreating` factory callbacks, including callbacks registered by `configure()`.
+
+`insert(overrides?, { chunkSize? })` writes in chunks of 100 by default and returns `Promise<void>`; `chunkSize` must be a positive integer. It awaits `afterMaking` hooks, but skips model observers and every `afterCreating` hook, including hooks registered by `configure()`. It supports `.for()`, including a parent factory. It rejects `.has()` and `.hasAttached()` because bulk inserts do not hydrate parent keys; use `create()` or `createQuietly()` when child relationships or `afterCreating` work are required.
 
 ## Test data idempotency
 
@@ -248,10 +331,10 @@ For destructive seeders (wipe and reload), call `Model.truncate()` first or rely
 
 ## Common pitfalls
 
-- **Order matters.** ORM runs seeders alphabetically by filename. If `PostSeeder` needs users, prefix it (`02_PostSeeder.ts`) or call seeders from a single `DatabaseSeeder` that lists them in the right order.
+- **Order matters.** Prefer a `DatabaseSeeder` that calls child seeders in dependency order. In roots without one, ORM falls back to running files alphabetically; prefix dependent files when using that fallback.
 - **Atomicity surprises.** If one seeder throws, the transaction rolls back the entire run. Side-effects sent to external systems (emails, queue jobs) outside the database still went out — make seeders pure data work.
 - **Tenant scope is implicit.** Inside `DB.tenant()` or `bunx orm db:seed --tenant`, `this.connection` is the tenant connection. If you also want to seed landlord-scoped data, do it outside the tenant block.
-- **Factory persistence has two modes.** `create()` saves models individually and fires observers; `insert()` writes in bulk without observers. `raw()` and `make()` do not persist.
+- **Factory persistence has three modes.** `create()` saves hydrated models with observers, `createQuietly()` saves hydrated graphs without observers, and `insert()` writes in bulk without observers. `raw()` and `make()` do not persist.
 
 ## Where to next
 

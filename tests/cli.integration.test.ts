@@ -113,6 +113,9 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
     expect(help.stdout).toContain("Usage: orm");
     expect(help.stdout).not.toContain("\x1b[");
 
+    const seedHelp = await runCli(["db:seed", "--help"]);
+    expect(seedHelp.stdout).toContain("--force");
+
     const custom = await runCli(["run", "smoke:hello", "Ada", "--loud"]);
     expect(custom.exitCode).toBe(0);
     expect(custom.stdout).toContain("HELLO ADA");
@@ -138,8 +141,16 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
     expect(seeded.exitCode).toBe(0);
     const connection = new Connection({ url: `sqlite://${databasePath}` });
     try {
-      const rows = await connection.query("SELECT name FROM cli_items");
-      expect(rows).toEqual([{ name: "seeded" }]);
+      expect(await connection.query("SELECT name FROM cli_items")).toEqual([{ name: "seeded" }]);
+
+      const blocked = await runCli(["db:seed", "CliItemSeeder"], { env: { NODE_ENV: "production" } });
+      expect(blocked.exitCode).toBe(1);
+      expect(blocked.stderr).toContain("Database seeding cancelled");
+      expect(await connection.query("SELECT name FROM cli_items")).toHaveLength(1);
+
+      const forced = await runCli(["db:seed", "CliItemSeeder", "--force"], { env: { NODE_ENV: "production" } });
+      expect(forced.exitCode).toBe(0);
+      expect(await connection.query("SELECT name FROM cli_items")).toHaveLength(2);
     } finally {
       await connection.close();
     }

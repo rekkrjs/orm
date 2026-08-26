@@ -1,5 +1,91 @@
 # Changelog
 
+## 1.11.0 - 2026-08-26
+
+### Added
+
+- Factories now provide lifecycle `configure()`, observer-free
+  `createQuietly()`, many-to-many `hasAttached()`, stable-return `rawOne()` /
+  `makeOne()` / `createOne()` / `createMany()` terminals, typed relationship
+  names, `recycle()`, `trashed()`, and explicit `connection()` targeting.
+- Seeders now support `static withoutModelEvents`, execution-scoped
+  `callOnce()`, and `SeederRunner.runDefault()`. The default CLI and
+  `configureOrm().seed()` entry point prefer `DatabaseSeeder` per configured
+  root, falling back to ordered files only when no root seeder exists.
+- `db:seed` now confirms before landlord or tenant seeding under
+  `NODE_ENV=production`; `--force` supports non-interactive production runs.
+
+### Fixed
+
+- `make()` now applies `for()` foreign keys from persisted models and rejects
+  parent factories, unsaved parents, and asynchronous `afterMaking` hooks
+  instead of silently omitting keys or leaving rejected promises unhandled.
+- A parent factory passed to `for()` is created once per operation, not once per
+  child. Recycled records now flow through nested `for()` and `hasAttached()`
+  relationships, with random selection, instead of producing duplicate graph
+  records.
+- Explicit factory connections now propagate through parent, child, attachment,
+  and bulk-insert paths. Bulk primary-key generation continues to respect model
+  overrides when an explicit connection is used.
+- Observer muting is async-context-local, so quiet and normal factory/seeder
+  work can run concurrently without leaking global event state.
+- Concurrent `callOnce()` branches can no longer start the same seeder twice,
+  and declining the production seed confirmation now returns a failing exit
+  status.
+- `count()` rejects negative, fractional and non-finite values before doing
+  work.
+
+### Compatibility
+
+- `make()` remains synchronous; use `create()` or `insert()` when an
+  `afterMaking` hook is asynchronous, and use `create()` when `for()` receives a
+  parent factory.
+- `has()` and `for()` relation names are now compile-time checked. JavaScript
+  callers retain the existing runtime errors for invalid relationships.
+- Production `db:seed` automation must pass `--force`.
+
+### Verification
+
+- Built the TypeScript package and type-checked the dedicated test
+  configuration.
+- Ran the complete Bun test suite: 1,530 tests passed across 118 files,
+  including live MySQL, PostgreSQL and Redis integrations.
+- `bun pm pack --dry-run` passed for version 1.11.0: 420 files, 2.72 MB
+  unpacked.
+
+## 1.10.0 - 2026-08-26
+
+### Added
+
+- Factories gained `insert(overrides?, { chunkSize? })` for fast, chunked bulk
+  persistence without model events. The method reuses the model bulk writer,
+  awaits `afterMaking`, supports `for()` parents, and rejects `has()` graphs it
+  cannot hydrate.
+
+### Changed
+
+- Factory definitions, states, sequences, overrides, and relationship keys now
+  use trusted attributes. Public `Model.create()` and `Model.insert()` remain
+  mass-assignment protected.
+
+### Fixed
+
+- Bulk factory inserts preserve in-place cast mutations made by `afterMaking`.
+- Trusted enum values are validated before the first chunk is written, avoiding
+  partial inserts when a later record is invalid.
+
+### Compatibility
+
+- The bulk path is opt-in. Existing `Factory.create()` behavior is unchanged;
+  use it when model instances, model lifecycle events, or `has()` relationships
+  are required. `Factory.insert()` returns `Promise<void>`.
+
+### Verification
+
+- Built the TypeScript package.
+- Ran the complete Bun test suite: 1,515 tests passed across 118 files.
+- `git diff --check` passed.
+
 ## 1.9.1 - 2026-08-25
 
 ### Fixed

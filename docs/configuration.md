@@ -336,7 +336,7 @@ seedersPath: "./database/seeders",
 seedersPath: ["./database/seeders", "./database/test-fixtures"],
 ```
 
-Used by `bunx orm db:seed` and `orm.seed()`. See [Seeders](./seeders.md).
+Used by `bunx orm db:seed` and `orm.seed()`. Each configured root runs its `DatabaseSeeder` when present, otherwise it falls back to all seeder files in filename order. See [Seeders](./seeders.md).
 
 ## `tenancy`
 

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { ModelConstructor } from "./Model.js";
 
 export interface ObserverContract<T = any> {
@@ -77,6 +78,8 @@ type ObserverEntry = {
   owner?: Function;
 };
 
+const eventState = new AsyncLocalStorage<boolean>();
+
 export class ObserverRegistry {
   private static observers = new Map<ModelConstructor<any>, ObserverEntry[]>();
   private static byEvent = new Map<string, Map<ModelConstructor<any>, ObserverEntry[]>>();
@@ -106,6 +109,14 @@ export class ObserverRegistry {
   static hasAny<T>(modelClass: ModelConstructor<T>): boolean {
     const list = this.observers.get(modelClass);
     return !!list && list.length > 0;
+  }
+
+  static eventsMuted(): boolean {
+    return eventState.getStore() === true;
+  }
+
+  static withoutEvents<T>(callback: () => T): T {
+    return eventState.run(true, callback);
   }
 
   static hasFor<T>(event: keyof ObserverContract, modelClass: ModelConstructor<T>): boolean {
@@ -145,6 +156,7 @@ export class ObserverRegistry {
   }
 
   static async dispatch<T>(event: keyof ObserverContract, model: T): Promise<void> {
+    if (this.eventsMuted()) return;
     const eventMap = this.byEvent.get(event);
     if (!eventMap) return;
     const observers = eventMap.get(Object.getPrototypeOf(model).constructor as ModelConstructor<T>);

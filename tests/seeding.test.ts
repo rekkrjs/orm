@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "path";
 import { mkdir, rm } from "fs/promises";
-import { Connection, ConnectionManager, Model, Schema, Seeder, SeederRunner, TenantContext, Factory } from "../src/index.js";
+import { Connection, ConnectionManager, Model, Schema, Seeder, SeederRunner, TenantContext, Factory, ObserverRegistry } from "../src/index.js";
 import { cleanupSqliteFile, setupTestDb } from "./helpers.js";
 
 class SeedUser extends Model {
@@ -140,6 +140,109 @@ export default class SecondSeeder extends Seeder {
     await rm(seedDir, { recursive: true, force: true });
   });
 
+  test("SeederRunner.runDefault prefers DatabaseSeeder without running child files twice", async () => {
+    setupTestDb();
+    await Schema.create("seed_users", (table) => {
+      table.increments("id");
+      table.string("name");
+      table.string("email");
+    });
+
+    const seedDir = join(process.cwd(), "tests", "temp_default_seeders");
+    await rm(seedDir, { recursive: true, force: true });
+    await mkdir(seedDir, { recursive: true });
+    await Bun.write(
+      join(seedDir, "UserSeeder.ts"),
+      `
+import { Seeder, Model } from "../../src/index.js";
+class DefaultSeedUser extends Model {
+  static table = "seed_users";
+  static timestamps = false;
+  static fillable = ["name", "email"];
+}
+export default class UserSeeder extends Seeder {
+  async run(): Promise<void> {
+    await DefaultSeedUser.create({ name: "Child", email: "child@example.test" });
+  }
+}`
+    );
+    await Bun.write(
+      join(seedDir, "IgnoredSeeder.ts"),
+      `
+import { Seeder, Model } from "../../src/index.js";
+class DefaultSeedUser extends Model {
+  static table = "seed_users";
+  static timestamps = false;
+  static fillable = ["name", "email"];
+}
+export default class IgnoredSeeder extends Seeder {
+  async run(): Promise<void> {
+    await DefaultSeedUser.create({ name: "Ignored", email: "ignored@example.test" });
+  }
+}`
+    );
+    await Bun.write(
+      join(seedDir, "DatabaseSeeder.ts"),
+      `
+import { Seeder } from "../../src/index.js";
+import UserSeeder from "./UserSeeder.js";
+export default class DatabaseSeeder extends Seeder {
+  async run(): Promise<void> {
+    await this.call(UserSeeder);
+  }
+}`
+    );
+
+    await new SeederRunner().runDefault(seedDir);
+
+    expect((await SeedUser.all()).map((user) => user.getAttribute("name"))).toEqual(["Child"]);
+    await rm(seedDir, { recursive: true, force: true });
+  });
+
+  test("a seeder can mute model events for its full nested run", async () => {
+    setupTestDb();
+    await Schema.create("seed_users", (table) => {
+      table.increments("id");
+      table.string("name");
+      table.string("email");
+    });
+
+    const events: string[] = [];
+    ObserverRegistry.register(SeedUser, {
+      created(model) { events.push(model.getAttribute("name")); },
+    });
+
+    class NestedSeeder extends Seeder {
+      async run(): Promise<void> {
+        await SeedUser.create({ name: "Nested quiet", email: "nested-quiet@example.test" });
+      }
+    }
+
+    class QuietSeeder extends Seeder {
+      static override withoutModelEvents = true;
+      async run(): Promise<void> {
+        await SeedUser.create({ name: "Root quiet", email: "root-quiet@example.test" });
+        await this.call(NestedSeeder);
+      }
+    }
+
+    class LoudSeeder extends Seeder {
+      async run(): Promise<void> {
+        await SeedUser.create({ name: "Loud", email: "loud@example.test" });
+      }
+    }
+
+    try {
+      const runner = new SeederRunner();
+      await runner.run(QuietSeeder);
+      expect(events).toEqual([]);
+      await runner.run(LoudSeeder);
+      expect(events).toEqual(["Loud"]);
+    } finally {
+      ObserverRegistry.unregister(SeedUser);
+    }
+  });
+
   test("SeederRunner uses the active tenant connection when running inside TenantContext", async () => {
     setupTestDb();
 
@@ -203,6 +306,63 @@ export default class SecondSeeder extends Seeder {
 
     await new RootSeeder().run();
     expect((await SeedUser.orderBy("id").get()).map((user) => user.getAttribute("name"))).toEqual(["Alpha", "Beta"]);
+  });
+
+  test("Seeder.callOnce deduplicates diamond dependencies within each runner execution", async () => {
+    setupTestDb();
+    await Schema.create("seed_users", (table) => {
+      table.increments("id");
+      table.string("name");
+      table.string("email");
+    });
+
+    let runs = 0;
+    class RoleSeeder extends Seeder {
+      async run(): Promise<void> {
+        runs++;
+        await SeedUser.create({ name: "Role", email: `role-${runs}@example.test` });
+      }
+    }
+    class FirstSeeder extends Seeder {
+      async run(): Promise<void> { await this.call(RoleSeeder); }
+    }
+    class SecondSeeder extends Seeder {
+      async run(): Promise<void> { await this.callOnce(RoleSeeder); }
+    }
+    class RootSeeder extends Seeder {
+      async run(): Promise<void> { await this.call(FirstSeeder, SecondSeeder); }
+    }
+
+    const runner = new SeederRunner();
+    await runner.run(RootSeeder);
+    expect(runs).toBe(1);
+    expect(await SeedUser.query().count()).toBe(1);
+
+    await runner.run(RootSeeder);
+    expect(runs).toBe(2);
+    expect(await SeedUser.query().count()).toBe(2);
+
+    let concurrentRuns = 0;
+    class ConcurrentRoleSeeder extends Seeder {
+      async run(): Promise<void> {
+        await Promise.resolve();
+        concurrentRuns++;
+      }
+    }
+    class ConcurrentFirstSeeder extends Seeder {
+      async run(): Promise<void> { await this.callOnce(ConcurrentRoleSeeder); }
+    }
+    class ConcurrentSecondSeeder extends Seeder {
+      async run(): Promise<void> { await this.callOnce(ConcurrentRoleSeeder); }
+    }
+    class ConcurrentRootSeeder extends Seeder {
+      async run(): Promise<void> {
+        await Promise.all([this.call(ConcurrentFirstSeeder), this.call(ConcurrentSecondSeeder)]);
+      }
+    }
+
+    await runner.run(ConcurrentRootSeeder);
+    expect(concurrentRuns).toBe(1);
   });
 
   test("SeederRunner rolls back the full run when a seeder fails", async () => {

@@ -46,7 +46,7 @@ await migrator.dumpSchema("./database/schema.sql");
 ### Seeders
 
 ```ts
-await orm.seed();                                     // run config.seedersPath
+await orm.seed();                                     // run DatabaseSeeder, or all-files fallback
 
 // Or full SeederRunner API
 const seeder = orm.seeder();

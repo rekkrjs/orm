@@ -202,10 +202,15 @@ await User.insert(records, { events: false });
 await User.createMany(records, { events: false });
 await User.saveMany(models, { events: false });
 
+// Factory graph: models and relationships are still hydrated
+await User.factory().has(Post.factory(), "posts").createQuietly();
+
 // Low-level builder inserts and upserts skip observers
 await User.query().insert(records);
 await User.query().upsert(records, "id");
 ```
+
+For a complete seeder tree, set `static withoutModelEvents = true` on its root `Seeder`; the setting propagates through `this.call()`. See [Seeders and Factories](./seeders.md#writing-a-seeder).
 
 Builder `update()` and `delete()` dispatch their after-hooks when observers are registered, but skip per-instance before-hooks. For full lifecycle control, work through model instances.
 

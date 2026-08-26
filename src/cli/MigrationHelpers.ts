@@ -354,7 +354,7 @@ export async function runSeederCommand(
 
   const runDefault = async () => {
     if (target) { await runner.runTarget(target, seederPath); return; }
-    await runner.runPaths(seederPath);
+    await runner.runDefault(seederPath);
   };
 
   if (scope.scope === "default" || scope.scope === "landlord") { await runDefault(); return; }

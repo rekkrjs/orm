@@ -33,7 +33,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 - 🔗 **Relations** — Standard, many-to-many, polymorphic, through, one-of-many, and relation queries
 - 👁️ **Observers** — Lifecycle hooks (`creating`, `created`, `updating`, `updated`, etc.)
 - 🚀 **Migrations & CLI** — Create, run, reset, refresh, and inspect migrations from the command line
-- 🌱 **Seeders & Factories** — Run all seeders or target one seeder by name/file, plus lightweight model factories
+- 🌱 **Seeders & Factories** — Root or targeted seeders plus typed factories for bulk data and relationship graphs
 - 💬 **REPL** — Inspect models and run queries interactively with `orm repl`
 - ⚡ **Streaming** — `chunk`, `chunkById`, `cursor`, `each`, `eachById`, and `lazy` for memory-efficient large dataset processing
 - 🏢 **Multi-tenant** — Database-per-tenant, schema-per-tenant, and RLS strategies with `DB.tenant()` and `TenantContext`

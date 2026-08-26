@@ -620,7 +620,7 @@ async function main() {
     { name: "make:migration",   sig: "make:migration {name} {--model} {--m} {--dir=} {--models-dir=}", desc: "Create a new migration file" },
     { name: "make:model",       sig: "make:model {name} {--migration} {--m} {--dir=}",           desc: "Create a new model file" },
     { name: "migrate:make",    sig: "migrate:make {name} {dir?}",                                desc: "Create a new migration file" },
-    { name: "db:seed",          sig: "db:seed {seeder?} {--landlord} {--tenants} {--tenant=}",    desc: "Run database seeders" },
+    { name: "db:seed",          sig: "db:seed {seeder?} {--landlord} {--tenants} {--tenant=} {--force}", desc: "Run database seeders" },
     { name: "schema:dump",      sig: "schema:dump {path?}",                                       desc: "Dump current schema to SQL" },
     { name: "schema:squash",    sig: "schema:squash {path?}",                                     desc: "Dump schema and mark migrations as run" },
     { name: "types:generate",   sig: "types:generate {dir?} {--landlord} {--tenant=}",            desc: "Generate TypeScript model types from DB schema" },

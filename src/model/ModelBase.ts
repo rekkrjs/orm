@@ -121,6 +121,10 @@ export type BelongsToRelationName<T> = Extract<{
   [K in Exclude<keyof T, BaseModelInstanceKey>]-?: T[K] extends (...args: any[]) => BelongsTo<any> ? K : never;
 }[Exclude<keyof T, BaseModelInstanceKey>], string>;
 
+export type ChildRelationName<T> = Extract<{
+  [K in Exclude<keyof T, BaseModelInstanceKey>]-?: T[K] extends (...args: any[]) => HasMany<any> | HasOne<any> | MorphMany<any> | MorphOne<any> ? K : never;
+}[Exclude<keyof T, BaseModelInstanceKey>], string>;
+
 export type AttachedToRelationName<T> = Extract<{
   [K in Exclude<keyof T, BaseModelInstanceKey>]-?: T[K] extends (...args: any[]) => BelongsToMany<any, any, any> | MorphToMany<any, any, any, any> ? K : never;
 }[Exclude<keyof T, BaseModelInstanceKey>], string>;
