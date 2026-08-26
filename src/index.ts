@@ -88,7 +88,13 @@ export type { ModelDeclarationInfo } from "./typegen/discoverModelTables.js";
 
 export { Seeder, SeederRunner } from "./seeding/Seeder.js";
 export { Factory, Sequence } from "./seeding/Factory.js";
-export type { FactoryState, FactoryStateValue, AfterHook } from "./seeding/Factory.js";
+export type {
+  FactoryAttributes,
+  FactoryInsertOptions,
+  FactoryState,
+  FactoryStateValue,
+  AfterHook,
+} from "./seeding/Factory.js";
 
 // Validation lives at the `@rekkr/orm/validation` subpath import only —
 // keeping it out of the main entry trims the surface and makes the dependency

@@ -198,6 +198,7 @@ await user.deleteQuietly();
 await model.save({ events: false });
 
 // Bulk methods
+await User.insert(records, { events: false });
 await User.createMany(records, { events: false });
 await User.saveMany(models, { events: false });
 

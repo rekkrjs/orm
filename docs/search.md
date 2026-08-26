@@ -200,7 +200,7 @@ await post.unsearchable();  // remove from index
 
 When any observer is registered for a model, these paths now fire observer events too:
 
-- `Model.insert([...])` — routes through `saveMany()` to dispatch `created`/`saved` per row (one SQL INSERT per row; cost only paid when observers attached). Pass `{ events: false }` to opt out.
+- `Model.insert([...])` — routes through `saveMany()` to dispatch lifecycle events per row (one SQL INSERT per row; cost only paid when observers are attached). Pass `{ events: false }` to opt out.
 - `Model.where(...).update({...})` — pre-fetches matching IDs, runs the UPDATE, then dispatches `updated`/`saved` per affected row.
 - `Model.where(...).delete()` — pre-fetches matching IDs, runs DELETE, then dispatches `deleted` per removed row.
 

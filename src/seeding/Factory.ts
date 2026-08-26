@@ -1,12 +1,17 @@
-import type { ModelMassAssignmentInput, ModelConstructor } from "../model/Model.js";
+import type { ModelAttributeInput, ModelConstructor } from "../model/Model.js";
 import { Model, __registerModelFactory } from "../model/Model.js";
+import { bulkInsertModelRecords, validateBulkInsertChunkSize } from "../model/ModelPersistence.js";
 import { snakeCase } from "../utils.js";
 
+export type FactoryAttributes<T = any> = ModelAttributeInput<T>;
 export type FactoryStateValue<T = any> =
-  | ModelMassAssignmentInput<T>
-  | ((attributes: ModelMassAssignmentInput<T>, sequence: number) => ModelMassAssignmentInput<T>);
+  | FactoryAttributes<T>
+  | ((attributes: FactoryAttributes<T>, sequence: number) => FactoryAttributes<T>);
 export type FactoryState<T = any> = FactoryStateValue<T> | Sequence;
 export type AfterHook<T = any> = (model: T, sequence: number) => void | Promise<void>;
+export interface FactoryInsertOptions {
+  chunkSize?: number;
+}
 
 /**
  * Cycles attribute patches across generated records by sequence (Laravel's
@@ -59,8 +64,8 @@ export class Factory<T = any> {
   private trustedAttributes: Record<string, any> = {};
 
   /** Subclass overrides this to return the base attributes for a record. */
-  definition(_sequence: number): ModelMassAssignmentInput<T> {
-    return {} as ModelMassAssignmentInput<T>;
+  definition(_sequence: number): FactoryAttributes<T> {
+    return {} as FactoryAttributes<T>;
   }
 
   /**
@@ -115,11 +120,11 @@ export class Factory<T = any> {
     return next;
   }
 
-  make(overrides: ModelMassAssignmentInput<T> = {}): T | T[] {
+  make(overrides: FactoryAttributes<T> = {}): T | T[] {
     const models: T[] = [];
     for (let index = 0; index < this.amount; index++) {
       const attributes = this.attributesFor(index + 1, overrides);
-      models.push(new this.model(attributes) as T);
+      models.push(this.newModel(attributes));
     }
     for (let i = 0; i < models.length; i++) {
       for (const hook of this.afterMakingHooks) void hook(models[i], i + 1);
@@ -127,16 +132,16 @@ export class Factory<T = any> {
     return this.amount === 1 ? models[0] : models;
   }
 
-  async create(overrides: ModelMassAssignmentInput<T> = {}): Promise<T | T[]> {
+  async create(overrides: FactoryAttributes<T> = {}): Promise<T | T[]> {
     const models: T[] = [];
     for (let index = 0; index < this.amount; index++) {
       const sequence = index + 1;
       const attributes = this.attributesFor(sequence, overrides);
-      const model = new this.model(attributes) as T;
+      const model = this.newModel(attributes);
       await this.applyBelongsTo(model);
       (model as any).forceFill(this.trustedAttributes);
-      await (model as any).save();
       for (const hook of this.afterMakingHooks) await hook(model, sequence);
+      await (model as any).save();
       await this.createHasChildren(model);
       for (const hook of this.afterCreatingHooks) await hook(model, sequence);
       models.push(model);
@@ -144,13 +149,41 @@ export class Factory<T = any> {
     return this.amount === 1 ? models[0] : models;
   }
 
-  raw(overrides: ModelMassAssignmentInput<T> = {}): ModelMassAssignmentInput<T> | ModelMassAssignmentInput<T>[] {
+  async insert(
+    overrides: FactoryAttributes<T> = {},
+    options: FactoryInsertOptions = {},
+  ): Promise<void> {
+    validateBulkInsertChunkSize(options.chunkSize);
+    if (this.hasChildren.length > 0) {
+      throw new Error("Factory.insert() cannot create child relationships. Use Factory.create() when using has().");
+    }
+
+    const records: FactoryAttributes<T>[] = [];
+    for (let index = 0; index < this.amount; index++) {
+      const sequence = index + 1;
+      const model = this.newModel(this.attributesFor(sequence, overrides));
+      await this.applyBelongsTo(model);
+      (model as any).forceFill(this.trustedAttributes);
+      for (const hook of this.afterMakingHooks) await hook(model, sequence);
+      const rawModel = model as any;
+      Object.assign(rawModel.$attributes, rawModel.getDirty());
+      records.push({ ...rawModel.$attributes });
+    }
+
+    await bulkInsertModelRecords(this.model, records as any, {
+      trusted: true,
+      events: false,
+      chunkSize: options.chunkSize,
+    });
+  }
+
+  raw(overrides: FactoryAttributes<T> = {}): FactoryAttributes<T> | FactoryAttributes<T>[] {
     const records = Array.from({ length: this.amount }, (_, i) => this.attributesFor(i + 1, overrides));
     return this.amount === 1 ? records[0] : records;
   }
 
-  private attributesFor(sequence: number, overrides: ModelMassAssignmentInput<T>): ModelMassAssignmentInput<T> {
-    let attributes: ModelMassAssignmentInput<T> = { ...this.definition(sequence) };
+  private attributesFor(sequence: number, overrides: FactoryAttributes<T>): FactoryAttributes<T> {
+    let attributes: FactoryAttributes<T> = { ...this.definition(sequence) };
     for (const state of this.states) {
       let patch: Record<string, any>;
       if (state instanceof Sequence) {
@@ -165,6 +198,10 @@ export class Factory<T = any> {
     return { ...attributes, ...overrides };
   }
 
+  private newModel(attributes: FactoryAttributes<T>): T {
+    return (new this.model() as any).forceFill(attributes) as T;
+  }
+
   private async applyBelongsTo(model: T): Promise<void> {
     for (const { factoryOrModel, relation } of this.belongsToParents) {
       const parent =
@@ -176,7 +213,7 @@ export class Factory<T = any> {
 
   private resolveBelongsToKeys(parent: Model, relation?: string): { foreignKey: string; ownerKey: string } {
     if (relation) {
-      const probe = new this.model({}) as any;
+      const probe = new this.model() as any;
       const rel = probe[relation]();
       return {
         foreignKey: rel.getForeignKeyName ? rel.getForeignKeyName() : rel.foreignKey,

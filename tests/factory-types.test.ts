@@ -60,6 +60,7 @@ function _typeAssertions(): void {
     expectType<TUser | TUser[]>(oneMade);
     const created = TUser.factory().create();
     expectType<Promise<TUser | TUser[]>>(created);
+    expectType<Promise<void>>(TUser.factory().insert({}, { chunkSize: 100 }));
 
     // Built-in chain stays a Factory<TUser>.
     const c = TUser.factory().count(3).state({ name: "x" }).for(TPost.factory(), "user");

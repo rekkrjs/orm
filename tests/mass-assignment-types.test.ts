@@ -113,10 +113,9 @@ function typeAssertions(): void {
     factory.state({ name: "Factory state" });
     factory.make({ email: "factory@example.com" });
     factory.create({ name: "Factory create" });
-    // @ts-expect-error factory state is mass-assignment protected.
     factory.state({ admin: true });
-    // @ts-expect-error factory overrides are mass-assignment protected.
     factory.create({ admin: true });
+    factory.insert({ id: 99, admin: true }, { chunkSize: 100 });
 
     EmptyPolicyModel.create({});
     // @ts-expect-error an empty generated subset rejects every property.

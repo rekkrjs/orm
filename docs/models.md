@@ -647,7 +647,7 @@ trusted attributes; `createMany()` still filters its input while constructing th
 ### `insert` / `insertOrIgnore` / `upsert`
 
 ```ts
-// Fast bulk insert — no model events
+// Bulk insert; registered observers trigger per-row saves unless events is false
 await User.insert(
   [
     { name: "Alice", email: "alice@example.com" },
@@ -679,7 +679,7 @@ await User.upsert(
 
 ### `createMany` / `saveMany`
 
-These fire model events; `insert` does not.
+`createMany()` and `saveMany()` fire model events by default. `Model.insert()` also fires them when observers are registered; pass `{ events: false }` to force the unconditional bulk path. That bulk path uses chunks of 100 unless `chunkSize` is explicit.
 
 ```ts
 const users = await User.createMany([

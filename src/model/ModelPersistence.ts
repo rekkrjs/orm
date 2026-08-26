@@ -20,6 +20,48 @@ import { normalizeHydratedCastValue } from "./ModelJsonRow.js";
 
 type TimestampColumns = { createdAt: string; updatedAt: string };
 
+interface BulkInsertModelRecordsOptions {
+  trusted: boolean;
+  events: boolean;
+  chunkSize?: number;
+}
+
+export function validateBulkInsertChunkSize(chunkSize?: number): number {
+  if (chunkSize !== undefined && (!Number.isInteger(chunkSize) || chunkSize <= 0)) {
+    throw new RangeError("Bulk insert chunkSize must be a positive integer.");
+  }
+  return chunkSize ?? 100;
+}
+
+/** Internal bulk writer shared by public Model.insert() and trusted factories. */
+export async function bulkInsertModelRecords<M extends ModelConstructor>(
+  model: M,
+  records: ModelAttributeInput<InstanceType<M>>[],
+  options: BulkInsertModelRecordsOptions,
+): Promise<any> {
+  const chunkSize = validateBulkInsertChunkSize(options.chunkSize);
+  if (records.length === 0) return;
+
+  if (options.events && ObserverRegistry.hasAny(model)) {
+    const models = records.map((attributes) => {
+      const instance = new model() as InstanceType<M>;
+      options.trusted ? instance.forceFill(attributes as any) : instance.fill(attributes as any);
+      return instance;
+    });
+    await (model as any).saveMany(models, { chunkSize });
+    return models;
+  }
+
+  const prepared = await (model as any).prepareBulkRecords(records, undefined, options.trusted);
+  const connection = (model as any).getConnection();
+  const builder = new Builder(connection, (model as any).getQualifiedTable(connection)).setModel(model);
+  let result: any;
+  for (let i = 0; i < prepared.length; i += chunkSize) {
+    result = await builder.insert(prepared.slice(i, i + chunkSize));
+  }
+  return result;
+}
+
 export class ModelPersistence<T extends Record<string, any> = any> extends ModelCore<T> {
   /**
    * How this model's primary key gets its value: whether we generate it, plus
@@ -44,7 +86,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
 
   static async prepareBulkRecords<M extends ModelConstructor>(
     this: M,
-    records: ModelMassAssignmentInput<InstanceType<M>>[],
+    records: ModelAttributeInput<InstanceType<M>>[],
     resolvedTimestampColumns?: TimestampColumns | null,
     trusted = false,
   ): Promise<Record<string, any>[]> {
@@ -54,11 +96,13 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       : resolvedTimestampColumns;
     const now = timestampColumns ? new Date().toISOString() : null;
     const prepared: Record<string, any>[] = [];
+    const trustedValidator = trusted ? new this() as InstanceType<M> : null;
 
     for (const record of records) {
       let attributes: Record<string, any>;
       if (trusted) {
         attributes = { ...record };
+        trustedValidator!.validateBackedEnumAttributes(attributes);
       } else {
         const instance = new this() as InstanceType<M>;
         instance.fill(record as any);
@@ -207,24 +251,11 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     options: BulkModelOptions = {}
   ): Promise<any> {
     const list = Array.isArray(records) ? records : [records];
-
-    // Route through saveMany() when observers are attached so they fire
-    // (creating/created/saving/saved per row). Slower — one INSERT per row —
-    // but only when an observer is actually registered for this model.
-    const wantsEvents = options.events !== false;
-    if (wantsEvents && ObserverRegistry.hasAny(this as any)) {
-      const models = list.map((attrs) => new (this as any)(attrs) as InstanceType<M>);
-      await (this as any).saveMany(models, { chunkSize: options.chunkSize });
-      return models;
-    }
-
-    const prepared = await (this as any).prepareBulkRecords(list);
-    const chunkSize = options.chunkSize || prepared.length || 1;
-    let result: any;
-    for (let i = 0; i < prepared.length; i += chunkSize) {
-      result = await (this as any).query().insert(prepared.slice(i, i + chunkSize) as any);
-    }
-    return result;
+    return await bulkInsertModelRecords(this, list as any, {
+      trusted: false,
+      events: options.events !== false,
+      chunkSize: options.chunkSize,
+    });
   }
 
   static async upsert<M extends ModelConstructor>(

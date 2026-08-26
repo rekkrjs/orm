@@ -152,6 +152,7 @@ Factory.register(User, UserFactory);
 const raw = User.factory().raw();                 // attribute object
 const model = User.factory().make();              // unsaved User
 const created = await User.factory().create();    // saved User
+await User.factory().count(1_000).insert();        // bulk insert, no model events
 ```
 
 ### Counts and state overrides
@@ -177,7 +178,9 @@ const owner = await User.factory().create({ role: "owner" });
 
 Precedence: `definition()` → states (in order) → per-call override.
 
-`raw()`, `make()`, and `create()` each respect the count and state, so a factory also seeds unsaved fixtures for a test:
+Factory attributes are trusted and may set guarded columns such as IDs or administrative flags. Normal model APIs such as `Model.create()` and `Model.insert()` still enforce mass-assignment protection.
+
+`raw()`, `make()`, `create()`, and `insert()` each respect the count and state. A factory can also build unsaved fixtures for a test:
 
 ```ts
 const fixtures = User.factory().count(3).make();   // User[] — unsaved
@@ -218,6 +221,8 @@ await User.factory()
   .create();
 ```
 
+`insert(overrides?, { chunkSize? })` writes in chunks of 100 by default and returns `Promise<void>`; `chunkSize` must be a positive integer. It awaits `afterMaking` hooks, but skips model observers and `afterCreating`. It supports `.for()`, including a parent factory. It rejects `.has()` because bulk inserts do not hydrate parent keys; use `create()` when child relationships are required.
+
 ## Test data idempotency
 
 Seeders run more than once during development. Make them safe to re-run:
@@ -246,7 +251,7 @@ For destructive seeders (wipe and reload), call `Model.truncate()` first or rely
 - **Order matters.** ORM runs seeders alphabetically by filename. If `PostSeeder` needs users, prefix it (`02_PostSeeder.ts`) or call seeders from a single `DatabaseSeeder` that lists them in the right order.
 - **Atomicity surprises.** If one seeder throws, the transaction rolls back the entire run. Side-effects sent to external systems (emails, queue jobs) outside the database still went out — make seeders pure data work.
 - **Tenant scope is implicit.** Inside `DB.tenant()` or `bunx orm db:seed --tenant`, `this.connection` is the tenant connection. If you also want to seed landlord-scoped data, do it outside the tenant block.
-- **Factories don't apply observers by default for `raw()` and `make()`.** Only `create()` persists the record (and therefore fires observers).
+- **Factory persistence has two modes.** `create()` saves models individually and fires observers; `insert()` writes in bulk without observers. `raw()` and `make()` do not persist.
 
 ## Where to next
 

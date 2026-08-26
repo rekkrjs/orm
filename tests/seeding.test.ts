@@ -161,7 +161,7 @@ export default class SecondSeeder extends Seeder {
 
       class TenantSeeder extends Seeder {
         async run(): Promise<void> {
-          await SeedUser.create({ name: "Tenant", email: "tenant@example.test" });
+          await SeedUser.factory().insert({ name: "Tenant", email: "tenant@example.test" });
         }
       }
 
@@ -215,7 +215,7 @@ export default class SecondSeeder extends Seeder {
 
     class WriteSeeder extends Seeder {
       async run(): Promise<void> {
-        await SeedUser.create({ name: "BeforeFail", email: "before@example.test" });
+        await SeedUser.factory().insert({ name: "BeforeFail", email: "before@example.test" });
       }
     }
 
