@@ -91,6 +91,9 @@ describe("Date handling", () => {
     const epoch = CalendarDay.hydrate({ day: Date.parse("2026-08-26T23:45:12Z") });
     expect(epoch.day.toISOString()).toBe("2026-08-26T00:00:00.000Z");
 
+    const earlyYear = CalendarDay.hydrate({ day: "0004-02-29" });
+    expect(earlyYear.day.toISOString()).toBe("0004-02-29T00:00:00.000Z");
+
     const invalid = CalendarDay.hydrate({ day: "not-a-date" });
     expect(invalid.day).toBeInstanceOf(Date);
     expect(Number.isNaN(invalid.day.getTime())).toBe(true);

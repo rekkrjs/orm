@@ -222,7 +222,7 @@ user.settings.theme;       // "dark" (parsed JSON)
 | `string` | Reads / writes as a string |
 | `date` | Stores `YYYY-MM-DD`; reads as a `Date` at UTC midnight |
 | `datetime` | Reads as `Date`, stores a full UTC ISO string from `Date` input |
-| `timestamp` | Alias of `datetime`; this is not Laravel's integer Unix-timestamp cast |
+| `timestamp` | Alias of `datetime` |
 | `json`, `array`, `object` | Stores JSON string, reads parsed value |
 | `base64` | Base64-encoded on write, decoded on read. Encoding, not encryption |
 
@@ -755,8 +755,8 @@ user.isDirty();           // false
 user.getChanges();        // {}
 ```
 
-Values decoded by a `json` or `date` cast are rebuilt from the restored
-attributes, so an edit made in place on one of those objects is discarded too.
+Values decoded by a `json`, `date`, `datetime`, or `timestamp` cast are rebuilt
+from the restored attributes, so an edit made in place is discarded too.
 
 That baseline is whatever the model last accepted as original — normally the
 last `save()`, but `syncOriginal()` moves it without writing anything:
@@ -769,8 +769,9 @@ user.isDirty();           // false — this is the baseline now
 user.discardChanges();    // rolls back to rowFromSomewhereElse, not to the row
 ```
 
-In-place edits to a `json` or `date` cast are folded into the baseline too, so
-`syncOriginal()` sees a mutated object the same way `save()` does.
+In-place edits to a `json`, `date`, `datetime`, or `timestamp` cast are folded
+into the baseline too, so `syncOriginal()` sees a mutated object the same way
+`save()` does.
 
 ### `isDirty` / `isClean` / `getDirty`
 

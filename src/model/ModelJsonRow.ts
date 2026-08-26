@@ -18,6 +18,14 @@ interface CastContext {
   readonly attribute: string;
 }
 
+function utcCalendarDate(year: number, month: number, day: number): Date {
+  // Date.UTC treats years 0–99 as 1900–1999. Seed from leap year 2000, then
+  // restore the requested year so four-digit database dates keep their value.
+  const date = new Date(Date.UTC(year < 100 ? 2000 : year, month - 1, day));
+  if (year < 100) date.setUTCFullYear(year);
+  return date;
+}
+
 const instanceSerializationMethods = [
   "toJSON",
   "json",
@@ -125,7 +133,7 @@ export function castBuiltInAttribute(
         const year = Number(match[1]);
         const month = Number(match[2]);
         const day = Number(match[3]);
-        date = new Date(Date.UTC(year, month - 1, day));
+        date = utcCalendarDate(year, month, day);
         if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
           return new Date(NaN);
         }
@@ -135,7 +143,7 @@ export function castBuiltInAttribute(
       else if (typeof value === "number") date = new Date(value);
       else return new Date(NaN);
       if (Number.isNaN(date.getTime())) return new Date(NaN);
-      return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+      return utcCalendarDate(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
     }
     case "datetime":
     case "timestamp":

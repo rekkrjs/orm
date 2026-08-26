@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.12.0 - 2026-08-26
+## 1.12.1 - 2026-08-26
 
 ### Added
 
@@ -22,6 +22,8 @@
 
 - The `timestamp` model cast is now a complete alias of `datetime`: it reads as
   `Date`, writes ISO strings, and tracks in-place `Date` mutations.
+- Calendar-date casts preserve years `0000` through `0099` instead of allowing
+  JavaScript's legacy `Date.UTC` remapping to shift them into 1900–1999.
 
 ### Verification
 
@@ -29,7 +31,7 @@
   including live MySQL, PostgreSQL and Redis integrations.
 - Verified the cross-driver calendar-date contract under
   `TZ=America/New_York` and `TZ=Asia/Tokyo`.
-- `bun pm pack --dry-run` passed for version 1.12.0: 420 files, 2.73 MB
+- `bun pm pack --dry-run` passed for version 1.12.1: 420 files, 2.73 MB
   unpacked.
 
 ## 1.11.0 - 2026-08-26

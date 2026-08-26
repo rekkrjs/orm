@@ -670,13 +670,13 @@ export class ModelCore<T extends Record<string, any> = any> {
   /**
    * Attributes in the shape the driver accepts.
    *
-   * In memory a date cast stays an ISO string — that is the documented contract
-   * and what the generated types say — so a model can be built with no
-   * connection at all. MySQL rejects ISO-8601 in DATETIME and TIMESTAMP columns,
-   * so declared date columns become Date objects here and Connection sends them
-   * in the form supported by each driver. PostgreSQL, unlike SQLite and MySQL,
-   * requires native booleans rather than the cast's portable 1/0 representation.
-   * Only explicitly cast columns are touched.
+   * In memory a temporal cast stays a portable string — full ISO for instants,
+   * `YYYY-MM-DD` for calendar dates — so a model can be built with no connection.
+   * MySQL rejects ISO-8601 in DATETIME and TIMESTAMP columns, so those values
+   * become Date objects here and Connection sends them in the supported form.
+   * Calendar-date literals need no time-zone round trip. PostgreSQL, unlike
+   * SQLite and MySQL, requires native booleans rather than the cast's portable
+   * 1/0 representation. Only explicitly cast columns are touched.
    */
   attributesForDriver(
     connection: Connection,
@@ -716,9 +716,9 @@ export class ModelCore<T extends Record<string, any> = any> {
 
   getDirty(): Partial<T> {
     const dirty: Partial<T> = {};
-    // json and date casts decode to objects the caller holds by reference, so a
-    // mutation lands in the cast cache and never touches $attributes or the
-    // $dirtyKeys set. Re-serializing the cached value is what surfaces it.
+    // JSON and temporal casts decode to objects the caller holds by reference,
+    // so a mutation lands in the cast cache and never touches $attributes or
+    // the $dirtyKeys set. Re-serializing the cached value is what surfaces it.
     const { json: jsonKeys, date: dateKeys } = mutableCastKeys(this.$mergedCasts);
     const keys = new Set(this.$dirtyKeys);
     for (const key of jsonKeys) {
@@ -781,7 +781,7 @@ export class ModelCore<T extends Record<string, any> = any> {
    * until the next write. Nothing is written to the row — this moves what the
    * model considers original, which is what `discardChanges()` rolls back to.
    *
-   * A `json` or `date` cast decodes to an object the caller holds by reference,
+   * A JSON or temporal cast decodes to an object the caller holds by reference,
    * so an in-place edit lands in `$castCache` and never reaches `$attributes`.
    * Copying `$attributes` alone would leave that edit outside the baseline and
    * the key would keep reading dirty forever, so the cached values are folded
@@ -789,10 +789,9 @@ export class ModelCore<T extends Record<string, any> = any> {
    * writes the row.
    *
    * `getDirty()` is what does the folding, rather than a second pass over the
-   * cache, because it already owns the rules: it re-serializes the cached value
-   * and compares dates by instant, so a `date` cast that was read but not
-   * changed keeps its stored "2026-01-02" instead of being rewritten as a full
-   * ISO timestamp. Models with no mutable cast skip the call entirely.
+   * cache, because it already owns the rules: it re-serializes cached values and
+   * compares dates by instant, so merely reading a cast does not alter the
+   * baseline. Models with no mutable cast skip the call entirely.
    *
    * Clearing `$dirtyKeys` is an optimisation, not a correctness requirement:
    * `getDirty()` compares every tracked key against `$original` anyway, so a

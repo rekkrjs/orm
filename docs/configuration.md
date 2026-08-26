@@ -129,13 +129,13 @@ SELECT
   TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW()) AS offset_seconds;
 ```
 
-ORM checks this before every date-bearing statement that runs directly on a
-pool, because consecutive statements may use different sessions. Inside
-`connection.transaction(...)` the session is pinned and the successful check is
-reused for the rest of that transaction. Group related date writes in a short
-transaction when the extra round trip matters; `max: 1` alone does not suppress
-the check because that physical connection can still be replaced after a
-disconnect.
+ORM checks this before every statement carrying a native `Date` binding that
+runs directly on a pool, because consecutive statements may use different
+sessions. Inside `connection.transaction(...)` the session is pinned and the
+successful check is reused for the rest of that transaction. Group related date
+writes in a short transaction when the extra round trip matters; `max: 1` alone
+does not suppress the check because that physical connection can still be
+replaced after a disconnect.
 
 SQLite connections apply production-friendly defaults before the first query:
 

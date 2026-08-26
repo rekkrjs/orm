@@ -102,6 +102,9 @@ describe.serial("Date storage across drivers", () => {
     const taken = new Date("2026-08-19T14:00:00.123Z");
     const reading = await Reading.create({ label: "one", taken_at: taken } as any);
 
+    expect(await Schema.getColumn("readings", "taken_at", connection))
+      .toMatchObject({ type: "datetime(3)", precision: 3 });
+
     const rows = await connection.query("SELECT label, taken_at, created_at FROM readings");
     expect(rows).toHaveLength(1);
     // ISO-8601 is a syntax error to MySQL: this insert failing is the whole point.
@@ -260,6 +263,9 @@ describe.serial("Date storage across drivers", () => {
     }, connection);
 
     await Reading.create({ label: "fine", taken_at: new Date("2026-08-19T14:00:00.123Z") } as any);
+
+    expect(await Schema.getColumn("readings", "taken_at", connection))
+      .toMatchObject({ type: "timestamp without time zone", precision: 3 });
 
     const rows = await connection.query("SELECT taken_at FROM readings");
     expect(new Date(rows[0].taken_at).toISOString()).toBe("2026-08-19T14:00:00.123Z");
