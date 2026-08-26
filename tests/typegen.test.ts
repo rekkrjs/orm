@@ -140,7 +140,7 @@ export default class DateCastRecord extends Model {
     expect(content).toContain("created_at?: string | null;");
     expect(content).toContain("updated_at?: Date | null;");
     expect(content).toContain("deleted_at?: string | null;");
-    expect(content).toContain("stored_timestamp?: string | null;");
+    expect(content).toContain("stored_timestamp?: Date | null;");
     expect(content).toContain("decoded_datetime?: Date | null;");
   });
 

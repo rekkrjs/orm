@@ -37,6 +37,7 @@ class CastedModel extends PermissiveModel {
     secret: "base64",
     code: UppercaseCast,
     happened_at: "datetime",
+    stamped_at: "timestamp",
   };
 }
 
@@ -71,6 +72,7 @@ describe("Attribute Casting", () => {
       table.text("secret").nullable();
       table.string("code").nullable();
       table.dateTime("happened_at").nullable();
+      table.timestamp("stamped_at").nullable();
       table.timestamps();
     });
     await Schema.create("cached_casted", (table) => {
@@ -162,6 +164,24 @@ describe("Attribute Casting", () => {
     expect(record.isDirty()).toBe(false);
     const found = await CastedModel.find(record.id);
     expect(found!.happened_at.toISOString()).toBe("2000-01-02T03:04:05.000Z");
+  });
+
+  test("timestamp is a mutable datetime cast", async () => {
+    const record = await CastedModel.create({
+      stamped_at: new Date("2026-01-02T03:04:05.000Z"),
+      is_active: 0,
+      count: 0,
+      score: 0,
+    });
+
+    expect(record.$attributes.stamped_at).toBe("2026-01-02T03:04:05.000Z");
+    expect(record.stamped_at).toBeInstanceOf(Date);
+    record.stamped_at.setUTCFullYear(2000);
+    expect(record.getDirty()).toMatchObject({ stamped_at: "2000-01-02T03:04:05.000Z" });
+    await record.save();
+
+    const found = await CastedModel.find(record.id);
+    expect(found!.stamped_at.toISOString()).toBe("2000-01-02T03:04:05.000Z");
   });
 
   test("mutating a date read from a native row leaves the original snapshot intact", () => {

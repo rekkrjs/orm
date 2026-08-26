@@ -210,11 +210,11 @@ connection option is enabled). SQLite exposes its native `INTEGER`/`REAL`
 values as `number` and JSON-backed `TEXT` as `string`.
 
 When the generator discovers a model, it overlays the model's effective
-`date`/`datetime` read casts, including its active timestamp and soft-delete
-columns. Explicit casts take precedence; the write-only `"timestamp"` column
-hint does not become `Date`. Without a discovered model, declaration mode keeps
-the driver type because the model's configuration is unknown. Generated stubs
-do know their configuration: they extend `Model`, so their default
+`date`/`datetime`/`timestamp` read casts, including its active timestamp and
+soft-delete columns. Explicit casts take precedence. Without a discovered
+model, declaration mode keeps the driver type because the model's configuration
+is unknown. Generated stubs do know their configuration: they extend `Model`,
+so their default
 `created_at`/`updated_at` pair is emitted as `Date`. Other custom cast return
 types cannot be inferred automatically.
 

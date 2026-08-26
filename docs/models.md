@@ -220,8 +220,12 @@ user.settings.theme;       // "dark" (parsed JSON)
 | `decimal:N` | Stores fixed precision string (e.g. `decimal:2` for money) |
 | `string` | Reads / writes as a string |
 | `date`, `datetime` | Reads as `Date`, stores ISO string from `Date` input |
+| `timestamp` | Alias of `datetime`; this is not Laravel's integer Unix-timestamp cast |
 | `json`, `array`, `object` | Stores JSON string, reads parsed value |
 | `base64` | Base64-encoded on write, decoded on read. Encoding, not encryption |
+
+Here `timestamp` means a temporal database value, not Laravel's Unix-timestamp
+cast. Store epoch seconds with a `number` cast instead.
 
 ### Backed enum casts
 

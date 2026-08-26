@@ -11,6 +11,11 @@
   for MySQL's wider range and lack of session-time-zone conversion. PostgreSQL
   and SQLite compile them the same way as their `TIMESTAMP` counterparts.
 
+### Fixed
+
+- The `timestamp` model cast is now a complete alias of `datetime`: it reads as
+  `Date`, writes ISO strings, and tracks in-place `Date` mutations.
+
 ## 1.11.0 - 2026-08-26
 
 ### Added

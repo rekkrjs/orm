@@ -13,10 +13,10 @@ import { assertDeclaredEnumCast } from "./BackedEnum.js";
  * are listed, so parameterised casts ("decimal:2", "datetime:…") fall through
  * to the default. Returning `false` is always safe — it just costs a call.
  *
- * `date`/`datetime` are deliberately absent: `castAttribute` builds a fresh
- * Date, and short-circuiting to the stored instance would leak a mutable
- * reference to `$attributes` (which `$original` shares), so an in-place
- * `setUTCFullYear` would silently corrupt the snapshot.
+ * Date-producing casts are deliberately absent: `castAttribute` builds a
+ * fresh Date, and short-circuiting to the stored instance would leak a mutable
+ * reference to `$attributes` (which `$original` shares), so an in-place edit
+ * would silently corrupt the snapshot.
  */
 function castValueIsReady(cast: unknown, value: unknown): boolean {
   assertDeclaredEnumCast(cast);

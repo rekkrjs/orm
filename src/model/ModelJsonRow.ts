@@ -119,6 +119,7 @@ export function castBuiltInAttribute(
       return String(value);
     case "date":
     case "datetime":
+    case "timestamp":
       return new Date(value as string | number | Date);
     case "json":
     case "array":

@@ -84,10 +84,7 @@ function mutableCastKeys(casts: Record<string, any>): MutableCastKeys {
     const separator = cast.indexOf(":");
     const type = separator === -1 ? cast : cast.slice(0, separator);
     if (type === "json" || type === "array" || type === "object") (json ??= new Set()).add(key);
-    // Only date/datetime: "timestamp" is a column type dateColumns() cares
-    // about, not a cast castAttribute decodes, so it never yields a Date the
-    // caller could mutate and serializeCastAttribute would pass it through raw.
-    else if (type === "date" || type === "datetime") (date ??= new Set()).add(key);
+    else if (type === "date" || type === "datetime" || type === "timestamp") (date ??= new Set()).add(key);
   }
 
   const entry: MutableCastKeys = json || date
@@ -599,6 +596,7 @@ export class ModelCore<T extends Record<string, any> = any> {
         return String(value);
       case "date":
       case "datetime":
+      case "timestamp":
         return value instanceof Date ? value.toISOString() : value;
       case "json":
       case "array":
