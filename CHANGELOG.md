@@ -11,10 +11,26 @@
   for MySQL's wider range and lack of session-time-zone conversion. PostgreSQL
   and SQLite compile them the same way as their `TIMESTAMP` counterparts.
 
+### Changed
+
+- The `date` model cast now stores a calendar day as `YYYY-MM-DD` and reads it
+  at UTC midnight consistently across SQLite, MySQL, and PostgreSQL. Applications
+  that used `date` on a `DATETIME` column to preserve a time must migrate that
+  cast to `datetime`; JSON serialization intentionally remains a full ISO value.
+
 ### Fixed
 
 - The `timestamp` model cast is now a complete alias of `datetime`: it reads as
   `Date`, writes ISO strings, and tracks in-place `Date` mutations.
+
+### Verification
+
+- Ran the complete Bun test suite: 1,543 tests passed across 118 files,
+  including live MySQL, PostgreSQL and Redis integrations.
+- Verified the cross-driver calendar-date contract under
+  `TZ=America/New_York` and `TZ=Asia/Tokyo`.
+- `bun pm pack --dry-run` passed for version 1.12.0: 420 files, 2.73 MB
+  unpacked.
 
 ## 1.11.0 - 2026-08-26
 

@@ -106,8 +106,9 @@ Declaring the columns is enough to make them dates: they read back as `Date`
 without a matching `casts` entry, as does `deletedAtColumn` when `softDeletes`
 is on. This holds for the defaults too — a model that overrides nothing gets
 `created_at` and `updated_at` as dates. An explicit entry still wins, so
-`casts = { created_at: "date" }` narrows the cast and a custom cast replaces it
-outright. Set `timestamps = false` to opt out of the columns entirely.
+`casts = { created_at: "date" }` narrows the value to its UTC calendar day and a
+custom cast replaces it outright. Set `timestamps = false` to opt out of the
+columns entirely.
 
 The implicit cast has the same parsing rules as an explicit `datetime` cast.
 Legacy free-form values, MySQL's `0000-00-00 00:00:00`, and Unix timestamps
@@ -219,13 +220,19 @@ user.settings.theme;       // "dark" (parsed JSON)
 | `number`, `integer`, `int`, `float`, `double` | Reads / writes as a number |
 | `decimal:N` | Stores fixed precision string (e.g. `decimal:2` for money) |
 | `string` | Reads / writes as a string |
-| `date`, `datetime` | Reads as `Date`, stores ISO string from `Date` input |
+| `date` | Stores `YYYY-MM-DD`; reads as a `Date` at UTC midnight |
+| `datetime` | Reads as `Date`, stores a full UTC ISO string from `Date` input |
 | `timestamp` | Alias of `datetime`; this is not Laravel's integer Unix-timestamp cast |
 | `json`, `array`, `object` | Stores JSON string, reads parsed value |
 | `base64` | Base64-encoded on write, decoded on read. Encoding, not encryption |
 
 Here `timestamp` means a temporal database value, not Laravel's Unix-timestamp
 cast. Store epoch seconds with a `number` cast instead.
+
+The `date` cast represents a calendar day, not an instant: time components are
+discarded in UTC before storage. `toJSON()` still exposes the decoded `Date`, so
+JSON serialization emits the full midnight value, such as
+`2026-08-26T00:00:00.000Z`. Use `datetime` when the column must preserve a time.
 
 ### Backed enum casts
 
@@ -309,10 +316,11 @@ class Product extends Model {
 }
 ```
 
-When a custom cast writes to a `DATE`, `DATETIME`, or `TIMESTAMP` column, its
-`set()` method must return a `Date`, not a preformatted or ISO date string. This
-lets ORM apply the correct database-specific serialization and, on MySQL,
-verify the session's UTC requirement without mistaking ordinary text for a date.
+The built-in `date` cast writes its portable `YYYY-MM-DD` calendar literal
+directly. Other custom casts that write to a `DATE`, `DATETIME`, or `TIMESTAMP`
+column must return a `Date`, not a preformatted or ISO date string. This lets ORM
+apply the correct database-specific serialization and, on MySQL, verify the
+session's UTC requirement without mistaking ordinary text for a date.
 
 You can also add casts at runtime to one instance only:
 

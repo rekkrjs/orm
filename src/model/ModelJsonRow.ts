@@ -117,7 +117,26 @@ export function castBuiltInAttribute(
       return formatDecimal(value as string | number | bigint, Number(argument || 2));
     case "string":
       return String(value);
-    case "date":
+    case "date": {
+      let date: Date;
+      if (typeof value === "string") {
+        const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+        if (!match) return new Date(NaN);
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        date = new Date(Date.UTC(year, month - 1, day));
+        if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+          return new Date(NaN);
+        }
+        return date;
+      }
+      if (value instanceof Date) date = value;
+      else if (typeof value === "number") date = new Date(value);
+      else return new Date(NaN);
+      if (Number.isNaN(date.getTime())) return new Date(NaN);
+      return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+    }
     case "datetime":
     case "timestamp":
       return new Date(value as string | number | Date);

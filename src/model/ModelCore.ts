@@ -594,7 +594,13 @@ export class ModelCore<T extends Record<string, any> = any> {
         return formatDecimal(value, Number(argument || 2));
       case "string":
         return String(value);
-      case "date":
+      case "date": {
+        const date = castBuiltInAttribute(cast, value, {
+          modelName: this.constructor.name,
+          attribute: key,
+        }) as Date;
+        return Number.isNaN(date.getTime()) ? value : date.toISOString().slice(0, 10);
+      }
       case "datetime":
       case "timestamp":
         return value instanceof Date ? value.toISOString() : value;
@@ -683,6 +689,7 @@ export class ModelCore<T extends Record<string, any> = any> {
       for (const key of this.dateAttributeKeys()) {
         const value = attributes[key];
         if (value === null || value === undefined) continue;
+        if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) continue;
         const date = value instanceof Date ? value : new Date(value);
         if (Number.isNaN(date.getTime())) continue;
         copy = copy ?? { ...attributes };
@@ -724,10 +731,8 @@ export class ModelCore<T extends Record<string, any> = any> {
     for (const key of keys) {
       const cached = Object.prototype.hasOwnProperty.call(this.$castCache, key);
       if (cached && dateKeys.has(key)) {
-        // Compare the decoded Date, not its serialization: a "date" cast holds
-        // "2026-01-02" in $original while serializing to a full ISO timestamp,
-        // and comparing those as strings would call every read a change.
-        // sameAttributeValue puts both sides on the same instant.
+        // Compare the decoded Date, not its serialization: drivers may store a
+        // date in a different textual form, while both values name one instant.
         if (!sameAttributeValue((this.$original as any)[key], this.$castCache[key])) {
           (dirty as any)[key] = this.serializeCastAttribute(key, this.$castCache[key]);
         }

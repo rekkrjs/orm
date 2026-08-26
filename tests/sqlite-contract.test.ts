@@ -64,7 +64,7 @@ describe("SQLite storage contracts", () => {
     expect(raw.metadata).toBe('{"exact_id":"9007199254740993","nested":{"enabled":true}}');
     expect(raw.tags).toBe('["á","β"]');
     expect(raw.active).toBe(1);
-    expect(raw.day_value).toBe("2026-08-19T00:00:00.000Z");
+    expect(raw.day_value).toBe("2026-08-19");
     expect(raw.note).toBeNull();
 
     const defaulted = await SqliteNativeValue.find(defaults.id);

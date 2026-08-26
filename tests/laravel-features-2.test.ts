@@ -369,7 +369,7 @@ describe("syncOriginal() / discardChanges()", () => {
     expect(article.isDirty("slug")).toBe(false);
     expect(article.isDirty("secret")).toBe(false);
     expect(article.getOriginal("slug")).toBe('{"count":2}');
-    expect(article.getOriginal("secret")).toBe(seenAt.toISOString());
+    expect(article.getOriginal("secret")).toBe("2026-01-02");
   });
 
   test("syncOriginal() leaves an unread date cast in its stored format", async () => {

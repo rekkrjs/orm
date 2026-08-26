@@ -73,6 +73,40 @@ describe("Date handling", () => {
     expect(beat.isDirty()).toBe(true);
   });
 
+  test("date casts store calendar days and decode them at UTC midnight", () => {
+    class CalendarDay extends PermissiveModel {
+      static override casts = { day: "date" };
+      static override timestamps = false;
+    }
+
+    const record = new CalendarDay({ day: new Date("2026-08-26T23:45:12.345Z") } as any);
+    expect(record.$attributes.day).toBe("2026-08-26");
+    expect(record.day.toISOString()).toBe("2026-08-26T00:00:00.000Z");
+
+    for (const stored of ["2026-08-26", "2026-08-26 23:45:12", "2026-08-26T23:45:12Z"]) {
+      const hydrated = CalendarDay.hydrate({ day: stored });
+      expect(hydrated.day.toISOString()).toBe("2026-08-26T00:00:00.000Z");
+    }
+
+    const epoch = CalendarDay.hydrate({ day: Date.parse("2026-08-26T23:45:12Z") });
+    expect(epoch.day.toISOString()).toBe("2026-08-26T00:00:00.000Z");
+
+    const invalid = CalendarDay.hydrate({ day: "not-a-date" });
+    expect(invalid.day).toBeInstanceOf(Date);
+    expect(Number.isNaN(invalid.day.getTime())).toBe(true);
+  });
+
+  test("reading a stored calendar day does not make it dirty", () => {
+    class CalendarDay extends PermissiveModel {
+      static override casts = { day: "date" };
+      static override timestamps = false;
+    }
+
+    const record = CalendarDay.hydrate({ day: "2026-08-26" });
+    expect(record.day.toISOString()).toBe("2026-08-26T00:00:00.000Z");
+    expect(record.getDirty()).toEqual({});
+  });
+
   test("a Date binding reaches each Bun.SQL driver in its supported form", async () => {
     const received: any[] = [];
     const driver = {
@@ -121,6 +155,20 @@ describe("Date handling", () => {
     await connection.run("INSERT INTO logs (message) VALUES (?)", ["2026-08-19 14:00:00 server started"]);
 
     expect(calls).toEqual(["INSERT INTO logs (message) VALUES (?)"]);
+  });
+
+  test("MySQL leaves a serialized calendar date as text", () => {
+    class CalendarDay extends PermissiveModel {
+      static override casts = { day: "date" };
+      static override timestamps = false;
+    }
+    const connection = new Connection(
+      { url: "mysql://user:pass@localhost:3306/db" },
+      { driver: { unsafe: () => [] } as any, ownsDriver: false },
+    );
+    const record = new CalendarDay({ day: new Date("2026-08-26T23:45:12Z") } as any);
+
+    expect(record.attributesForDriver(connection).day).toBe("2026-08-26");
   });
 
   test("custom database date casts return Date values for driver serialization", async () => {

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { Model, Schema } from "../src/index.js";
+import { Connection, Model, Schema } from "../src/index.js";
 import { createDriverContext, mysqlUrl, postgresUrl, type DriverContext } from "./driver-harness.js";
 
 const runIfMySql = mysqlUrl ? test.serial : test.skip;
@@ -26,6 +26,33 @@ class CamelReading extends Model {
   static override updatedAtColumn = "updatedAt";
 }
 
+class CalendarReading extends Model {
+  static override table = "calendar_readings";
+  static override fillable = ["label", "observed_on"];
+  static override casts = { observed_on: "date" };
+  static override timestamps = false;
+}
+
+async function expectPortableCalendarDate(connection: Connection): Promise<void> {
+  CalendarReading.connection = connection;
+  await Schema.create("calendar_readings", (table) => {
+    table.increments("id");
+    table.string("label", 20);
+    table.date("observed_on");
+  }, connection);
+
+  const created = await CalendarReading.create({
+    label: "one",
+    observed_on: new Date("2026-08-26T23:45:12.345Z"),
+  } as any);
+  expect(created.$attributes.observed_on).toBe("2026-08-26");
+
+  const reloaded = await CalendarReading.where("label", "one").first();
+  expect((reloaded as any).observed_on.toISOString()).toBe("2026-08-26T00:00:00.000Z");
+  expect(JSON.parse(JSON.stringify(reloaded!.toJSON())).observed_on)
+    .toBe("2026-08-26T00:00:00.000Z");
+}
+
 describe.serial("Date storage across drivers", () => {
   afterAll(async () => {
     for (const created of contexts) await created.dispose();
@@ -41,6 +68,25 @@ describe.serial("Date storage across drivers", () => {
     // Factories and plain construction must not require a database.
     const detached = new Detached({ when: new Date("2026-08-19T14:00:00.123Z") } as any);
     expect((detached as any).when.toISOString()).toBe("2026-08-19T14:00:00.123Z");
+  });
+
+  test("SQLite preserves a calendar date through the model cast", async () => {
+    const connection = new Connection({ url: "sqlite://:memory:" });
+    try {
+      await expectPortableCalendarDate(connection);
+    } finally {
+      await connection.close();
+    }
+  });
+
+  runIfMySql("MySQL preserves a calendar date through the model cast", async () => {
+    const { connection } = await context("mysql");
+    await expectPortableCalendarDate(connection);
+  });
+
+  runIfPostgres("PostgreSQL preserves a calendar date through the model cast", async () => {
+    const { connection } = await context("postgres");
+    await expectPortableCalendarDate(connection);
   });
 
   runIfMySql("MySQL stores timestamps it accepts, keeping milliseconds", async () => {
