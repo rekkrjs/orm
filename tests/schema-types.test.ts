@@ -1,10 +1,16 @@
 import { test } from "bun:test";
 import { Blueprint } from "../src/schema/Blueprint.js";
 
-test("timestamps exposes zero-argument and two-argument forms", () => {
+test("temporal helpers expose precision without weakening timestamp name arity", () => {
   const table = new Blueprint("timestamps_types");
+  table.dateTime("happened_at", 3);
+  table.timestamp("published_at", 0);
+  table.time("opens_at", 6);
   table.timestamps();
+  table.timestamps({ precision: 3 });
   table.timestamps("createdAt", "updatedAt");
+  table.timestamps("createdAt", "updatedAt", { precision: 6 });
+  table.softDeletes("removed_at", { precision: 3 });
 
   if (false) {
     // @ts-expect-error timestamps requires either zero or two names.

@@ -41,11 +41,11 @@ export class PostgresGrammar extends Grammar {
       case "date":
         return "DATE";
       case "dateTime":
-        return "TIMESTAMP(0) WITHOUT TIME ZONE";
+        return `TIMESTAMP(${column.precision ?? 0}) WITHOUT TIME ZONE`;
       case "time":
-        return "TIME(0) WITHOUT TIME ZONE";
+        return `TIME(${column.precision ?? 0}) WITHOUT TIME ZONE`;
       case "timestamp":
-        return "TIMESTAMP(0) WITHOUT TIME ZONE";
+        return `TIMESTAMP(${column.precision ?? 0}) WITHOUT TIME ZONE`;
       case "json":
         return "JSON";
       case "jsonb":

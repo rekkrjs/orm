@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.12.0 - 2026-08-26
+
+### Added
+
+- `dateTime()`, `timestamp()`, `time()`, `timestamps()`, and `softDeletes()` now
+  accept fractional-second precision from 0 through 6. Existing declarations
+  without precision compile to byte-identical SQL.
+
 ## 1.11.0 - 2026-08-26
 
 ### Added

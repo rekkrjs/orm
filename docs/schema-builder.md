@@ -110,9 +110,9 @@ Only MySQL/MariaDB has separate storage classes for text, so it is the only driv
 |---|---|
 | `boolean(name)` | `BOOLEAN` (TINYINT(1) on MySQL) |
 | `date(name)` | `DATE` (MySQL/Postgres); `TEXT` (SQLite) |
-| `time(name)` | `TIME` (MySQL); `TIME WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
-| `dateTime(name)` | `DATETIME` (MySQL); `TIMESTAMP WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
-| `timestamp(name)` | `TIMESTAMP` (MySQL); `TIMESTAMP WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
+| `time(name, precision?)` | `TIME` (MySQL); `TIME WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
+| `dateTime(name, precision?)` | `DATETIME` (MySQL); `TIMESTAMP WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
+| `timestamp(name, precision?)` | `TIMESTAMP` (MySQL); `TIMESTAMP WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
 
 ```ts
 table.boolean("is_published").default(false);
@@ -236,17 +236,26 @@ into migration SQL verbatim.
 
 ```ts
 table.timestamps();        // adds nullable created_at + updated_at TIMESTAMP columns
-table.timestamps("createdAt", "updatedAt"); // explicit column names
+table.timestamps({ precision: 3 }); // preserve milliseconds
+table.timestamps("createdAt", "updatedAt", { precision: 6 }); // explicit names
 table.softDeletes();       // adds nullable deleted_at TIMESTAMP
-table.softDeletes("removed_at"); // custom soft-delete column
+table.softDeletes("removed_at", { precision: 3 }); // custom name + precision
 table.rememberToken();     // adds nullable remember_token VARCHAR(100)
 ```
 
-`timestamps()` accepts exactly zero arguments or two non-empty, different column
-names. The zero-argument form creates ORM's defaults; the two-argument form
-matches models that configure `createdAtColumn` and `updatedAtColumn`.
-`softDeletes(name = "deleted_at")` remains independent from timestamp column
-customization and accepts its own column name.
+`timestamps()` accepts no arguments, an options object, or two non-empty,
+different column names followed by optional precision options. The zero-argument
+form creates ORM's defaults; the named form matches models that configure
+`createdAtColumn` and `updatedAtColumn`. `softDeletes(name = "deleted_at")`
+remains independent from timestamp column customization and accepts its own
+column name and precision options.
+
+Temporal precision must be an integer from `0` through `6`. MySQL emits the
+matching `DATETIME(n)`, `TIMESTAMP(n)`, or `TIME(n)` declaration. PostgreSQL
+emits `TIMESTAMP(n) WITHOUT TIME ZONE` or `TIME(n) WITHOUT TIME ZONE`; it rounds
+rather than truncates when the stored value exceeds the declared precision, so
+`10:00:00.600` in a whole-second column becomes `10:00:01`. SQLite always stores
+these columns as `TEXT` and ignores the precision declaration.
 
 `rememberToken()` is the "remember me" column: a session cookie carries the token and the login lookup matches it. It is `string("remember_token", 100).nullable()`, and returns the blueprint with that column current, so modifiers still chain:
 
@@ -544,4 +553,4 @@ When you set `connection.schema` (or use a tenant resolver), every `Schema.creat
 - **SQLite** can not change column types in place. The schema builder issues `ALTER TABLE` where SQLite supports it and falls back to a `create + copy + drop + rename` recipe for unsupported operations.
 - **SQLite exact numbers:** its `INTEGER`/`REAL` values and Bun's SQLite decoder use JavaScript numbers, so values beyond `Number.MAX_SAFE_INTEGER` and arbitrary-precision decimals are not exact. Store large IDs/decimals as `TEXT`, or store money as integer minor units. Changing `decimal()` globally to text would break numeric ordering and aggregates, so ORM does not do that implicitly.
 - **MySQL index limits** are byte-based and depend on the InnoDB row format and page size. The often-cited 191-character `utf8mb4` limit applies to the legacy 767-byte ceiling, not every MySQL installation. See the [MySQL index documentation](https://dev.mysql.com/doc/refman/8.4/en/column-indexes.html) before indexing unusually wide or composite string keys.
-- **PostgreSQL** is the only driver that supports `jsonb` and named `schema` qualification. `dateTime()` and `timestamp()` currently compile to `TIMESTAMP(0) WITHOUT TIME ZONE`.
+- **PostgreSQL** is the only driver that supports `jsonb` and named `schema` qualification. Without an explicit precision, `dateTime()` and `timestamp()` compile to `TIMESTAMP(0) WITHOUT TIME ZONE` as before.

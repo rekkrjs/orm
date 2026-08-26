@@ -119,7 +119,7 @@ function dbTypeToColumnType(dbType: string): ColumnType {
   if (t === "double precision" || t === "float8" || t === "double") return "double";
   if (t.startsWith("numeric") || t.startsWith("decimal")) return "decimal";
   if (t === "date") return "date";
-  if (t.startsWith("timestamp") || t === "datetime") return "dateTime";
+  if (t.startsWith("timestamp") || t.startsWith("datetime")) return "dateTime";
   if (t.startsWith("time")) return "time";
   if (t === "json") return "json";
   if (t === "jsonb") return "jsonb";

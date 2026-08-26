@@ -63,11 +63,11 @@ export class MySqlGrammar extends Grammar {
       case "date":
         return "DATE";
       case "dateTime":
-        return "DATETIME";
+        return column.precision === undefined ? "DATETIME" : `DATETIME(${column.precision})`;
       case "time":
-        return "TIME";
+        return column.precision === undefined ? "TIME" : `TIME(${column.precision})`;
       case "timestamp":
-        return "TIMESTAMP";
+        return column.precision === undefined ? "TIMESTAMP" : `TIMESTAMP(${column.precision})`;
       case "json":
         return "JSON";
       case "jsonb":

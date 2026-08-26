@@ -143,6 +143,15 @@ export class Blueprint {
     return this;
   }
 
+  private addTemporalColumn(type: "dateTime" | "time" | "timestamp", name: string, precision?: number): this {
+    if (precision !== undefined && (!Number.isInteger(precision) || precision < 0 || precision > 6)) {
+      throw new RangeError("Temporal precision must be an integer between 0 and 6.");
+    }
+    this.addColumn(type, name);
+    if (precision !== undefined) this.currentColumn!.precision = precision;
+    return this;
+  }
+
   increments(name: string = "id"): this {
     const col = this.addColumn("integer", name);
     col.currentColumn!.autoIncrement = true;
@@ -245,16 +254,16 @@ export class Blueprint {
     return this.addColumn("date", name);
   }
 
-  dateTime(name: string): this {
-    return this.addColumn("dateTime", name);
+  dateTime(name: string, precision?: number): this {
+    return this.addTemporalColumn("dateTime", name, precision);
   }
 
-  time(name: string): this {
-    return this.addColumn("time", name);
+  time(name: string, precision?: number): this {
+    return this.addTemporalColumn("time", name, precision);
   }
 
-  timestamp(name: string): this {
-    return this.addColumn("timestamp", name);
+  timestamp(name: string, precision?: number): this {
+    return this.addTemporalColumn("timestamp", name, precision);
   }
 
   json(name: string): this {
@@ -468,15 +477,24 @@ export class Blueprint {
   }
 
   timestamps(): void;
-  timestamps(createdAtColumn: string, updatedAtColumn: string): void;
-  timestamps(createdAtColumn?: string, updatedAtColumn?: string): void {
+  timestamps(options: { precision?: number }): void;
+  timestamps(createdAtColumn: string, updatedAtColumn: string, options?: { precision?: number }): void;
+  timestamps(
+    createdAtColumnOrOptions?: string | { precision?: number },
+    updatedAtColumn?: string,
+    options?: { precision?: number },
+  ): void {
     const argumentCount = arguments.length;
-    if (argumentCount !== 0 && argumentCount !== 2) {
+    const optionsOnly = argumentCount === 1 && typeof createdAtColumnOrOptions === "object" && createdAtColumnOrOptions !== null;
+    const namedColumns = argumentCount === 2 || (
+      argumentCount === 3 && (options === undefined || (typeof options === "object" && options !== null))
+    );
+    if (argumentCount !== 0 && !optionsOnly && !namedColumns) {
       throw new Error("timestamps() expects either zero or two column names.");
     }
 
-    const created = argumentCount === 0 ? "created_at" : createdAtColumn;
-    const updated = argumentCount === 0 ? "updated_at" : updatedAtColumn;
+    const created = namedColumns ? createdAtColumnOrOptions : "created_at";
+    const updated = namedColumns ? updatedAtColumn : "updated_at";
     if (typeof created !== "string" || created.length === 0) {
       throw new Error("timestamps() created-at column must be a non-empty string.");
     }
@@ -487,12 +505,13 @@ export class Blueprint {
       throw new Error("timestamps() must use different created-at and updated-at columns.");
     }
 
-    this.timestamp(created).nullable();
-    this.timestamp(updated).nullable();
+    const precision = optionsOnly ? createdAtColumnOrOptions.precision : options?.precision;
+    this.timestamp(created, precision).nullable();
+    this.timestamp(updated, precision).nullable();
   }
 
-  softDeletes(name: string = "deleted_at"): void {
-    this.timestamp(name).nullable();
+  softDeletes(name: string = "deleted_at", options: { precision?: number } = {}): void {
+    this.timestamp(name, options.precision).nullable();
   }
 
   /** The 100-character nullable remember_token column session cookies are matched against. */

@@ -4,6 +4,7 @@ import { Blueprint } from "../src/schema/Blueprint.js";
 import { SQLiteGrammar } from "../src/schema/grammars/SQLiteGrammar.js";
 import { MySqlGrammar } from "../src/schema/grammars/MySqlGrammar.js";
 import { PostgresGrammar } from "../src/schema/grammars/PostgresGrammar.js";
+import { SchemaResult } from "../src/model/ModelSchemaBuilder.js";
 import { setupTestDb, teardownTestDb } from "./helpers.js";
 
 describe("Schema Builder", () => {
@@ -38,6 +39,108 @@ describe("Schema Builder", () => {
     const custom = new Blueprint("custom_timestamps");
     custom.timestamps("createdAt", "updatedAt");
     expect(custom.columns.map((column) => column.name)).toEqual(["createdAt", "updatedAt"]);
+  });
+
+  test("temporal columns accept precision from zero through six", () => {
+    const blueprint = new Blueprint("temporal_precision");
+    blueprint.dateTime("happened_at", 3);
+    blueprint.timestamp("published_at", 0);
+    blueprint.time("opens_at", 6);
+    blueprint.timestamps({ precision: 3 });
+    blueprint.softDeletes("removed_at", { precision: 3 });
+
+    expect(blueprint.columns.map(({ name, precision }) => ({ name, precision }))).toEqual([
+      { name: "happened_at", precision: 3 },
+      { name: "published_at", precision: 0 },
+      { name: "opens_at", precision: 6 },
+      { name: "created_at", precision: 3 },
+      { name: "updated_at", precision: 3 },
+      { name: "removed_at", precision: 3 },
+    ]);
+
+    const mysql = new MySqlGrammar().compileCreate(blueprint, "temporal_precision");
+    expect(mysql).toContain("`happened_at` DATETIME(3)");
+    expect(mysql).toContain("`published_at` TIMESTAMP(0)");
+    expect(mysql).toContain("`opens_at` TIME(6)");
+
+    const postgres = new PostgresGrammar().compileCreate(blueprint, "temporal_precision");
+    expect(postgres).toContain('"happened_at" TIMESTAMP(3) WITHOUT TIME ZONE');
+    expect(postgres).toContain('"published_at" TIMESTAMP(0) WITHOUT TIME ZONE');
+    expect(postgres).toContain('"opens_at" TIME(6) WITHOUT TIME ZONE');
+
+    const sqlite = new SQLiteGrammar().compileCreate(blueprint, "temporal_precision");
+    expect(sqlite).toContain('"happened_at" TEXT');
+    expect(sqlite).not.toContain("(3)");
+  });
+
+  test("temporal precision rejects values unsupported by MySQL and PostgreSQL", () => {
+    for (const precision of [-1, 7, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => new Blueprint("events").dateTime("happened_at", precision))
+        .toThrow("Temporal precision must be an integer between 0 and 6.");
+    }
+  });
+
+  test("temporal DDL without precision is byte-identical to the previous output", () => {
+    const blueprint = new Blueprint("temporal_columns");
+    blueprint.dateTime("happened_at");
+    blueprint.timestamp("published_at");
+    blueprint.time("opens_at");
+    blueprint.timestamps();
+    blueprint.softDeletes();
+
+    expect(new SQLiteGrammar().compileCreate(blueprint, "temporal_columns")).toBe(
+      'CREATE TABLE "temporal_columns" (\n' +
+      '    "happened_at" TEXT NOT NULL,\n' +
+      '    "published_at" TEXT NOT NULL,\n' +
+      '    "opens_at" TEXT NOT NULL,\n' +
+      '    "created_at" TEXT,\n' +
+      '    "updated_at" TEXT,\n' +
+      '    "deleted_at" TEXT\n' +
+      ')',
+    );
+    expect(new MySqlGrammar().compileCreate(blueprint, "temporal_columns")).toBe(
+      'CREATE TABLE `temporal_columns` (\n' +
+      '    `happened_at` DATETIME NOT NULL,\n' +
+      '    `published_at` TIMESTAMP NOT NULL,\n' +
+      '    `opens_at` TIME NOT NULL,\n' +
+      '    `created_at` TIMESTAMP,\n' +
+      '    `updated_at` TIMESTAMP,\n' +
+      '    `deleted_at` TIMESTAMP\n' +
+      ')',
+    );
+    expect(new PostgresGrammar().compileCreate(blueprint, "temporal_columns")).toBe(
+      'CREATE TABLE "temporal_columns" (\n' +
+      '    "happened_at" TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL,\n' +
+      '    "published_at" TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL,\n' +
+      '    "opens_at" TIME(0) WITHOUT TIME ZONE NOT NULL,\n' +
+      '    "created_at" TIMESTAMP(0) WITHOUT TIME ZONE,\n' +
+      '    "updated_at" TIMESTAMP(0) WITHOUT TIME ZONE,\n' +
+      '    "deleted_at" TIMESTAMP(0) WITHOUT TIME ZONE\n' +
+      ')',
+    );
+  });
+
+  test("temporal precision survives schema introspection blueprints", () => {
+    const column = {
+      name: "happened_at",
+      primary: false,
+      autoIncrement: false,
+      nullable: false,
+      precision: 3,
+    };
+    const mysql = new SchemaResult([{ ...column, type: "datetime(3)" }], [], [], "events").blueprint;
+    const postgres = new SchemaResult(
+      [{ ...column, type: "timestamp without time zone" }],
+      [],
+      [],
+      "events",
+    ).blueprint;
+
+    expect(mysql.columns[0]).toMatchObject({ type: "dateTime", precision: 3 });
+    expect(postgres.columns[0]).toMatchObject({ type: "dateTime", precision: 3 });
+    expect(new MySqlGrammar().compileCreate(mysql, "events")).toContain("`happened_at` DATETIME(3)");
+    expect(new PostgresGrammar().compileCreate(postgres, "events"))
+      .toContain('"happened_at" TIMESTAMP(3) WITHOUT TIME ZONE');
   });
 
   test("timestamps rejects invalid runtime arity and names", () => {

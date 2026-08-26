@@ -46,9 +46,12 @@ describe.serial("Date storage across drivers", () => {
   runIfMySql("MySQL stores timestamps it accepts, keeping milliseconds", async () => {
     const { connection } = await context("mysql");
 
-    await connection.run(
-      "CREATE TABLE readings (id BIGINT AUTO_INCREMENT PRIMARY KEY, label VARCHAR(20), taken_at DATETIME(3), created_at DATETIME(3), updated_at DATETIME(3))"
-    );
+    await Schema.create("readings", (table) => {
+      table.increments("id");
+      table.string("label", 20);
+      table.dateTime("taken_at", 3);
+      table.timestamps({ precision: 3 });
+    }, connection);
 
     const taken = new Date("2026-08-19T14:00:00.123Z");
     const reading = await Reading.create({ label: "one", taken_at: taken } as any);
@@ -203,9 +206,12 @@ describe.serial("Date storage across drivers", () => {
   runIfPostgres("PostgreSQL keeps milliseconds when the column has the precision", async () => {
     const { connection } = await context("postgres");
 
-    await connection.run(
-      "CREATE TABLE readings (id SERIAL PRIMARY KEY, label TEXT, taken_at TIMESTAMP(3), created_at TIMESTAMP(3), updated_at TIMESTAMP(3))"
-    );
+    await Schema.create("readings", (table) => {
+      table.increments("id");
+      table.string("label");
+      table.dateTime("taken_at", 3);
+      table.timestamps({ precision: 3 });
+    }, connection);
 
     await Reading.create({ label: "fine", taken_at: new Date("2026-08-19T14:00:00.123Z") } as any);
 

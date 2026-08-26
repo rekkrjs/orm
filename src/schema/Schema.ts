@@ -19,7 +19,7 @@ export interface SchemaColumn {
   default?: any;
   /** Declared length for character types, when the driver reports one. */
   length?: number;
-  /** Precision and scale for exact numeric columns, when available. */
+  /** Precision for exact numeric or temporal columns, and scale for exact numerics. */
   precision?: number;
   scale?: number;
   /** Whether the database declared this numeric column UNSIGNED. */
@@ -40,6 +40,14 @@ function numericSize(type: unknown): { precision?: number; scale?: number } {
     precision: Number(match[1]),
     scale: match[2] === undefined ? 0 : Number(match[2]),
   };
+}
+
+function reportedPrecision(type: unknown, numeric: unknown, temporal: unknown): number | undefined {
+  if (/^(?:datetime|timestamp|time)(?:\(|\s|$)/i.test(String(type ?? ""))) {
+    const precision = temporal == null ? undefined : Number(temporal);
+    return precision === 0 ? undefined : precision;
+  }
+  return numeric == null ? undefined : Number(numeric);
 }
 
 export interface SchemaIndex {
@@ -557,7 +565,7 @@ export class Schema {
 
     if (driver === "mysql") {
       const rows = await conn.query(
-        "SELECT column_name AS Field, column_type AS Type, column_key AS `Key`, extra AS Extra, is_nullable AS Nullable, column_default AS `Default`, character_maximum_length AS CharacterLength, numeric_precision AS `Precision`, numeric_scale AS `Scale` FROM information_schema.columns WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ? ORDER BY ordinal_position",
+        "SELECT column_name AS Field, column_type AS Type, column_key AS `Key`, extra AS Extra, is_nullable AS Nullable, column_default AS `Default`, character_maximum_length AS CharacterLength, numeric_precision AS `Precision`, numeric_scale AS `Scale`, datetime_precision AS `DateTimePrecision` FROM information_schema.columns WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ? ORDER BY ordinal_position",
         [qualified.schema ?? null, qualified.table]
       );
       return (rows as any[]).map((row) => ({
@@ -568,7 +576,7 @@ export class Schema {
         nullable: row.Nullable === "YES",
         default: row.Default ?? undefined,
         length: row.CharacterLength == null ? characterLength(row.Type) : Number(row.CharacterLength),
-        precision: row.Precision == null ? undefined : Number(row.Precision),
+        precision: reportedPrecision(row.Type, row.Precision, row.DateTimePrecision),
         scale: row.Scale == null ? undefined : Number(row.Scale),
         unsigned: /\bunsigned\b/i.test(String(row.Type)),
       }));
@@ -576,7 +584,7 @@ export class Schema {
 
     const rows = await conn.query(
       `SELECT c.column_name, c.data_type, c.is_nullable, c.column_default, c.character_maximum_length,
-       c.numeric_precision, c.numeric_scale,
+       c.numeric_precision, c.numeric_scale, c.datetime_precision,
        COALESCE(bool_or(tc.constraint_type = 'PRIMARY KEY'), false) AS primary_key
        FROM information_schema.columns c
        LEFT JOIN information_schema.key_column_usage kcu
@@ -589,7 +597,7 @@ export class Schema {
         AND tc.constraint_type = 'PRIMARY KEY'
        WHERE c.table_schema = $1
          AND c.table_name = $2
-       GROUP BY c.column_name, c.data_type, c.is_nullable, c.column_default, c.character_maximum_length, c.numeric_precision, c.numeric_scale, c.ordinal_position
+       GROUP BY c.column_name, c.data_type, c.is_nullable, c.column_default, c.character_maximum_length, c.numeric_precision, c.numeric_scale, c.datetime_precision, c.ordinal_position
        ORDER BY c.ordinal_position`,
       [schema, qualified.table]
     );
@@ -601,7 +609,7 @@ export class Schema {
       nullable: row.is_nullable === "YES",
       default: row.column_default ?? undefined,
       length: row.character_maximum_length ?? undefined,
-      precision: row.numeric_precision == null ? undefined : Number(row.numeric_precision),
+      precision: reportedPrecision(row.data_type, row.numeric_precision, row.datetime_precision),
       scale: row.numeric_scale == null ? undefined : Number(row.numeric_scale),
       unsigned: false,
     }));
@@ -647,7 +655,7 @@ export class Schema {
 
     if (driver === "mysql") {
       const rows = await connection.query(
-        "SELECT column_name AS Field, column_type AS Type, column_key AS `Key`, extra AS Extra, column_default AS `Default`, character_maximum_length AS CharacterLength, numeric_precision AS `Precision`, numeric_scale AS `Scale` FROM information_schema.columns WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ? AND column_name = ?",
+        "SELECT column_name AS Field, column_type AS Type, column_key AS `Key`, extra AS Extra, column_default AS `Default`, character_maximum_length AS CharacterLength, numeric_precision AS `Precision`, numeric_scale AS `Scale`, datetime_precision AS `DateTimePrecision` FROM information_schema.columns WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ? AND column_name = ?",
         [qualified.schema ?? null, tableName, column]
       );
       const row = rows[0];
@@ -660,7 +668,7 @@ export class Schema {
             default: row.Default ?? undefined,
             defaultIsExpression: String(row.Extra || "").toLowerCase().includes("default_generated"),
             length: row.CharacterLength == null ? characterLength(row.Type) : Number(row.CharacterLength),
-            precision: row.Precision == null ? undefined : Number(row.Precision),
+            precision: reportedPrecision(row.Type, row.Precision, row.DateTimePrecision),
             scale: row.Scale == null ? undefined : Number(row.Scale),
             unsigned: /\bunsigned\b/i.test(String(row.Type)),
           } as any)
@@ -669,7 +677,7 @@ export class Schema {
 
     const rows = await connection.query(
       `SELECT c.column_name, c.data_type, c.column_default, c.character_maximum_length,
-       c.numeric_precision, c.numeric_scale,
+       c.numeric_precision, c.numeric_scale, c.datetime_precision,
        COALESCE(tc.constraint_type = 'PRIMARY KEY', false) AS primary_key
        FROM information_schema.columns c
        LEFT JOIN information_schema.key_column_usage kcu
@@ -693,7 +701,7 @@ export class Schema {
           autoIncrement: false,
           default: row.column_default ?? undefined,
           length: row.character_maximum_length ?? undefined,
-          precision: row.numeric_precision == null ? undefined : Number(row.numeric_precision),
+          precision: reportedPrecision(row.data_type, row.numeric_precision, row.datetime_precision),
           scale: row.numeric_scale == null ? undefined : Number(row.numeric_scale),
           unsigned: false,
         } as any)
