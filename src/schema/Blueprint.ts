@@ -152,6 +152,35 @@ export class Blueprint {
     return this;
   }
 
+  private addTimestampColumns(type: "dateTime" | "timestamp", method: string, args: IArguments): void {
+    const createdAtColumnOrOptions = args[0] as string | { precision?: number } | undefined;
+    const updatedAtColumn = args[1] as string | undefined;
+    const options = args[2] as { precision?: number } | undefined;
+    const optionsOnly = args.length === 1 && typeof createdAtColumnOrOptions === "object" && createdAtColumnOrOptions !== null;
+    const namedColumns = args.length === 2 || (
+      args.length === 3 && (options === undefined || (typeof options === "object" && options !== null))
+    );
+    if (args.length !== 0 && !optionsOnly && !namedColumns) {
+      throw new Error(`${method}() expects either zero or two column names.`);
+    }
+
+    const created = namedColumns ? createdAtColumnOrOptions : "created_at";
+    const updated = namedColumns ? updatedAtColumn : "updated_at";
+    if (typeof created !== "string" || created.length === 0) {
+      throw new Error(`${method}() created-at column must be a non-empty string.`);
+    }
+    if (typeof updated !== "string" || updated.length === 0) {
+      throw new Error(`${method}() updated-at column must be a non-empty string.`);
+    }
+    if (created === updated) {
+      throw new Error(`${method}() must use different created-at and updated-at columns.`);
+    }
+
+    const precision = optionsOnly ? createdAtColumnOrOptions.precision : options?.precision;
+    this.addTemporalColumn(type, created, precision).nullable();
+    this.addTemporalColumn(type, updated, precision).nullable();
+  }
+
   increments(name: string = "id"): this {
     const col = this.addColumn("integer", name);
     col.currentColumn!.autoIncrement = true;
@@ -480,38 +509,30 @@ export class Blueprint {
   timestamps(options: { precision?: number }): void;
   timestamps(createdAtColumn: string, updatedAtColumn: string, options?: { precision?: number }): void;
   timestamps(
-    createdAtColumnOrOptions?: string | { precision?: number },
-    updatedAtColumn?: string,
-    options?: { precision?: number },
+    _createdAtColumnOrOptions?: string | { precision?: number },
+    _updatedAtColumn?: string,
+    _options?: { precision?: number },
   ): void {
-    const argumentCount = arguments.length;
-    const optionsOnly = argumentCount === 1 && typeof createdAtColumnOrOptions === "object" && createdAtColumnOrOptions !== null;
-    const namedColumns = argumentCount === 2 || (
-      argumentCount === 3 && (options === undefined || (typeof options === "object" && options !== null))
-    );
-    if (argumentCount !== 0 && !optionsOnly && !namedColumns) {
-      throw new Error("timestamps() expects either zero or two column names.");
-    }
+    this.addTimestampColumns("timestamp", "timestamps", arguments);
+  }
 
-    const created = namedColumns ? createdAtColumnOrOptions : "created_at";
-    const updated = namedColumns ? updatedAtColumn : "updated_at";
-    if (typeof created !== "string" || created.length === 0) {
-      throw new Error("timestamps() created-at column must be a non-empty string.");
-    }
-    if (typeof updated !== "string" || updated.length === 0) {
-      throw new Error("timestamps() updated-at column must be a non-empty string.");
-    }
-    if (created === updated) {
-      throw new Error("timestamps() must use different created-at and updated-at columns.");
-    }
-
-    const precision = optionsOnly ? createdAtColumnOrOptions.precision : options?.precision;
-    this.timestamp(created, precision).nullable();
-    this.timestamp(updated, precision).nullable();
+  datetimes(): void;
+  datetimes(options: { precision?: number }): void;
+  datetimes(createdAtColumn: string, updatedAtColumn: string, options?: { precision?: number }): void;
+  datetimes(
+    _createdAtColumnOrOptions?: string | { precision?: number },
+    _updatedAtColumn?: string,
+    _options?: { precision?: number },
+  ): void {
+    this.addTimestampColumns("dateTime", "datetimes", arguments);
   }
 
   softDeletes(name: string = "deleted_at", options: { precision?: number } = {}): void {
     this.timestamp(name, options.precision).nullable();
+  }
+
+  softDeletesDatetime(name: string = "deleted_at", options: { precision?: number } = {}): void {
+    this.dateTime(name, options.precision).nullable();
   }
 
   /** The 100-character nullable remember_token column session cookies are matched against. */

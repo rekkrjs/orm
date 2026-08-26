@@ -162,6 +162,52 @@ describe("Schema Builder", () => {
     );
   });
 
+  test("datetimes mirrors timestamps with DATETIME columns", () => {
+    const defaults = new Blueprint("default_datetimes");
+    defaults.datetimes();
+    defaults.softDeletesDatetime();
+    expect(defaults.columns).toEqual([
+      expect.objectContaining({ name: "created_at", type: "dateTime", nullable: true }),
+      expect.objectContaining({ name: "updated_at", type: "dateTime", nullable: true }),
+      expect.objectContaining({ name: "deleted_at", type: "dateTime", nullable: true }),
+    ]);
+
+    const precise = new Blueprint("precise_datetimes");
+    precise.datetimes("createdAt", "updatedAt", { precision: 3 });
+    precise.softDeletesDatetime("removedAt", { precision: 3 });
+    expect(precise.columns.map(({ name, type, precision }) => ({ name, type, precision }))).toEqual([
+      { name: "createdAt", type: "dateTime", precision: 3 },
+      { name: "updatedAt", type: "dateTime", precision: 3 },
+      { name: "removedAt", type: "dateTime", precision: 3 },
+    ]);
+    expect(new MySqlGrammar().compileCreate(precise, "precise_datetimes"))
+      .toContain("`createdAt` DATETIME(3)");
+
+    const timestamps = new Blueprint("portable_dates");
+    timestamps.timestamps({ precision: 3 });
+    const datetimes = new Blueprint("portable_dates");
+    datetimes.datetimes({ precision: 3 });
+    expect(new SQLiteGrammar().compileCreate(datetimes, "portable_dates"))
+      .toBe(new SQLiteGrammar().compileCreate(timestamps, "portable_dates"));
+    expect(new PostgresGrammar().compileCreate(datetimes, "portable_dates"))
+      .toBe(new PostgresGrammar().compileCreate(timestamps, "portable_dates"));
+
+    datetimes.dropTimestamps();
+    expect(datetimes.commands).toEqual([
+      { name: "dropColumn", parameters: { column: ["created_at", "updated_at"] } },
+    ]);
+  });
+
+  test("datetimes keeps timestamp validation semantics", () => {
+    const blueprint = new Blueprint("invalid_datetimes");
+    expect(() => (blueprint.datetimes as any)("createdAt"))
+      .toThrow("datetimes() expects either zero or two column names.");
+    expect(() => blueprint.datetimes("", "updatedAt"))
+      .toThrow("datetimes() created-at column must be a non-empty string.");
+    expect(() => blueprint.datetimes("changedAt", "changedAt"))
+      .toThrow("datetimes() must use different created-at and updated-at columns.");
+  });
+
   test("mysql grammar compileCreate", () => {
     const grammar = new MySqlGrammar();
     const blueprint = new Blueprint("users");

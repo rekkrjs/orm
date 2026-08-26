@@ -7,6 +7,9 @@
 - `dateTime()`, `timestamp()`, `time()`, `timestamps()`, and `softDeletes()` now
   accept fractional-second precision from 0 through 6. Existing declarations
   without precision compile to byte-identical SQL.
+- `datetimes()` and `softDeletesDatetime()` provide `DATETIME` timestamp helpers
+  for MySQL's wider range and lack of session-time-zone conversion. PostgreSQL
+  and SQLite compile them the same way as their `TIMESTAMP` counterparts.
 
 ## 1.11.0 - 2026-08-26
 

@@ -238,8 +238,10 @@ into migration SQL verbatim.
 table.timestamps();        // adds nullable created_at + updated_at TIMESTAMP columns
 table.timestamps({ precision: 3 }); // preserve milliseconds
 table.timestamps("createdAt", "updatedAt", { precision: 6 }); // explicit names
+table.datetimes({ precision: 3 }); // same columns, DATETIME on MySQL
 table.softDeletes();       // adds nullable deleted_at TIMESTAMP
 table.softDeletes("removed_at", { precision: 3 }); // custom name + precision
+table.softDeletesDatetime(); // nullable deleted_at, DATETIME on MySQL
 table.rememberToken();     // adds nullable remember_token VARCHAR(100)
 ```
 
@@ -249,6 +251,13 @@ form creates ORM's defaults; the named form matches models that configure
 `createdAtColumn` and `updatedAtColumn`. `softDeletes(name = "deleted_at")`
 remains independent from timestamp column customization and accepts its own
 column name and precision options.
+
+`datetimes()` and `softDeletesDatetime()` have the same arguments and
+validation, but emit `DATETIME` on MySQL. Use them when dates may fall outside
+MySQL `TIMESTAMP`'s 1970–2038 range or must not undergo its session-time-zone
+conversion. PostgreSQL and SQLite compile both variants identically.
+`dropTimestamps()` drops the default `created_at` and `updated_at` names created
+by either helper; there is no separate `dropDatetimes()` method.
 
 Temporal precision must be an integer from `0` through `6`. MySQL emits the
 matching `DATETIME(n)`, `TIMESTAMP(n)`, or `TIME(n)` declaration. PostgreSQL
