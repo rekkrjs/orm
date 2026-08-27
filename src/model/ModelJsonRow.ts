@@ -53,8 +53,43 @@ function hasAccessorConfiguration(value: unknown): boolean {
   return prototype !== Object.prototype && prototype !== null;
 }
 
+/**
+ * A cached result together with the five statics it was derived from. Those
+ * inputs are public and mutable, so an entry is only reusable while every one
+ * of them still holds the value it had when the entry was built. Comparing
+ * values rather than caching per constructor is also what makes inheritance
+ * work: a subclass reads an inherited flag exactly like an own one, so a parent
+ * toggling `timestamps` invalidates every subclass entry without extra
+ * bookkeeping.
+ *
+ * Overrides of the timestamp getters are assumed to derive from these statics;
+ * dynamic inputs outside them cannot invalidate this cache.
+ */
+interface ImplicitDateCastsEntry {
+  timestamps: boolean;
+  createdAtColumn: string;
+  updatedAtColumn: string;
+  softDeletes: boolean;
+  deletedAtColumn: string;
+  value: Record<string, CastDefinition> | undefined;
+}
+
+const implicitDateCastsCache = new WeakMap<ModelConstructor, ImplicitDateCastsEntry>();
+
 /** The implicit datetime casts shared by hydrated and direct row serialization. */
 export function implicitDateCasts(model: ModelConstructor): Record<string, CastDefinition> | undefined {
+  const cached = implicitDateCastsCache.get(model);
+  if (
+    cached !== undefined &&
+    cached.timestamps === model.timestamps &&
+    cached.createdAtColumn === model.createdAtColumn &&
+    cached.updatedAtColumn === model.updatedAtColumn &&
+    cached.softDeletes === model.softDeletes &&
+    cached.deletedAtColumn === model.deletedAtColumn
+  ) {
+    return cached.value;
+  }
+
   let casts: Record<string, CastDefinition> | undefined;
   const add = (column: unknown) => {
     if (typeof column === "string" && column.length > 0) (casts ??= {})[column] = "datetime";
@@ -67,6 +102,15 @@ export function implicitDateCasts(model: ModelConstructor): Record<string, CastD
     } catch { /* misconfigured columns report themselves on the write paths */ }
   }
   if (model.softDeletes) add(model.deletedAtColumn);
+
+  implicitDateCastsCache.set(model, {
+    timestamps: model.timestamps,
+    createdAtColumn: model.createdAtColumn,
+    updatedAtColumn: model.updatedAtColumn,
+    softDeletes: model.softDeletes,
+    deletedAtColumn: model.deletedAtColumn,
+    value: casts,
+  });
   return casts;
 }
 

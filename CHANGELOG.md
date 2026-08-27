@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.2.1 - 2026-08-27
+
+### Changed
+
+- Model construction and hydration now reuse mass-assignment validation and
+  implicit date-cast metadata, avoid repeated proxy reads while normalizing
+  casts, and skip merging the always-empty per-instance cast map.
+
+### Fixed
+
+- Implicit date-cast cache entries now validate all five public timestamp and
+  soft-delete settings they depend on. Runtime `softDeletes` changes, renamed
+  timestamp columns, and inherited `timestamps` toggles in
+  `withoutTimestamps()` no longer silently leave hydrated values as the wrong
+  type.
+
+### Performance
+
+- Validating cached date casts moved median `Model.hydrate()` time from 0.682
+  µs/op to 0.699 µs/op in the seven-run paired CPU benchmark. This bounded
+  correctness cost leaves hydration 7.0% below the 0.752 µs/op uncached
+  baseline.
+
 ## 2.2.0 - 2026-08-27
 
 ### Changed

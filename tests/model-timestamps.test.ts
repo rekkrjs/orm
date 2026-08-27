@@ -265,6 +265,52 @@ describe("Timestamp column metadata", () => {
 });
 
 describe("implicit timestamp casts", () => {
+  test("refreshes implicit casts after enabling soft deletes", () => {
+    class Row extends PermissiveModel {}
+    const stored = "2026-01-02 03:04:05";
+
+    expect(Row.hydrate({ deleted_at: stored }).getAttribute("deleted_at")).toBe(stored);
+    Row.softDeletes = true;
+    expect(Row.hydrate({ deleted_at: stored }).getAttribute("deleted_at")).toBeInstanceOf(Date);
+  });
+
+  test("refreshes implicit casts after renaming the created-at column", () => {
+    class Row extends PermissiveModel {
+      static override createdAtColumn: string = "created_at";
+    }
+    const stored = "2026-01-02 03:04:05";
+
+    expect(Row.hydrate({ created_at: stored, createdOn: stored }).getAttribute("created_at")).toBeInstanceOf(Date);
+    Row.createdAtColumn = "createdOn";
+    const renamed = Row.hydrate({ created_at: stored, createdOn: stored });
+    expect(renamed.getAttribute("created_at")).toBe(stored);
+    expect(renamed.getAttribute("createdOn")).toBeInstanceOf(Date);
+  });
+
+  test("a parent withoutTimestamps invalidates cached casts on subclasses", async () => {
+    class Parent extends PermissiveModel {}
+    class Child extends Parent {}
+    const stored = "2026-01-02 03:04:05";
+
+    expect(Child.hydrate({ created_at: stored }).getAttribute("created_at")).toBeInstanceOf(Date);
+    await Parent.withoutTimestamps(async () => {
+      expect(Child.timestamps).toBe(false);
+      expect(Child.hydrate({ created_at: stored }).getAttribute("created_at")).toBe(stored);
+    });
+    expect(Child.hydrate({ created_at: stored }).getAttribute("created_at")).toBeInstanceOf(Date);
+  });
+
+  test("withoutTimestamps invalidates cached implicit casts", async () => {
+    class Row extends PermissiveModel {}
+    const stored = "2026-01-02 03:04:05";
+
+    expect(Row.hydrate({ created_at: stored }).getAttribute("created_at")).toBeInstanceOf(Date);
+    await Row.withoutTimestamps(async () => {
+      expect(Row.hydrate({ created_at: stored }).getAttribute("created_at")).toBe(stored);
+    });
+    expect(Row.hydrate({ created_at: stored }).getAttribute("created_at")).toBeInstanceOf(Date);
+  });
+
   test("an in-place Date mutation on a derived timestamp marks the model dirty", async () => {
     const connection = setupTestDb();
     try {

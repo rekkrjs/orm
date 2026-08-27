@@ -42,8 +42,9 @@ function hydrateModelRow<M extends ModelConstructor>(
 ): InstanceType<M> {
   const instance = new model() as InstanceType<M>;
   const hydrated = ownsRow ? row : { ...row };
-  for (const key of Object.keys(instance.$mergedCasts)) {
-    const cast = instance.$mergedCasts[key];
+  const casts = instance.$mergedCasts;
+  for (const key of Object.keys(casts)) {
+    const cast = casts[key];
     if (isBackedEnumDefinition(cast)) {
       if (Object.hasOwn(hydrated, key)) {
         instance.validateBackedEnumAttribute(key, hydrated[key]);

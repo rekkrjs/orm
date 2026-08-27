@@ -130,6 +130,14 @@ function resolveMassAssignmentPolicy(constructor: typeof ModelCore): MassAssignm
   return DEFAULT_MASS_ASSIGNMENT_POLICY;
 }
 
+const validatedMassAssignmentPolicies = new WeakSet<typeof ModelCore>();
+
+function validateMassAssignmentPolicy(constructor: typeof ModelCore): void {
+  if (validatedMassAssignmentPolicies.has(constructor)) return;
+  resolveMassAssignmentPolicy(constructor);
+  validatedMassAssignmentPolicies.add(constructor);
+}
+
 function isDangerousMassAssignmentKey(key: string): boolean {
   return key.startsWith("$") || key === "__proto__" || key === "prototype" || key === "constructor";
 }
@@ -187,13 +195,13 @@ export class ModelCore<T extends Record<string, any> = any> {
   $wasRecentlyCreated = false;
 
   constructor(attributes?: Partial<T>) {
-    const ctor = Object.getPrototypeOf(this).constructor as typeof ModelCore;
-    resolveMassAssignmentPolicy(ctor);
+    const ctor = this.constructor as typeof ModelCore;
+    validateMassAssignmentPolicy(ctor);
     const staticCasts = ctor.casts || {};
     // A copy, never the static object itself: `casts` is public, and code that
     // adds a cast in place would otherwise keep the identity that mutableCastKeys
     // caches against, so the new cast would stay invisible to getDirty.
-    this.$mergedCasts = { ...implicitDateCasts(ctor), ...staticCasts, ...this.$casts };
+    this.$mergedCasts = { ...implicitDateCasts(ctor), ...staticCasts };
     const defaults = ctor.attributes || {};
     if (Object.keys(defaults).length > 0) {
       this.forceFill({ ...defaults } as any);
@@ -232,7 +240,7 @@ export class ModelCore<T extends Record<string, any> = any> {
   }
 
   static getTable(): string {
-    resolveMassAssignmentPolicy(this);
+    validateMassAssignmentPolicy(this);
     return this.table || snakeCase(this.name) + "s";
   }
 
@@ -373,7 +381,7 @@ export class ModelCore<T extends Record<string, any> = any> {
   }
 
   static query<M extends ModelConstructor>(this: M): Builder<InstanceType<M>> {
-    resolveMassAssignmentPolicy(this as any);
+    validateMassAssignmentPolicy(this as any);
     const connection = (this as any).getConnection();
     const builder = new Builder<InstanceType<M>>(connection, (this as any).getQualifiedTable(connection));
     builder.setModel(this);
