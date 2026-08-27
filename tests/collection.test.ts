@@ -194,6 +194,28 @@ describe("Collection", () => {
     expect(users.json()).toEqual(users.toJSON());
   });
 
+  test("serialization helpers return native arrays without serializing items twice", () => {
+    let calls = 0;
+    const items = new Collection([{
+      toJSON() {
+        calls++;
+        return { id: 1, name: "Ada" };
+      },
+    }]);
+
+    const serialized = items.toJSON();
+    expect(Object.getPrototypeOf(serialized)).toBe(Array.prototype);
+    expect(serialized).not.toBeInstanceOf(Collection);
+    expect(JSON.stringify(serialized)).toBe('[{"id":1,"name":"Ada"}]');
+    expect(calls).toBe(1);
+
+    const picked = items.json("id");
+    expect(Object.getPrototypeOf(picked)).toBe(Array.prototype);
+    expect(picked).not.toBeInstanceOf(Collection);
+    expect(JSON.stringify(picked)).toBe('[{"id":1}]');
+    expect(calls).toBe(2);
+  });
+
   test("query json returns serialized rows", async () => {
     const users = await CollectionUser.query().orderBy("score", "desc").json();
     expect(users).toEqual([
@@ -201,6 +223,8 @@ describe("Collection", () => {
       { id: 3, name: "Grace", role: "user", score: 15 },
       { id: 1, name: "Ada", role: "admin", score: 10 },
     ]);
+    expect(Object.getPrototypeOf(users)).toBe(Array.prototype);
+    expect(users).not.toBeInstanceOf(Collection);
   });
 
   test("paginator data and chunk callbacks use collections", async () => {

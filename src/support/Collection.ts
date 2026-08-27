@@ -157,17 +157,25 @@ export class Collection<T = any> extends Array<T> {
   }
 
   toJSON(): CollectionJson<T> {
-    return this.map((item: any) => typeof item?.toJSON === "function" ? item.toJSON() : item) as CollectionJson<T>;
+    const result = new Array(this.length);
+    for (let index = 0; index < this.length; index++) {
+      const item: any = this[index];
+      result[index] = typeof item?.toJSON === "function" ? item.toJSON() : item;
+    }
+    return result as CollectionJson<T>;
   }
 
   json(): CollectionJson<T>;
   json<P extends DotPaths<ItemJson<T>>>(...paths: P[]): DeepPick<ItemJson<T>, P>[];
   json<P extends DotPaths<ItemJson<T>>>(...paths: P[]): any {
     if (paths.length === 0) return this.toJSON();
-    return this.map((item: any) => {
+    const result = new Array(this.length);
+    for (let index = 0; index < this.length; index++) {
+      const item: any = this[index];
       const full = typeof item?.toJSON === "function" ? item.toJSON() : item;
-      return deepPickCollection(full, paths as string[]);
-    });
+      result[index] = deepPickCollection(full, paths as string[]);
+    }
+    return result;
   }
 
   isEmpty(): boolean {

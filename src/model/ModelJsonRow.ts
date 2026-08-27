@@ -7,8 +7,9 @@ import type { CastDefinition, ModelConstructor } from "./ModelTypes.js";
 
 export interface RawJsonPlan {
   readonly modelName: string;
-  readonly casts: Readonly<Record<string, CastDefinition>>;
-  readonly enumKeys: readonly string[];
+  readonly casts: Readonly<Record<string, CompiledCast>>;
+  readonly enumCasts: readonly CompiledCast[];
+  readonly fastCasts?: readonly CompiledCast[];
   readonly defaults: Readonly<Record<string, unknown>>;
   readonly accessors: Record<string, any>;
   readonly visible?: ReadonlySet<string>;
@@ -18,6 +19,15 @@ export interface RawJsonPlan {
 interface CastContext {
   readonly modelName: string;
   readonly attribute: string;
+}
+
+interface CompiledCast extends CastContext {
+  readonly definition: CastDefinition;
+  readonly type: string;
+  readonly decimalScale?: number;
+  readonly backedEnum: boolean;
+  readonly custom: boolean;
+  readonly supported: boolean;
 }
 
 function utcCalendarDate(year: number, month: number, day: number): Date {
@@ -74,10 +84,15 @@ export function createRawJsonPlan(
     }
   }
 
-  const casts = {
+  const definitions = {
     ...implicitDateCasts(model),
     ...(model.casts ?? {}),
   } as Record<string, CastDefinition>;
+  const casts = Object.fromEntries(Object.entries(definitions).map(([attribute, definition]) => [
+    attribute,
+    compileCast(definition, { modelName: model.name, attribute }),
+  ]));
+  const compiledCasts = Object.values(casts);
 
   const visibleValues = model.visible ?? [];
   const hiddenValues = model.hidden ?? [];
@@ -85,14 +100,28 @@ export function createRawJsonPlan(
     throw new Error(`${model.name}.rawJson() requires static hidden and visible arrays.`);
   }
 
+  const defaults = { ...(model.attributes ?? {}) };
+  const accessors = model.accessors ?? {};
+  const visible = visibleValues.length > 0 ? new Set(visibleValues) : undefined;
+  const hidden = hiddenValues.length > 0 ? new Set(hiddenValues) : undefined;
+  const enumCasts = compiledCasts.filter((cast) => cast.backedEnum);
+  const fastCasts = Object.keys(defaults).length === 0
+      && !hasAccessorConfiguration(accessors)
+      && !visible
+      && !hidden
+      && !compiledCasts.some((cast) => cast.custom)
+    ? compiledCasts.filter((cast) => !cast.backedEnum)
+    : undefined;
+
   return {
     modelName: model.name,
     casts,
-    enumKeys: Object.keys(casts).filter((key) => isBackedEnumDefinition(casts[key])),
-    defaults: { ...(model.attributes ?? {}) },
-    accessors: model.accessors ?? {},
-    visible: visibleValues.length > 0 ? new Set(visibleValues) : undefined,
-    hidden: hiddenValues.length > 0 ? new Set(hiddenValues) : undefined,
+    enumCasts,
+    fastCasts,
+    defaults,
+    accessors,
+    visible,
+    hidden,
   };
 }
 
@@ -105,11 +134,21 @@ export function canReturnRawJsonRows(plan: RawJsonPlan): boolean {
 }
 
 export function normalizeHydratedCastValue(cast: unknown, value: unknown): unknown {
+  const separator = typeof cast === "string" ? cast.indexOf(":") : -1;
+  const type = typeof cast === "string"
+    ? separator === -1 ? cast : cast.slice(0, separator)
+    : undefined;
+  return normalizeHydratedCastValueForType(cast, value, type);
+}
+
+function normalizeHydratedCastValueForType(
+  cast: unknown,
+  value: unknown,
+  type: string | undefined,
+): unknown {
   if (typeof cast !== "string" || value === null || value === undefined || typeof value === "string") {
     return value;
   }
-  const separator = cast.indexOf(":");
-  const type = separator === -1 ? cast : cast.slice(0, separator);
   return type === "json" || type === "array" || type === "object"
     ? JSON.stringify(value)
     : value;
@@ -129,21 +168,34 @@ export function assertSupportedStringCast(cast: unknown, modelName: string, attr
   }
 }
 
-export function castBuiltInAttribute(
-  cast: CastDefinition,
-  value: unknown,
-  context: CastContext,
-): unknown {
-  assertSupportedStringCast(cast, context.modelName, context.attribute);
+function compileCast(definition: CastDefinition, context: CastContext): CompiledCast {
+  const backedEnum = isBackedEnumDefinition(definition);
+  const [type, argument] = typeof definition === "string"
+    ? definition.split(":")
+    : ["", undefined];
+  return {
+    ...context,
+    definition,
+    type,
+    decimalScale: type === "decimal" ? Number(argument || 2) : undefined,
+    backedEnum,
+    custom: typeof definition !== "string" && !backedEnum,
+    supported: typeof definition !== "string" || builtInCasts.has(type),
+  };
+}
+
+function castCompiledAttribute(cast: CompiledCast, value: unknown): unknown {
+  if (!cast.supported) {
+    throw new Error(`Unsupported cast "${cast.type}" (${cast.modelName}.${cast.attribute}).`);
+  }
   if (value === null) return value;
-  if (isBackedEnumDefinition(cast)) {
-    assertBackedEnumValue(cast, value, context.modelName, context.attribute);
+  if (cast.backedEnum) {
+    assertBackedEnumValue(cast.definition as any, value, cast.modelName, cast.attribute);
     return value;
   }
   if (value === undefined) return value;
 
-  const [type, argument] = String(cast).split(":");
-  switch (type) {
+  switch (cast.type) {
     case "boolean":
     case "bool":
       return !!value;
@@ -154,7 +206,7 @@ export function castBuiltInAttribute(
     case "double":
       return Number(value);
     case "decimal":
-      return formatDecimal(value as string | number | bigint, Number(argument || 2));
+      return formatDecimal(value as string | number | bigint, cast.decimalScale!);
     case "string":
       return String(value);
     case "date": {
@@ -187,23 +239,43 @@ export function castBuiltInAttribute(
     case "base64":
       return typeof value === "string" ? Buffer.from(value, "base64").toString("utf8") : value;
     default:
-      throw new Error(`Unsupported cast "${type}" (${context.modelName}.${context.attribute}).`);
+      throw new Error(`Unsupported cast "${cast.type}" (${cast.modelName}.${cast.attribute}).`);
   }
+}
+
+export function castBuiltInAttribute(
+  cast: CastDefinition,
+  value: unknown,
+  context: CastContext,
+): unknown {
+  return castCompiledAttribute(compileCast(cast, context), value);
 }
 
 export function serializeRawJsonRow(
   row: Record<string, unknown>,
   plan: RawJsonPlan,
 ): Record<string, unknown> {
+  if (plan.fastCasts) {
+    const output = { ...row };
+    for (const cast of plan.enumCasts) {
+      if (Object.hasOwn(row, cast.attribute)) castCompiledAttribute(cast, row[cast.attribute]);
+    }
+    for (const cast of plan.fastCasts) {
+      if (!Object.hasOwn(output, cast.attribute)) continue;
+      output[cast.attribute] = castCompiledAttribute(
+        cast,
+        normalizeHydratedCastValueForType(cast.definition, output[cast.attribute], cast.type),
+      );
+    }
+    return output;
+  }
+
   const attributes = Object.keys(plan.defaults).length > 0
     ? { ...plan.defaults, ...row }
     : row;
-  for (const key of plan.enumKeys) {
-    if (Object.hasOwn(attributes, key)) {
-      castBuiltInAttribute(plan.casts[key], attributes[key], {
-        modelName: plan.modelName,
-        attribute: key,
-      });
+  for (const cast of plan.enumCasts) {
+    if (Object.hasOwn(attributes, cast.attribute)) {
+      castCompiledAttribute(cast, attributes[cast.attribute]);
     }
   }
 
@@ -215,17 +287,15 @@ export function serializeRawJsonRow(
     }
 
     const cast = plan.casts[key];
-    const backedEnum = isBackedEnumDefinition(cast);
-    if (cast !== undefined && typeof cast !== "string" && !backedEnum) {
+    if (cast?.custom) {
       throw new Error(`${plan.modelName}.rawJson() does not support the custom cast on ${key} because it appears in the output.`);
     }
 
-    output[key] = cast === undefined || backedEnum
+    output[key] = cast === undefined || cast.backedEnum
       ? attributes[key]
-      : castBuiltInAttribute(
+      : castCompiledAttribute(
           cast,
-          normalizeHydratedCastValue(cast, attributes[key]),
-          { modelName: plan.modelName, attribute: key },
+          normalizeHydratedCastValueForType(cast.definition, attributes[key], cast.type),
         );
   }
   return output;

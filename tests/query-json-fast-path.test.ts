@@ -48,6 +48,10 @@ class FastJsonPost extends PermissiveModel {
   static override timestamps = false;
 }
 
+class CompiledCastJsonUser extends FastJsonUser {
+  static override hidden: string[] = [];
+}
+
 class VisibleFastJsonUser extends PermissiveModel {
   static override table = "fast_json_users";
   static override timestamps = false;
@@ -119,6 +123,10 @@ class CustomObjectCastJsonModel extends CountingJsonModel {
       set: (_model: unknown, _key: string, value: unknown) => value,
     },
   };
+}
+
+class UnsupportedStringCastJsonModel extends CountingJsonModel {
+  static override casts = { name: "unsupported" };
 }
 
 class DefaultAttributeJsonModel extends CountingJsonModel {
@@ -428,6 +436,21 @@ describe("Builder.rawJson", () => {
     expect((direct[0] as any).occurred_at).toBeInstanceOf(Date);
   });
 
+  test("uses precompiled casts for plain model rows", async () => {
+    const direct = await CompiledCastJsonUser.where("id", 1).rawJson();
+    const hydrated = (await CompiledCastJsonUser.where("id", 1).get()).toJSON();
+
+    expect(direct).toEqual(hydrated);
+    expect(direct[0]).toMatchObject({
+      active: true,
+      score: 7.5,
+      amount: "12.35",
+      metadata: { nested: { value: 1 } },
+      state: "active",
+      secret: "hidden-a",
+    });
+  });
+
   test("does not materialize unselected cast attributes", async () => {
     const direct = await FastJsonUser.select("id", "name").where("id", 1).rawJson();
     const hydrated = (
@@ -489,7 +512,7 @@ describe("Builder.rawJson", () => {
   });
 
   test("keeps eager enum validation ahead of read-cast errors", async () => {
-    await expect(FastJsonUser.where("id", 4).rawJson())
+    await expect(CompiledCastJsonUser.where("id", 4).rawJson())
       .rejects.toBeInstanceOf(InvalidEnumValueError);
     await expect(FastJsonUser.where("id", 4).get())
       .rejects.toBeInstanceOf(InvalidEnumValueError);
@@ -512,7 +535,8 @@ describe("Builder.rawJson", () => {
       .where("id", 1);
     const rows = await query.json();
     expect(rows).toEqual([{ id: 1, name: "Ada" }]);
-    expect(rows).toBeInstanceOf(Collection);
+    expect(Object.getPrototypeOf(rows)).toBe(Array.prototype);
+    expect(rows).not.toBeInstanceOf(Collection);
     await expect(query.rawJson()).rejects.toThrow("requires a model query");
   });
 
@@ -526,7 +550,7 @@ describe("Builder.rawJson", () => {
     }) as any;
 
     try {
-      const build = () => FastJsonUser
+      const build = () => CompiledCastJsonUser
         .select("id", "active", "metadata")
         .where("id", 1)
         .remember("fast-json-rows", 60);
@@ -576,6 +600,12 @@ describe("Builder.rawJson", () => {
     expect(await CustomClassCastJsonModel.select("id").rawJson()).toEqual([{ id: 1 }]);
     await expect(CustomClassCastJsonModel.query().rawJson()).rejects.toThrow("custom cast on name");
     await expect(CustomObjectCastJsonModel.query().rawJson()).rejects.toThrow("custom cast on name");
+  });
+
+  test("only rejects unsupported string casts that reach the output", async () => {
+    expect(await UnsupportedStringCastJsonModel.select("id").rawJson()).toEqual([{ id: 1 }]);
+    await expect(UnsupportedStringCastJsonModel.query().rawJson())
+      .rejects.toThrow('Unsupported cast "unsupported" (UnsupportedStringCastJsonModel.name).');
   });
 
   test("preserves static default attributes", async () => {

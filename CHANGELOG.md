@@ -1,5 +1,44 @@
 # Changelog
 
+## 2.2.0 - 2026-08-27
+
+### Changed
+
+- `Collection.toJSON()` and `Collection.json(...paths)` now allocate and fill a
+  native array directly. `Builder.json()` inherits that behavior, so its runtime
+  value now matches its array return type and `JSON.stringify()` no longer
+  invokes `Collection.toJSON()` a second time.
+- `Builder.rawJson()` precompiles cast types, decimal arguments, enum metadata,
+  and error context once per `RawJsonPlan`. Eligible models use a shallow-copy
+  fast path when they have no defaults, accessors, visibility rules, or custom
+  casts; all other models keep the general serializer.
+
+### Compatibility
+
+- TypeScript already declared collection JSON helpers and `Builder.json()` as
+  arrays. JavaScript callers that relied on `Collection`-only helpers on their
+  runtime results must use standard array methods; `get()` still returns a
+  `Collection` when those helpers are required.
+- Direct JSON output and opt-in behavior are unchanged. The compiled path keeps
+  eager enum validation, explicit-cast precedence, soft-delete timestamps,
+  cached-row isolation, and lazy errors for unselected unsupported casts.
+
+### Performance
+
+- In the focused 500-model benchmark, returning a native array reduced the
+  following `JSON.stringify()` segment from 54.56 µs to 24.11 µs (about 56%).
+- The isolated Bun benchmark serialized 500 casted rows in 0.015 ms on the
+  compiled path versus 0.029 ms through the general path (about 48% less).
+- On MySQL using 500 complex rows, compiled serialization improved from
+  387.08 µs to 301.79 µs (22%), while the complete `rawJson()` query improved
+  from 2,516.83 µs to 2,098.75 µs (16.6%).
+
+### Verification
+
+- Typechecked and built the package. The complete non-benchmark Bun suite passed
+  with 1,564 tests across 120 files and no failures, including SQLite, MySQL,
+  and PostgreSQL; the focused benchmark and MySQL `orm_bench2` contract passed.
+
 ## 2.1.0 - 2026-08-27
 
 ### Changed

@@ -1,17 +1,24 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Builder, Collection, Connection, Model, Schema } from "../src/index.js";
+import { createRawJsonPlan, serializeRawJsonRow } from "../src/model/ModelJsonRow.js";
 
 class FastJsonBenchUser extends Model {
   static table = "fast_json_bench_users";
   static timestamps = false;
+  static casts = { active: "boolean" };
+}
+
+class GeneralJsonBenchUser extends FastJsonBenchUser {
+  static hidden = ["unused"];
 }
 
 class HydratedJsonBenchUser extends Model {
   static table = "fast_json_bench_users";
   static timestamps = false;
+  static casts = { active: "boolean" };
 }
 
-const rounds = 31;
+const rounds = 101;
 let consumed = 0;
 
 function median(samples: number[]): number {
@@ -19,8 +26,12 @@ function median(samples: number[]): number {
   return sorted[Math.floor(sorted.length / 2)]!;
 }
 
-async function measure(label: string, callback: () => Promise<unknown[]>): Promise<number> {
-  for (let index = 0; index < 5; index++) await callback();
+async function measure(
+  label: string,
+  callback: () => Promise<unknown[]> | unknown[],
+  warmups = 5,
+): Promise<number> {
+  for (let index = 0; index < warmups; index++) await callback();
   const samples: number[] = [];
   for (let index = 0; index < rounds; index++) {
     const start = performance.now();
@@ -76,23 +87,34 @@ describe("Benchmark: model query JSON", () => {
       .orderBy("id")
       .get()).toArray();
     const direct = () => FastJsonBenchUser.select("id", "name", "active").orderBy("id").rawJson();
+    const general = () => GeneralJsonBenchUser.select("id", "name", "active").orderBy("id").rawJson();
     const hydrated = async () => (await FastJsonBenchUser.select("id", "name", "active").orderBy("id").get()).toJSON();
     const fallback = () => HydratedJsonBenchUser.select("id", "name", "active").orderBy("id").json();
 
     const rawValue = await raw();
+    const expected = rawValue.map((row) => ({ ...row, active: Boolean(row.active) }));
     const directValue = await direct();
+    const generalValue = await general();
     const hydratedValue = await hydrated();
     const fallbackValue = await fallback();
 
-    expect(directValue).toEqual(rawValue);
-    expect(hydratedValue).toEqual(rawValue);
-    expect(fallbackValue).toEqual(rawValue);
+    expect(directValue).toEqual(expected);
+    expect(generalValue).toEqual(expected);
+    expect(hydratedValue).toEqual(expected);
+    expect(fallbackValue).toEqual(expected);
     expect(Object.getPrototypeOf(directValue)).toBe(Array.prototype);
     expect(directValue).not.toBeInstanceOf(Collection);
 
     console.log(`response bytes: ${JSON.stringify(rawValue).length}`);
+    const compiledPlan = createRawJsonPlan(FastJsonBenchUser, Model);
+    const generalPlan = createRawJsonPlan(GeneralJsonBenchUser, Model);
+    await measure("serializeRawJsonRow() compiled casts", () =>
+      rawValue.map((row) => serializeRawJsonRow(row, compiledPlan)), 100);
+    await measure("serializeRawJsonRow() general serializer", () =>
+      rawValue.map((row) => serializeRawJsonRow(row, generalPlan)), 100);
     await measure("DB.table().get().toArray()", raw);
-    await measure("Model.rawJson()", direct);
+    await measure("Model.rawJson() compiled casts", direct);
+    await measure("Model.rawJson() general serializer", general);
     await measure("Model.get().toJSON()", hydrated);
     await measure("fallback Model.json()", fallback);
     measureEncoding("JSON.stringify(raw)", rawValue);
