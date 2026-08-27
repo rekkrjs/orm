@@ -7,6 +7,7 @@ import { TransactionContext } from "../connection/TransactionContext.js";
 import { IdentityMap } from "./IdentityMap.js";
 import { ModelSchemaBuilder } from "./ModelSchemaBuilder.js";
 import {
+  getModelTarget,
   modelProxyHandler,
   getGlobalScopes,
   globalScopes,
@@ -477,20 +478,25 @@ export class ModelCore<T extends Record<string, any> = any> {
   getAttribute<K extends keyof T>(key: K): T[K];
   getAttribute(key: string): any;
   getAttribute(key: string | keyof T): any {
+    const target: this = getModelTarget(this);
+    return target.getAttributeFromTarget(this, key);
+  }
+
+  protected getAttributeFromTarget(receiver: this, key: string | keyof T): any {
     const cast = this.getCastDefinition(key as string);
     const value = (this.$attributes as any)[key];
     const backedEnum = isBackedEnumDefinition(cast);
     if (backedEnum && Object.hasOwn(this.$attributes, key) && value !== null) {
       this.assertBackedEnumValue(key as string, value, cast);
     }
-    const accessors = (Object.getPrototypeOf(this).constructor as any).accessors || {};
+    const accessors = (this.constructor as any).accessors || {};
     if (key in accessors && accessors[key as string].get) {
-      return accessors[key as string].get!(value, this.$attributes as any, this);
+      return accessors[key as string].get!(value, this.$attributes as any, receiver);
     }
     if (!backedEnum && Object.prototype.hasOwnProperty.call(this.$castCache, key as string)) {
       return this.$castCache[key as string];
     }
-    const casted = backedEnum ? value : this.castAttribute(key as string, value);
+    const casted = backedEnum ? value : this.castAttributeFromTarget(receiver, key as string, value);
     if (cast && !backedEnum && value !== null && value !== undefined) {
       this.$castCache[key as string] = casted;
     }
@@ -520,6 +526,11 @@ export class ModelCore<T extends Record<string, any> = any> {
   }
 
   castAttribute(key: string, value: any): any {
+    const target: this = getModelTarget(this);
+    return target.castAttributeFromTarget(this, key, value);
+  }
+
+  protected castAttributeFromTarget(receiver: this, key: string, value: any): any {
     const cast = this.getCastDefinition(key);
     if (!cast) return value;
     if (value === null) return value;
@@ -531,7 +542,7 @@ export class ModelCore<T extends Record<string, any> = any> {
     }
     if (value === undefined) return value;
     const custom = this.resolveCustomCast(cast);
-    if (custom) return custom.get(this, key, value, this.$attributes);
+    if (custom) return custom.get(receiver, key, value, this.$attributes);
     return castBuiltInAttribute(cast, value, {
       modelName: this.constructor.name,
       attribute: key,

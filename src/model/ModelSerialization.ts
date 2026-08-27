@@ -1,5 +1,5 @@
 import { ModelPersistence } from "./ModelPersistence.js";
-import type { ModelJson, DotPaths, DeepPick } from "./ModelBase.js";
+import { getModelTarget, type ModelJson, type DotPaths, type DeepPick } from "./ModelBase.js";
 
 /**
  * Whether a stored value already equals what `ModelCore.castAttribute` would
@@ -119,22 +119,24 @@ export class ModelSerialization<T extends Record<string, any> = any> extends Mod
   }
 
   getAppends(): string[] {
-    const constructor = this.getModelConstructor();
-    return [...new Set([...(constructor.appends || []), ...this.$appends])];
+    const target = getModelTarget(this);
+    const constructor = target.constructor as typeof ModelPersistence;
+    return [...new Set([...(constructor.appends || []), ...target.$appends])];
   }
 
-  private serialize(includeRelations: boolean = true): Record<string, any> {
-    const constructor = this.getModelConstructor();
+  private serialize(includeRelations: boolean = true, receiver: this = this): Record<string, any> {
+    const target = getModelTarget(this);
+    const constructor = target.constructor as typeof ModelPersistence;
     const staticVisible = constructor.visible || [];
     const staticHidden = constructor.hidden || [];
     const visible = staticVisible.length > 0
-      ? new Set([...staticVisible, ...this.$visible])
+      ? new Set([...staticVisible, ...target.$visible])
       : undefined;
-    const hidden = new Set([...staticHidden, ...this.$hidden]);
-    for (const key of this.$visible) hidden.delete(key);
-    const attributes = this.$attributes as Record<string, any>;
+    const hidden = new Set([...staticHidden, ...target.$hidden]);
+    for (const key of target.$visible) hidden.delete(key);
+    const attributes = target.$attributes as Record<string, any>;
     const accessors = constructor.accessors || {};
-    const casts = this.$mergedCasts;
+    const casts = target.$mergedCasts;
     const result: Record<string, any> = {};
 
     for (const key of Object.keys(attributes)) {
@@ -142,19 +144,19 @@ export class ModelSerialization<T extends Record<string, any> = any> extends Mod
       const value = attributes[key];
       const cast = casts[key];
       const needsCastPath = Boolean(accessors[key]?.get) || (cast !== undefined && !castValueIsReady(cast, value));
-      result[key] = needsCastPath ? this.getAttribute(key) : value;
+      result[key] = needsCastPath ? target.getAttributeFromTarget(receiver, key) : value;
     }
-    if ((constructor.appends?.length || 0) > 0 || this.$appends.length > 0) {
-      for (const key of this.getAppends()) {
+    if ((constructor.appends?.length || 0) > 0 || target.$appends.length > 0) {
+      for (const key of target.getAppends.call(this)) {
         if ((visible && !visible.has(key)) || hidden.has(key)) continue;
-        const nativeGetter = accessors[key]?.get ? undefined : findNativeGetter(this, key);
-        result[key] = nativeGetter ? nativeGetter.call(this) : this.getAttribute(key as any);
+        const nativeGetter = accessors[key]?.get ? undefined : findNativeGetter(receiver, key);
+        result[key] = nativeGetter ? nativeGetter.call(receiver) : target.getAttributeFromTarget(receiver, key as any);
       }
     }
     if (includeRelations) {
-      for (const key of Object.keys(this.$relations)) {
+      for (const key of Object.keys(target.$relations)) {
         if ((visible && !visible.has(key)) || hidden.has(key)) continue;
-        const value = this.$relations[key];
+        const value = target.$relations[key];
         if (value === null || value === undefined) {
           result[key] = value;
         } else if (typeof value.toJSON === "function") {
@@ -170,18 +172,20 @@ export class ModelSerialization<T extends Record<string, any> = any> extends Mod
   }
 
   toJSON(): ModelJson<this> {
-    return this.serialize(true) as ModelJson<this>;
+    const target = getModelTarget(this);
+    return target.serialize(true, this) as ModelJson<this>;
   }
 
   json(): ModelJson<this>;
   json(options: { relations?: boolean }): ModelJson<this>;
   json<P extends DotPaths<ModelJson<this>>>(...paths: P[]): DeepPick<ModelJson<this>, P>;
   json<P extends DotPaths<ModelJson<this>>>(first?: { relations?: boolean } | P, ...rest: P[]): any {
+    const target = getModelTarget(this);
     if (first !== undefined && typeof first === "object" && !Array.isArray(first)) {
-      return this.serialize((first as { relations?: boolean }).relations !== false);
+      return target.serialize((first as { relations?: boolean }).relations !== false, this);
     }
     const paths = (first !== undefined ? [first as P, ...rest] : []) as string[];
-    const full = this.serialize(true) as Record<string, any>;
+    const full = target.serialize(true, this) as Record<string, any>;
     if (paths.length === 0) return full;
     return deepPick(full, paths);
   }

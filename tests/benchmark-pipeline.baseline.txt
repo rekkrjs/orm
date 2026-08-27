@@ -1,0 +1,14 @@
+command: bun run bench
+bun: 1.4.0 (34cbb9a40)
+date: 2026-08-27
+
+PIPELINE rows=1 driver_ms=0.0158 get_ms=0.0214 serialize_ms=0.0034 getJson_ms=0.0196 rawJson_ms=0.0180 stringify_ms=0.0009
+PIPELINE rows=25 driver_ms=0.0148 get_ms=0.0430 serialize_ms=0.0352 getJson_ms=0.0797 rawJson_ms=0.0324 stringify_ms=0.0137
+PIPELINE rows=200 driver_ms=0.0535 get_ms=0.2124 serialize_ms=0.1661 getJson_ms=0.5060 rawJson_ms=0.1211 stringify_ms=0.1130
+PIPELINE rows=20000 driver_ms=4.6904 get_ms=16.1222 serialize_ms=11.8143 getJson_ms=40.8989 rawJson_ms=9.5150 stringify_ms=11.2333
+PIPELINE_TRAPS phase=get rows=20000 total=80000 perRow=4.00 top=$mergedCasts:1.00,$dirtyKeys:1.00,$attributes:1.00,setConnection:1.00
+PIPELINE_TRAPS phase=toJSON rows=20000 total=1240000 perRow=62.00 top=constructor:12.00,$mergedCasts:9.00,getCastDefinition:8.00,$castCache:8.00,$attributes:5.00,getAttribute:4.00,castAttribute:4.00,resolveCustomCast:4.00,toJSON:2.00,serialize:1.00,getModelConstructor:1.00,$hidden:1.00
+
+45 pass
+0 fail
+Ran 45 tests across 6 files. [1.98s]

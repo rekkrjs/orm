@@ -211,7 +211,7 @@ describe("Attribute Casting", () => {
     }
   });
 
-  test("picks up a cast added to the static map after the first model was built", () => {
+  test("picks up casts added to or replaced in the static map after the first model was built", () => {
     class LateCastModel extends PermissiveModel {
       static table = "late_casts";
       static casts: Record<string, string> = { first: "json" };
@@ -227,6 +227,18 @@ describe("Attribute Casting", () => {
     const late = LateCastModel.hydrate({ id: 2, second: { b: 1 } });
     late.second.b = 2;
     expect(late.getDirty()).toEqual({ second: '{"b":2}' });
+
+    LateCastModel.casts.first = "integer";
+    expect(LateCastModel.hydrate({ id: 3, first: "7" }).first).toBe(7);
+  });
+
+  test("keeps each instance merged cast map isolated", () => {
+    const first = new CastedModel();
+    const second = new CastedModel();
+
+    expect(first.$mergedCasts).not.toBe(second.$mergedCasts);
+    first.$mergedCasts.local = "json";
+    expect(second.$mergedCasts.local).toBeUndefined();
   });
 
   test("normalizes native json rows without marking an unchanged value dirty", () => {

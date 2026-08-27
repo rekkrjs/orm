@@ -1,5 +1,48 @@
 # Changelog
 
+## 2.3.0 - 2026-08-27
+
+### Changed
+
+- Model serialization now reads ORM-owned state through the raw model target
+  instead of repeatedly dispatching internal work through the public Proxy.
+  Accessors, native getters, and custom casts still receive the public model.
+- Hydration now assigns existing class fields directly through that target.
+  Their writable, enumerable, and configurable descriptors are preserved
+  without paying for `Object.defineProperties()` on every row.
+
+### Added
+
+- Added reproducible SQLite pipeline and PostgreSQL point-query benchmarks with
+  warmups, median samples, phase timings, and Proxy trap counts.
+
+### Compatibility
+
+- No migration or opt-in is required. Public model property behavior,
+  per-instance cast-map isolation, runtime static-cast mutation, visibility,
+  appends, relations, and the `Collection` runtime identity are unchanged.
+- PostgreSQL still defaults to `prepare: false` for pooler compatibility.
+  Applications that control their connection topology may opt into prepared
+  statements through the existing connection option.
+
+### Performance
+
+- On 20,000 SQLite rows with ten columns and six effective casts, median
+  hydration improved from 16.122 ms to 9.917 ms (38.5%), serialization from
+  11.814 ms to 6.661 ms (43.6%), and the complete `get().toJSON()` pipeline
+  from 40.899 ms to 26.387 ms (35.5%).
+- Internal Proxy traffic fell from 4 to 1 trap per hydrated row and from 62 to
+  3 traps per serialized row.
+- On the local PostgreSQL point-query benchmark, `toSql()` accounted for 1.96%
+  of the unprepared RTT. Opting into `prepare: true` reduced raw query time by
+  27.5% and the complete ORM lookup by 26.5%; no Builder or default-connection
+  behavior changed.
+
+### Verification
+
+- The complete non-benchmark suite passed with 1,570 tests across 120 files and
+  no failures. All 46 benchmark tests passed separately.
+
 ## 2.2.1 - 2026-08-27
 
 ### Changed

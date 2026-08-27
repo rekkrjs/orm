@@ -565,8 +565,15 @@ export async function loadAggregateResults(
 // Model proxy handler
 // ============================================================
 
+const modelTarget = Symbol("model target");
+
+export function getModelTarget<T extends object>(model: T): T {
+  return ((model as any)[modelTarget] as T | undefined) ?? model;
+}
+
 export const modelProxyHandler: ProxyHandler<any> = {
   get(target, prop, receiver) {
+    if (prop === modelTarget) return target;
     if (typeof prop === "string") {
       const accessors = getAccessors(target);
       if (Object.hasOwn(accessors, prop) && accessors[prop].get) {

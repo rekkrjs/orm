@@ -3,7 +3,7 @@ import { ObserverRegistry } from "./Observer.js";
 import { IdentityMap } from "./IdentityMap.js";
 import { ModelNotFoundError } from "./ModelNotFoundError.js";
 import { Collection } from "../support/Collection.js";
-import { findRelationMethod } from "./ModelBase.js";
+import { findRelationMethod, getModelTarget } from "./ModelBase.js";
 import type {
   ModelConstructor,
   BulkModelOptions,
@@ -41,8 +41,9 @@ function hydrateModelRow<M extends ModelConstructor>(
   ownsRow: boolean,
 ): InstanceType<M> {
   const instance = new model() as InstanceType<M>;
+  const target = getModelTarget(instance);
   const hydrated = ownsRow ? row : { ...row };
-  const casts = instance.$mergedCasts;
+  const casts = target.$mergedCasts;
   for (const key of Object.keys(casts)) {
     const cast = casts[key];
     if (isBackedEnumDefinition(cast)) {
@@ -54,31 +55,22 @@ function hydrateModelRow<M extends ModelConstructor>(
     const normalized = normalizeHydratedCastValue(cast, hydrated[key]);
     if (normalized !== hydrated[key]) hydrated[key] = normalized;
   }
-  instance.$dirtyKeys?.clear();
-  const defaults = instance.$attributes as Record<string, any>;
+  target.$dirtyKeys?.clear();
+  const defaults = target.$attributes as Record<string, any>;
   // Read off the instance, not the prototype: an override can be an instance
   // field (`setConnection = (conn) => …`), which never reaches the prototype.
-  const usesDefaultSetConnection = instance.setConnection === ModelCore.prototype.setConnection;
+  const usesDefaultSetConnection = target.setConnection === ModelCore.prototype.setConnection;
 
-  // Every key below is already an own data property on the instance: the
-  // class fields in ModelCore are emitted as definitions (target ESNext, so
-  // useDefineForClassFields is on), including the ones with no initialiser
-  // like `$connection`. That matters, because `defineProperties` only keeps
-  // writable/enumerable/configurable when the property already exists — on a
-  // fresh key it would default them to false and freeze `$connection`, so a
-  // later `setConnection` would throw. Defining them together also avoids
-  // sending every internal assignment through the model's public Proxy.
-  Object.defineProperties(instance, {
-    $attributes: {
-      value: Object.keys(defaults).length > 0
-        ? { ...defaults, ...hydrated }
-        : ownsRow ? { ...hydrated } : hydrated,
-    },
-    $original: { value: ownsRow ? hydrated : { ...hydrated } },
-    $castCache: { value: {} },
-    $exists: { value: true },
-    ...(connection && usesDefaultSetConnection ? { $connection: { value: connection } } : {}),
-  });
+  // These class fields already exist as writable own data properties. Assign
+  // through the raw target so hydration keeps their descriptors and skips the
+  // public Proxy.
+  target.$attributes = Object.keys(defaults).length > 0
+    ? { ...defaults, ...hydrated }
+    : ownsRow ? { ...hydrated } : hydrated;
+  target.$original = ownsRow ? hydrated : { ...hydrated };
+  target.$castCache = {};
+  target.$exists = true;
+  if (connection && usesDefaultSetConnection) target.$connection = connection;
   if (connection && !usesDefaultSetConnection) instance.setConnection(connection);
   return instance;
 }

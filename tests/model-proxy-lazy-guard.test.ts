@@ -1,5 +1,6 @@
 import { expect, test, describe, beforeAll } from "bun:test";
 import { Model, Schema } from "../src/index.js";
+import { getModelTarget } from "../src/model/ModelBase.js";
 import { setupTestDb } from "./helpers.js";
 
 class Product extends Model {
@@ -69,6 +70,33 @@ describe("Model Attribute Access", () => {
     expect(desc).toBeDefined();
     expect(desc!.enumerable).toBe(true);
     expect(desc!.configurable).toBe(true);
+  });
+
+  test("direct internal assignments preserve class-field descriptors", () => {
+    const target = getModelTarget(new Product());
+    const keys = ["$attributes", "$original", "$castCache", "$exists", "$connection"] as const;
+
+    for (const key of keys) {
+      expect(Object.getOwnPropertyDescriptor(target, key)).toMatchObject({
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
+    }
+
+    target.$attributes = { name: "assigned" } as any;
+    target.$original = { name: "assigned" } as any;
+    target.$castCache = {};
+    target.$exists = true;
+    target.$connection = undefined;
+
+    for (const key of keys) {
+      expect(Object.getOwnPropertyDescriptor(target, key)).toMatchObject({
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
+    }
   });
 });
 
