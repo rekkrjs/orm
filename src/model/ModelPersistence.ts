@@ -189,7 +189,8 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
   ): InstanceType<M> {
     const instance = new this() as InstanceType<M>;
     const hydrated = { ...row };
-    for (const [key, cast] of Object.entries(instance.$mergedCasts)) {
+    for (const key of Object.keys(instance.$mergedCasts)) {
+      const cast = instance.$mergedCasts[key];
       if (isBackedEnumDefinition(cast)) {
         if (Object.hasOwn(hydrated, key)) {
           instance.validateBackedEnumAttribute(key, hydrated[key]);

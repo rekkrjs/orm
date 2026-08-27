@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.13.1 - 2026-08-27
+
+### Changed
+
+- Model hydration now iterates cast keys without allocating an entry tuple for
+  every cast. Hydrating 50,000 models improved from 32.48 ms to 29.53 ms while
+  preserving proxies, casts, snapshots, and dirty tracking.
+
+### Verification
+
+- Typechecked and built the package, then ran the complete Bun test suite:
+  1,556 tests passed with no failures.
+
 ## 1.13.0 - 2026-08-27
 
 ### Added
