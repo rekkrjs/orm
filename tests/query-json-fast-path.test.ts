@@ -19,7 +19,6 @@ let eligibleConstructions = 0;
 class FastJsonUser extends PermissiveModel {
   static override table = "fast_json_users";
   static override timestamps = false;
-  static override fastJson = true;
   static override hidden = ["secret"];
   static override casts = {
     active: "boolean",
@@ -52,7 +51,6 @@ class FastJsonPost extends PermissiveModel {
 class VisibleFastJsonUser extends PermissiveModel {
   static override table = "fast_json_users";
   static override timestamps = false;
-  static override fastJson = true;
   static override visible = ["id", "name", "secret"];
   static override hidden = ["secret"];
 }
@@ -60,7 +58,6 @@ class VisibleFastJsonUser extends PermissiveModel {
 class HiddenEnumFastJsonUser extends PermissiveModel {
   static override table = "fast_json_users";
   static override timestamps = false;
-  static override fastJson = true;
   static override casts = { state: JsonState };
   static override hidden = ["state"];
 }
@@ -68,7 +65,6 @@ class HiddenEnumFastJsonUser extends PermissiveModel {
 class InvisibleEnumFastJsonUser extends PermissiveModel {
   static override table = "fast_json_users";
   static override timestamps = false;
-  static override fastJson = true;
   static override casts = { state: JsonState };
   static override visible = ["id"];
 }
@@ -85,15 +81,11 @@ class CountingJsonModel extends PermissiveModel {
   }
 }
 
-class NoOptInJsonModel extends CountingJsonModel {}
-
-class DisabledJsonModel extends CountingJsonModel {
-  static override fastJson = false;
-}
-
 class AppendedJsonModel extends CountingJsonModel {
-  static override fastJson = true;
   static override appends = ["upperName"];
+  static override accessors = {
+    upperName: { get: (_value: unknown, attributes: Record<string, unknown>) => String(attributes.name).toUpperCase() },
+  };
 
   get upperName(): string {
     return String(this.getAttribute("name")).toUpperCase();
@@ -101,7 +93,6 @@ class AppendedJsonModel extends CountingJsonModel {
 }
 
 class AccessorJsonModel extends CountingJsonModel {
-  static override fastJson = true;
   static override accessors = {
     name: { get: (value: unknown) => String(value).toUpperCase() },
   };
@@ -118,12 +109,10 @@ class PrefixCast implements CastsAttributes {
 }
 
 class CustomClassCastJsonModel extends CountingJsonModel {
-  static override fastJson = true;
   static override casts = { name: PrefixCast };
 }
 
 class CustomObjectCastJsonModel extends CountingJsonModel {
-  static override fastJson = true;
   static override casts = {
     name: {
       get: (_model: unknown, _key: string, value: unknown) => `object:${String(value)}`,
@@ -133,36 +122,28 @@ class CustomObjectCastJsonModel extends CountingJsonModel {
 }
 
 class DefaultAttributeJsonModel extends CountingJsonModel {
-  static override fastJson = true;
   static override attributes = { fallback: "default" };
 }
 
 class OverrideHydrateJsonModel extends CountingJsonModel {
-  static override fastJson = true;
-
   static override hydrate(row: Record<string, any>, connection?: Connection): any {
     return super.hydrate({ ...row, hydrated: true }, connection);
   }
 }
 
 class OverrideToJsonModel extends CountingJsonModel {
-  static override fastJson = true;
-
   override toJSON(): any {
     return { ...super.toJSON(), to_json: true };
   }
 }
 
 class OverrideJsonModel extends CountingJsonModel {
-  static override fastJson = true;
-
   override json(): any {
     return super.json();
   }
 }
 
 class OverrideGetAttributeModel extends CountingJsonModel {
-  static override fastJson = true;
   static override casts = { name: "string:forced" };
 
   override getAttribute(key: string): any {
@@ -172,7 +153,6 @@ class OverrideGetAttributeModel extends CountingJsonModel {
 }
 
 class OverrideCastAttributeModel extends CountingJsonModel {
-  static override fastJson = true;
   static override casts = { name: "string:forced" };
 
   override castAttribute(key: string, value: any): any {
@@ -182,16 +162,12 @@ class OverrideCastAttributeModel extends CountingJsonModel {
 }
 
 class OverrideGetAppendsModel extends CountingJsonModel {
-  static override fastJson = true;
-
   override getAppends(): string[] {
     return super.getAppends();
   }
 }
 
 class OverrideSetConnectionModel extends CountingJsonModel {
-  static override fastJson = true;
-
   override setConnection(connection: Connection): this {
     super.setConnection(connection);
     (this.$attributes as Record<string, any>).from_connection = "yes";
@@ -199,9 +175,7 @@ class OverrideSetConnectionModel extends CountingJsonModel {
   }
 }
 
-class OverrideSerializeModel extends CountingJsonModel {
-  static override fastJson = true;
-}
+class OverrideSerializeModel extends CountingJsonModel {}
 
 const inheritedSerialize = (OverrideSerializeModel.prototype as any).serialize;
 (OverrideSerializeModel.prototype as any).serialize = function(includeRelations = true) {
@@ -218,12 +192,10 @@ Object.defineProperty(nonEnumerableAccessors, "name", {
 });
 
 class NonEnumerableAccessorModel extends CountingJsonModel {
-  static override fastJson = true;
   static override accessors = nonEnumerableAccessors;
 }
 
 class InheritedAccessorModel extends CountingJsonModel {
-  static override fastJson = true;
   static override accessors = Object.create({
     name: { get: (value: unknown) => String(value).toUpperCase() },
   });
@@ -240,8 +212,6 @@ class RelaxedEnumValidationModel extends PermissiveModel {
 }
 
 class EagerJsonParent extends CountingJsonModel {
-  static override fastJson = true;
-
   children() {
     return this.hasMany(EagerJsonChild, "parent_id");
   }
@@ -252,14 +222,42 @@ class EagerJsonChild extends PermissiveModel {
   static override timestamps = false;
 }
 
-async function expectHydration(model: typeof CountingJsonModel): Promise<any> {
-  model.constructions = 0;
-  const result = await model.query().orderBy("id").json();
-  expect(model.constructions).toBeGreaterThan(0);
-  return result;
+class TimestampJsonModel extends PermissiveModel {
+  static override table = "raw_json_timestamps";
+  static override softDeletes = true;
 }
 
-describe("Builder.json fast path", () => {
+class CustomTimestampJsonModel extends PermissiveModel {
+  static override table = "raw_json_custom_timestamps";
+  static override createdAtColumn = "made_at";
+  static override updatedAtColumn = "changed_at";
+}
+
+class StringTimestampJsonModel extends PermissiveModel {
+  static override table = "raw_json_timestamps";
+  static override casts = { created_at: "string" };
+}
+
+class TypedRawJsonUser extends PermissiveModel.define<{
+  id: number;
+  name: string;
+  active: boolean;
+}>("fast_json_users") {
+  static override timestamps = false;
+  static override appends = ["upperName"];
+
+  get upperName(): string {
+    return this.name.toUpperCase();
+  }
+
+  posts() {
+    return this.hasMany(FastJsonPost, "user_id");
+  }
+}
+
+function expectType<T>(_value: T): void {}
+
+describe("Builder.rawJson", () => {
   const connection = new Connection({ url: "sqlite://:memory:" });
 
   beforeAll(async () => {
@@ -368,6 +366,32 @@ describe("Builder.json fast path", () => {
       table.string("name");
     });
     await new Builder(connection, "fast_json_children").insert({ parent_id: 1, name: "child" });
+
+    await Schema.create("raw_json_timestamps", (table) => {
+      table.increments("id");
+      table.string("name");
+      table.timestamp("created_at");
+      table.timestamp("updated_at");
+      table.timestamp("deleted_at").nullable();
+    });
+    await new Builder(connection, "raw_json_timestamps").insert({
+      name: "dated",
+      created_at: "2026-08-27 12:00:00",
+      updated_at: "2026-08-27 13:00:00",
+      deleted_at: "2026-08-27 14:00:00",
+    });
+
+    await Schema.create("raw_json_custom_timestamps", (table) => {
+      table.increments("id");
+      table.string("name");
+      table.timestamp("made_at");
+      table.timestamp("changed_at");
+    });
+    await new Builder(connection, "raw_json_custom_timestamps").insert({
+      name: "custom",
+      made_at: "2026-08-27 15:00:00",
+      changed_at: "2026-08-27 16:00:00",
+    });
   });
 
   afterAll(async () => {
@@ -376,7 +400,7 @@ describe("Builder.json fast path", () => {
 
   test("matches hydrated JSON for built-in casts without constructing models", async () => {
     eligibleConstructions = 0;
-    const direct = await FastJsonUser.whereIn("id", [1, 2]).orderBy("id").json();
+    const direct = await FastJsonUser.whereIn("id", [1, 2]).orderBy("id").rawJson();
     expect(eligibleConstructions).toBe(0);
 
     const models = await FastJsonUser.whereIn("id", [1, 2]).orderBy("id").get();
@@ -404,7 +428,7 @@ describe("Builder.json fast path", () => {
   });
 
   test("does not materialize unselected cast attributes", async () => {
-    const direct = await FastJsonUser.select("id", "name").where("id", 1).json();
+    const direct = await FastJsonUser.select("id", "name").where("id", 1).rawJson();
     const hydrated = (
       await FastJsonUser.select("id", "name").where("id", 1).get()
     ).toJSON();
@@ -418,13 +442,13 @@ describe("Builder.json fast path", () => {
       .select("id", "name as label")
       .whereIn("id", [1, 2])
       .orderBy("id", "desc")
-      .json();
+      .rawJson();
     expect(selected).toEqual([
       { id: 2, label: "Grace" },
       { id: 1, label: "Ada" },
     ]);
 
-    const visible = await VisibleFastJsonUser.where("id", 1).json();
+    const visible = await VisibleFastJsonUser.where("id", 1).rawJson();
     expect(visible).toEqual([{ id: 1, name: "Ada" }]);
   });
 
@@ -435,7 +459,7 @@ describe("Builder.json fast path", () => {
       .withExists("posts", "has_posts")
       .whereIn("id", [1, 2])
       .orderBy("id")
-      .json();
+      .rawJson();
     const hydrated = (await FastJsonUser
       .select("id", "name")
       .withCount("posts", "post_total")
@@ -451,20 +475,20 @@ describe("Builder.json fast path", () => {
     ]);
   });
 
-  test("validates backed enums in hydrated and fast JSON paths", async () => {
-    await expect(FastJsonUser.where("id", 3).json()).rejects.toBeInstanceOf(InvalidEnumValueError);
+  test("validates backed enums in hydrated and raw JSON paths", async () => {
+    await expect(FastJsonUser.where("id", 3).rawJson()).rejects.toBeInstanceOf(InvalidEnumValueError);
     await expect(FastJsonUser.where("id", 3).get()).rejects.toBeInstanceOf(InvalidEnumValueError);
   });
 
   test("validates backed enums even when visibility omits the column", async () => {
-    await expect(HiddenEnumFastJsonUser.where("id", 3).json())
+    await expect(HiddenEnumFastJsonUser.where("id", 3).rawJson())
       .rejects.toBeInstanceOf(InvalidEnumValueError);
-    await expect(InvisibleEnumFastJsonUser.where("id", 3).json())
+    await expect(InvisibleEnumFastJsonUser.where("id", 3).rawJson())
       .rejects.toBeInstanceOf(InvalidEnumValueError);
   });
 
   test("keeps eager enum validation ahead of read-cast errors", async () => {
-    await expect(FastJsonUser.where("id", 4).json())
+    await expect(FastJsonUser.where("id", 4).rawJson())
       .rejects.toBeInstanceOf(InvalidEnumValueError);
     await expect(FastJsonUser.where("id", 4).get())
       .rejects.toBeInstanceOf(InvalidEnumValueError);
@@ -472,18 +496,23 @@ describe("Builder.json fast path", () => {
 
   test("does not mutate the original builder", async () => {
     const query = FastJsonUser.where("id", 1);
-    await query.json();
+    await query.rawJson();
     const models = await query.get();
     expect(models[0]).toBeInstanceOf(FastJsonUser);
   });
 
-  test("leaves plain DB builders on their existing row path", async () => {
-    const rows = await new Builder(connection, "fast_json_users")
+  test("keeps json() hydrated and rejects rawJson() on plain DB builders", async () => {
+    CountingJsonModel.constructions = 0;
+    await CountingJsonModel.query().json();
+    expect(CountingJsonModel.constructions).toBeGreaterThan(0);
+
+    const query = new Builder(connection, "fast_json_users")
       .select("id", "name")
-      .where("id", 1)
-      .json();
+      .where("id", 1);
+    const rows = await query.json();
     expect(rows).toEqual([{ id: 1, name: "Ada" }]);
     expect(rows).toBeInstanceOf(Collection);
+    await expect(query.rawJson()).rejects.toThrow("requires a model query");
   });
 
   test("reuses cached raw rows without mutating them", async () => {
@@ -500,9 +529,9 @@ describe("Builder.json fast path", () => {
         .select("id", "active", "metadata")
         .where("id", 1)
         .remember("fast-json-rows", 60);
-      const first = await build().json();
+      const first = await build().rawJson();
       (first[0] as any).metadata.nested.value = 99;
-      const second = await build().json();
+      const second = await build().rawJson();
       const hydrated = await build().get();
 
       expect(reads).toBe(1);
@@ -514,58 +543,109 @@ describe("Builder.json fast path", () => {
     }
   });
 
-  test("falls back while the Identity Map is active", async () => {
+  test("ignores the Identity Map", async () => {
     await FastJsonUser.useIdentityMap(async () => {
       const user = await FastJsonUser.find(1);
       user!.setAttribute("name", "Local change");
-      const json = await FastJsonUser.where("id", 1).json();
-      expect(json[0]!.name).toBe("Local change");
+      const json = await FastJsonUser.where("id", 1).rawJson();
+      expect(json[0]!.name).toBe("Ada");
     });
   });
 
-  test("falls back without opt-in and when explicitly disabled", async () => {
-    await expectHydration(NoOptInJsonModel);
-    await expectHydration(DisabledJsonModel);
+  test("rejects eager loads instead of silently hydrating", async () => {
+    await expect(EagerJsonParent.with("children").orderBy("id").rawJson())
+      .rejects.toThrow("does not support eager-loaded relations");
   });
 
-  test("falls back for eager loads", async () => {
-    EagerJsonParent.constructions = 0;
-    const result = await EagerJsonParent.with("children").orderBy("id").json();
-    expect(EagerJsonParent.constructions).toBeGreaterThan(0);
-    expect(result[0].children[0].name).toBe("child");
+  test("omits appends and only rejects accessors that reach the output", async () => {
+    AppendedJsonModel.constructions = 0;
+    expect(await AppendedJsonModel.query().rawJson()).toEqual([{ id: 1, name: "fallback" }]);
+    expect(AppendedJsonModel.constructions).toBe(0);
+
+    expect(await AccessorJsonModel.select("id").rawJson()).toEqual([{ id: 1 }]);
+    await expect(AccessorJsonModel.query().rawJson()).rejects.toThrow("accessor name");
   });
 
-  test("falls back for appends and accessors", async () => {
-    expect((await expectHydration(AppendedJsonModel))[0].upperName).toBe("FALLBACK");
-    expect((await expectHydration(AccessorJsonModel))[0].name).toBe("FALLBACK");
+  test("detects non-enumerable and inherited accessor maps", async () => {
+    await expect(NonEnumerableAccessorModel.query().rawJson()).rejects.toThrow("accessor name");
+    await expect(InheritedAccessorModel.query().rawJson()).rejects.toThrow("accessor name");
   });
 
-  test("falls back for non-enumerable and inherited accessor maps", async () => {
-    expect((await expectHydration(NonEnumerableAccessorModel))[0].name).toBe("FALLBACK");
-    expect((await expectHydration(InheritedAccessorModel))[0].name).toBe("FALLBACK");
+  test("only rejects custom casts that reach the output", async () => {
+    expect(await CustomClassCastJsonModel.select("id").rawJson()).toEqual([{ id: 1 }]);
+    await expect(CustomClassCastJsonModel.query().rawJson()).rejects.toThrow("custom cast on name");
+    await expect(CustomObjectCastJsonModel.query().rawJson()).rejects.toThrow("custom cast on name");
   });
 
-  test("falls back for custom cast classes and objects", async () => {
-    expect((await expectHydration(CustomClassCastJsonModel))[0].name).toBe("class:fallback");
-    expect((await expectHydration(CustomObjectCastJsonModel))[0].name).toBe("object:fallback");
+  test("preserves static default attributes", async () => {
+    DefaultAttributeJsonModel.constructions = 0;
+    const direct = await DefaultAttributeJsonModel.query().rawJson();
+    expect(DefaultAttributeJsonModel.constructions).toBe(0);
+    const hydrated = (await DefaultAttributeJsonModel.query().get()).toJSON();
+    expect(direct).toEqual(hydrated);
+    expect(direct[0]!.fallback).toBe("default");
+    expect(DefaultAttributeJsonModel.constructions).toBeGreaterThan(0);
   });
 
-  test("falls back for default attributes", async () => {
-    expect((await expectHydration(DefaultAttributeJsonModel))[0].fallback).toBe("default");
+  test("rejects hydration, serialization, and connection overrides", async () => {
+    for (const model of [
+      OverrideHydrateJsonModel,
+      OverrideToJsonModel,
+      OverrideJsonModel,
+      OverrideSerializeModel,
+      OverrideSetConnectionModel,
+    ]) {
+      await expect(model.query().rawJson()).rejects.toThrow("does not support an overridden");
+    }
   });
 
-  test("falls back for each relevant serialization override", async () => {
-    expect((await expectHydration(OverrideHydrateJsonModel))[0].hydrated).toBe(true);
-    expect((await expectHydration(OverrideToJsonModel))[0].to_json).toBe(true);
-    await expectHydration(OverrideJsonModel);
-    expect((await expectHydration(OverrideGetAttributeModel))[0].name).toBe("FALLBACK");
-    expect((await expectHydration(OverrideCastAttributeModel))[0].name).toBe("cast:fallback");
-    await expectHydration(OverrideGetAppendsModel);
-    expect((await expectHydration(OverrideSerializeModel))[0].from_serialize).toBe(true);
+  test("omits other instance behavior by definition", async () => {
+    expect((await OverrideGetAttributeModel.query().rawJson())[0]!.name).toBe("fallback");
+    expect((await OverrideCastAttributeModel.query().rawJson())[0]!.name).toBe("fallback");
+    expect((await OverrideGetAppendsModel.query().rawJson())[0]!.name).toBe("fallback");
   });
 
-  test("falls back when setConnection changes hydrated output", async () => {
-    expect((await expectHydration(OverrideSetConnectionModel))[0].from_connection).toBe("yes");
+  test("shares implicit timestamp casts on cold and cached reads", async () => {
+    Cache.configure({ store: new MemoryCacheStore() });
+    const build = () => TimestampJsonModel.withTrashed().where("id", 1);
+    const hydrated = (await build().get()).toJSON();
+    const cold = await build().remember("raw-json-timestamps", 60).rawJson();
+    const cached = await build().remember("raw-json-timestamps", 60).rawJson();
+
+    expect(cold).toEqual(hydrated);
+    expect(cached).toEqual(hydrated);
+    expect(JSON.stringify(cold)).toBe(JSON.stringify(hydrated));
+    expect((cold[0] as any).created_at).toBeInstanceOf(Date);
+    expect((cold[0] as any).updated_at).toBeInstanceOf(Date);
+    expect((cold[0] as any).deleted_at).toBeInstanceOf(Date);
+  });
+
+  test("honors custom timestamp names and explicit cast precedence", async () => {
+    const custom = await CustomTimestampJsonModel.where("id", 1).rawJson();
+    const hydratedCustom = (await CustomTimestampJsonModel.where("id", 1).get()).toJSON();
+    expect(custom).toEqual(hydratedCustom);
+    expect((custom[0] as any).made_at).toBeInstanceOf(Date);
+    expect((custom[0] as any).changed_at).toBeInstanceOf(Date);
+
+    const explicit = await StringTimestampJsonModel.where("id", 1).rawJson();
+    expect((explicit[0] as any).created_at).toBe("2026-08-27 12:00:00");
+  });
+
+  test("returns a type limited to selected attributes and query-added aggregates", async () => {
+    const rows = await TypedRawJsonUser
+      .select("id", "name as label")
+      .withCount("posts", "post_total")
+      .where("id", 1)
+      .rawJson();
+
+    expectType<number>(rows[0]!.id);
+    expectType<string>(rows[0]!.label);
+    expectType<number>(rows[0]!.post_total);
+    // @ts-expect-error appends are omitted from rawJson()
+    rows[0]!.upperName;
+    // @ts-expect-error unloaded relations are omitted from rawJson()
+    rows[0]!.posts;
+    expect(rows[0]).toEqual({ id: 1, label: "Ada", post_total: 2 });
   });
 
   test("castAttribute preserves backed-enum validator overrides", () => {

@@ -29,7 +29,7 @@ import {
   isBackedEnumDefinition,
   type BackedEnumDefinition,
 } from "./BackedEnum.js";
-import { assertSupportedStringCast, castBuiltInAttribute } from "./ModelJsonRow.js";
+import { assertSupportedStringCast, castBuiltInAttribute, implicitDateCasts } from "./ModelJsonRow.js";
 
 function dateCastKeys(casts: Record<string, any>): string[] {
   const keys: string[] = [];
@@ -91,40 +91,6 @@ function mutableCastKeys(casts: Record<string, any>): MutableCastKeys {
     : noMutableCastKeys;
   mutableCastKeysCache.set(casts, entry);
   return entry;
-}
-
-/**
- * The datetime casts a model has already declared by declaring timestamps.
- *
- * Resolved through `getCreatedAtColumn()` / `getUpdatedAtColumn()` — the same
- * getters `dateColumns()` uses for the write path — so a model that overrides
- * the getter rather than the property is honoured on both sides. `dateColumns()`
- * has always derived these for writes; deriving them here is what keeps a read
- * and a write agreeing about which columns hold a Date.
- *
- * Merged into `$mergedCasts` at construction rather than consulted on each
- * read, so everything keyed off that map — `getDirty()` above all, which has to
- * see an in-place `Date` mutation — treats these exactly like a declared cast.
- *
- * Never throws. Those getters reject an empty or non-string column, but they do
- * it on the paths that already validated; moving that failure into every
- * constructor would change where a misconfigured model reports itself. An
- * unusable column simply yields no implicit cast.
- */
-function implicitDateCasts(ctor: typeof ModelCore): Record<string, CastDefinition> | undefined {
-  let casts: Record<string, CastDefinition> | undefined;
-  const add = (column: unknown) => {
-    if (typeof column === "string" && column.length > 0) (casts ??= {})[column] = "datetime";
-  };
-
-  if (ctor.timestamps) {
-    try {
-      add(ctor.getCreatedAtColumn());
-      add(ctor.getUpdatedAtColumn());
-    } catch { /* misconfigured columns report themselves on the write paths */ }
-  }
-  if (ctor.softDeletes) add(ctor.deletedAtColumn);
-  return casts;
 }
 
 /** Dates compare by instant: two Date objects for the same moment are equal. */
@@ -205,8 +171,6 @@ export class ModelCore<T extends Record<string, any> = any> {
   static appends: readonly string[] = [];
   static accessors: AccessorMap<any, any> = {};
   static touches: readonly string[] = [];
-  static fastJson = false;
-
   $attributes = {} as T;
   $original = {} as Partial<T>;
   $changes = {} as Partial<T>;

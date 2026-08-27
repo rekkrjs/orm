@@ -4,7 +4,6 @@ import { configureOrm, Connection, ConnectionManager, Model, Schema, TenantConte
 class TenantUser extends Model {
   static table = "tenant_users";
   static timestamps = false;
-  static override fastJson = true;
 }
 
 class LandlordTenant extends Model {
@@ -84,8 +83,8 @@ describe("tenant connection switching", () => {
     ConnectionManager.add("json:beta", beta);
 
     const [acmeJson, betaJson] = await Promise.all([
-      TenantContext.run("acme", () => TenantUser.query().json()),
-      TenantContext.run("beta", () => TenantUser.query().json()),
+      TenantContext.run("acme", () => TenantUser.query().rawJson()),
+      TenantContext.run("beta", () => TenantUser.query().rawJson()),
     ]);
 
     expect(acmeJson).toEqual([{ id: 1, name: "Acme User" }]);

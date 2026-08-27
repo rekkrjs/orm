@@ -6,8 +6,6 @@ describe("Advanced Query Builder Features", () => {
   let db: Connection;
 
   class Folder extends PermissiveModel.define<{ id: number; parent_id: number | null; name: string; depth?: number }>("folders") {
-    static override fastJson = true;
-
     items() {
       return this.hasMany(Folder, "parent_id");
     }
@@ -802,16 +800,10 @@ describe("Advanced Query Builder Features", () => {
         .orderByDepth()
         .orderBy("name");
 
-      const direct = await query().json();
+      const direct = await query().rawJson();
       const hydrated = (await query().get()).toJSON();
 
-      // Compared as the JSON both paths actually emit. The fast path hands back
-      // raw driver values while the hydrated path decodes date casts to Date,
-      // a divergence that predates timestamp columns being cast — any model
-      // with a datetime cast has always had it — and that disappears the moment
-      // either side is serialized.
-      const wire = (value: unknown) => JSON.parse(JSON.stringify(value));
-      expect(wire(direct)).toEqual(wire(hydrated));
+      expect(direct).toEqual(hydrated);
       expect(direct.map((folder) => (folder as any).path)).toEqual([
         "Root",
         "Root > Admissions",

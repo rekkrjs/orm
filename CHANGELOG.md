@@ -1,5 +1,46 @@
 # Changelog
 
+## 2.0.0 - 2026-08-27
+
+### Added
+
+- Added `Builder.rawJson()` for explicit model-row serialization without
+  constructing one model per row. It preserves built-in and implicit timestamp
+  casts, backed enums, static defaults, visibility rules, aliases, aggregates,
+  ordering, recursive decorations, caching, and tenant routing.
+- Added the exported `DirectJson<TResult, TSelected, TWith>` type. Direct-query
+  results expose selected attributes and query-added aggregates without
+  advertising appends or unloaded relations.
+
+### Changed
+
+- `Builder.json()` now has one predictable meaning: hydrate models and serialize
+  their complete instance behavior. `rawJson()` never silently falls back; it
+  reports incompatible eager loads, visible accessors or custom casts, and
+  model lifecycle/serialization overrides.
+- Direct JSON omits appends and ignores the Identity Map by definition. Migrate
+  `static fastJson = true` plus `.json()` calls to `.rawJson()` where instance
+  behavior is intentionally unnecessary.
+- Query reads no longer allocate `Array.from(...).map(...)` around Bun SQL
+  results. Boolean result coercion runs in place only on freshly queried rows.
+
+### Removed
+
+- Removed the public `Model.fastJson` flag. Direct serialization is now chosen
+  per query with `rawJson()`.
+
+### Fixed
+
+- Direct row serialization now shares the same implicit `created_at`,
+  `updated_at`, and `deleted_at` datetime casts as hydrated models, including
+  custom timestamp column names and explicit-cast precedence.
+
+### Verification
+
+- Built and typechecked the package. The complete non-benchmark Bun suite passed
+  with 1,558 tests across 120 files, and the direct-JSON benchmark passed
+  separately.
+
 ## 1.13.1 - 2026-08-27
 
 ### Changed

@@ -57,7 +57,7 @@ users.json("id", "name", "posts.title")
 ```
 
 Collection conversion always serializes the exact items already in memory. It
-never uses the direct-query `fastJson` optimization, so instance calls such as
+never uses direct-row serialization, so instance calls such as
 `makeHidden()`, appended getters, loaded relations, and custom model behavior are
 preserved:
 
@@ -75,9 +75,9 @@ users.append("display_name");
 users.setAppends(["display_name", "avatar_url"]);
 ```
 
-By contrast, `await User.select("id", "name").json()` is a query terminal. A
-model declaring `static override fastJson = true` may serialize eligible rows
-without hydrating them; see [Direct query JSON](./models.md#direct-query-json).
+By contrast, `await User.select("id", "name").rawJson()` is the explicit query
+terminal that skips per-row hydration or throws when the model is incompatible;
+see [Direct query JSON](./models.md#direct-query-json).
 
 ## State
 

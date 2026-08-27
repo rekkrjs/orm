@@ -51,6 +51,7 @@ import type {
   GlobalScope,
   BulkModelOptions,
   SaveOptions,
+  StripTablePrefix,
 } from "./ModelTypes.js";
 
 // Model class reference - set by Model.ts when it loads to avoid circular dependency
@@ -379,6 +380,42 @@ export type ModelJson<T> =
   Omit<ModelAttributes<T>, JsonRelationKeys<T>> &
   { [K in JsonRelationKeys<T>]: JsonRelationValue<T[K]>; } &
   { [K in JsonExtraKeys<T>]: T[K]; };
+
+type DirectSelectionSource<S extends string> =
+  S extends `${infer Source} as ${string}` ? StripTablePrefix<Source>
+  : S extends `${infer Source} AS ${string}` ? StripTablePrefix<Source>
+  : StripTablePrefix<S>;
+
+type DirectSelectionKey<S extends string> =
+  S extends `${string} as ${infer Alias}` ? Alias
+  : S extends `${string} AS ${infer Alias}` ? Alias
+  : StripTablePrefix<S>;
+
+type DirectSelectionField<T, S extends string> = {
+  [K in DirectSelectionKey<S>]: DirectSelectionSource<S> extends keyof ModelAttributes<T>
+    ? ModelAttributes<T>[DirectSelectionSource<S>]
+    : unknown;
+};
+
+type UnionToIntersection<T> =
+  (T extends unknown ? (value: T) => void : never) extends (value: infer I) => void ? I : never;
+
+type DirectSelectedAttributes<T, S extends string> =
+  string extends S ? Record<string, unknown>
+  : Extract<S, "*" | `${string}.*`> extends never
+    ? UnionToIntersection<S extends string ? DirectSelectionField<T, S> : never>
+    : ModelAttributes<T>;
+
+/** Plain JSON attributes plus query-added aggregates, without appends or relations. */
+export type DirectJson<TResult, TSelected extends string = "*", TWith = TResult> = {
+  [K in keyof (
+    DirectSelectedAttributes<TResult, TSelected>
+    & Pick<TWith, Exclude<keyof TWith, keyof TResult>>
+  )]: (
+    DirectSelectedAttributes<TResult, TSelected>
+    & Pick<TWith, Exclude<keyof TWith, keyof TResult>>
+  )[K];
+};
 
 // ─── Dot-path type utilities ──────────────────────────────────────────────────
 

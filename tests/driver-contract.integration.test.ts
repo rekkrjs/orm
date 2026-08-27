@@ -55,7 +55,6 @@ const ContractJsonState = backedEnum({ Ready: "ready", Paused: "paused" });
 class ContractFastJson extends PermissiveModel {
   static override table = "contract_fast_json";
   static override timestamps = false;
-  static override fastJson = true;
   static override casts = {
     active: "boolean",
     happened_at: "datetime",
@@ -350,7 +349,7 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
         state: ContractJsonState.Ready,
       });
 
-      const direct = await ContractFastJson.on(connection).json();
+      const direct = await ContractFastJson.on(connection).rawJson();
       const hydrated = (await ContractFastJson.on(connection).get()).toJSON();
       expect(direct).toEqual(hydrated);
       expect(direct[0]).toMatchObject({

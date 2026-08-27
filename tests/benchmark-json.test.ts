@@ -4,7 +4,6 @@ import { Builder, Collection, Connection, Model, Schema } from "../src/index.js"
 class FastJsonBenchUser extends Model {
   static table = "fast_json_bench_users";
   static timestamps = false;
-  static override fastJson = true;
 }
 
 class HydratedJsonBenchUser extends Model {
@@ -76,27 +75,27 @@ describe("Benchmark: model query JSON", () => {
       .select("id", "name", "active")
       .orderBy("id")
       .get()).toArray();
-    const fast = () => FastJsonBenchUser.select("id", "name", "active").orderBy("id").json();
+    const direct = () => FastJsonBenchUser.select("id", "name", "active").orderBy("id").rawJson();
     const hydrated = async () => (await FastJsonBenchUser.select("id", "name", "active").orderBy("id").get()).toJSON();
     const fallback = () => HydratedJsonBenchUser.select("id", "name", "active").orderBy("id").json();
 
     const rawValue = await raw();
-    const fastValue = await fast();
+    const directValue = await direct();
     const hydratedValue = await hydrated();
     const fallbackValue = await fallback();
 
-    expect(fastValue).toEqual(rawValue);
+    expect(directValue).toEqual(rawValue);
     expect(hydratedValue).toEqual(rawValue);
     expect(fallbackValue).toEqual(rawValue);
-    expect(fastValue).toBeInstanceOf(Collection);
+    expect(directValue).toBeInstanceOf(Collection);
 
     console.log(`response bytes: ${JSON.stringify(rawValue).length}`);
     await measure("DB.table().get().toArray()", raw);
-    await measure("eligible Model.json()", fast);
+    await measure("Model.rawJson()", direct);
     await measure("Model.get().toJSON()", hydrated);
     await measure("fallback Model.json()", fallback);
     measureEncoding("JSON.stringify(raw)", rawValue);
-    measureEncoding("JSON.stringify(eligible)", fastValue);
+    measureEncoding("JSON.stringify(direct)", directValue);
     measureEncoding("JSON.stringify(hydrated)", hydratedValue);
     measureEncoding("JSON.stringify(fallback)", fallbackValue);
   });

@@ -3,12 +3,12 @@ import { TransactionContext } from "../connection/TransactionContext.js";
 import { Cache } from "../cache/index.js";
 import { MorphTo } from "../model/MorphRelations.js";
 import type { WhereClause, OrderClause, HavingClause } from "../types/index.js";
-import type { AttachedToRelationName, BelongsToRelationName, EagerLoadDefinition, EagerLoadInput, Model, ModelAttributeInput, ModelMassAssignmentInput, ModelColumn, ModelColumnValue, ModelConstructor, ModelRelationName, MorphToRelationName, SaveOptions, TypedEagerLoad, TypedConstraintMap, TypedConstraintSelection, TypedExistsConstraintMap, ExtractStringPaths, WithLoadedRelations, WithLoadedRelationsFromConstraintMap, WithRelationCount, WithRelationExists, WithRelationExistsMap, Relation, RelationConstraintQuery, NestedRelationPath, LiteralUnion, RelationRelatedModel, MorphToConstraintCallback } from "../model/Model.js";
+import type { AttachedToRelationName, BelongsToRelationName, DirectJson, EagerLoadDefinition, EagerLoadInput, Model, ModelAttributeInput, ModelMassAssignmentInput, ModelColumn, ModelColumnValue, ModelConstructor, ModelRelationName, MorphToRelationName, SaveOptions, TypedEagerLoad, TypedConstraintMap, TypedConstraintSelection, TypedExistsConstraintMap, ExtractStringPaths, WithLoadedRelations, WithLoadedRelationsFromConstraintMap, WithRelationCount, WithRelationExists, WithRelationExistsMap, Relation, RelationConstraintQuery, NestedRelationPath, LiteralUnion, RelationRelatedModel, MorphToConstraintCallback } from "../model/Model.js";
 import { findRelationMethod, HasMany, Model as BaseModel } from "../model/Model.js";
 import { ObserverRegistry } from "../model/Observer.js";
 import { ModelNotFoundError } from "../model/ModelNotFoundError.js";
 import { IdentityMap } from "../model/IdentityMap.js";
-import { assertSupportedStringCast, createFastJsonPlan, serializeJsonRow } from "../model/ModelJsonRow.js";
+import { assertSupportedStringCast, canReturnRawJsonRows, createRawJsonPlan, serializeRawJsonRow } from "../model/ModelJsonRow.js";
 import {
   assertBackedEnumValue,
   isBackedEnumDefinition,
@@ -45,12 +45,12 @@ type RelatedColumn<TResult, R extends string> = ModelColumn<RelationRelatedModel
 type RelationShortcutInput = Model | Model[] | Collection<Model>;
 type RecursiveCteDefinition = {
   name: string;
-  anchor: Builder<any> | string;
-  recursive: Builder<any> | string;
+  anchor: Builder<any, any, any> | string;
+  recursive: Builder<any, any, any> | string;
 };
 export interface LikeOptions { caseSensitive?: boolean }
 type RawFragment = { sql: string; bindings: readonly unknown[] };
-type UnionDefinition = { query: Builder<any> | string; all: boolean };
+type UnionDefinition = { query: Builder<any, any, any> | string; all: boolean };
 export type NumericAggregate = number | string | bigint;
 
 // Several of these are dialect-specific by design — `<=>` is MySQL, `GLOB` is
@@ -288,7 +288,7 @@ export class CursorPaginator<T> {
   }
 }
 
-export class Builder<T = Record<string, any>, TResult = T> {
+export class Builder<T = Record<string, any>, TResult = T, TSelected extends string = "*"> {
   connection: Connection;
   tableName: string;
   columns: Array<string | RawFragment> = ["*"];
@@ -308,7 +308,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
   recursiveCtes: RecursiveCteDefinition[] = [];
   recursiveTreeConfig?: RecursiveTreeConfig;
   fromRaw?: string;
-  private fromSubQuery?: Builder<any> | string;
+  private fromSubQuery?: Builder<any, any, any> | string;
   private fromSubAlias?: string;
   updateJoins: string[] = [];
   bindings: any[] = [];
@@ -455,10 +455,10 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this.table(table);
   }
 
-  select(...columns: ModelColumn<T>[]): this {
+  select<K extends ModelColumn<T>>(...columns: K[]): Builder<T, TResult, K> {
     this.invalidateSqlCache();
     this.columns = columns as string[];
-    return this;
+    return this as unknown as Builder<T, TResult, K>;
   }
 
   distinct(): this {
@@ -1069,7 +1069,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this.union(query, true);
   }
 
-  withRecursive(name: string, anchor: Builder<any> | string, recursive: Builder<any> | string): this {
+  withRecursive(name: string, anchor: Builder<any, any, any> | string, recursive: Builder<any, any, any> | string): this {
     Connection.assertSafeIdentifier(name, "recursive CTE name");
     this.invalidateSqlCache();
     this.recursiveCtes.push({ name, anchor, recursive });
@@ -1246,15 +1246,15 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this;
   }
 
-  with<K extends string & NestedRelationPath<T>>(constraint: TypedConstraintSelection<T, K>): Builder<T, WithLoadedRelationsFromConstraintMap<TResult, TypedConstraintSelection<T, K>>>;
-  with<R extends TypedConstraintMap<T> & object>(constraint: R): Builder<T, WithLoadedRelationsFromConstraintMap<TResult, R>>;
-  with<Rs extends ReadonlyArray<TypedEagerLoad<T>>>(relations: Rs): Builder<T, WithLoadedRelations<TResult, ExtractStringPaths<Rs[number]>>>;
-  with<Rs extends ReadonlyArray<TypedEagerLoad<T>>>(...relations: Rs): Builder<T, WithLoadedRelations<TResult, ExtractStringPaths<Rs[number]>>>;
-  with<R extends string & NestedRelationPath<T>>(relation: R): Builder<T, WithLoadedRelations<TResult, R>>;
-  with(relation: LiteralUnion<string & NestedRelationPath<T>>): Builder<T, WithLoadedRelations<TResult, string>>;
-  with<R extends string & MorphToRelationName<T>>(relation: R, callback: MorphToConstraintCallback): Builder<T, WithLoadedRelations<TResult, R>>;
-  with<R extends string & NestedRelationPath<T>>(relation: R, callback: RelationConstraint<T, R>): Builder<T, WithLoadedRelations<TResult, R>>;
-  with(relation: LiteralUnion<string & NestedRelationPath<T>>, callback: EagerLoadDefinition["constraint"]): Builder<T, WithLoadedRelations<TResult, string>>;
+  with<K extends string & NestedRelationPath<T>>(constraint: TypedConstraintSelection<T, K>): Builder<T, WithLoadedRelationsFromConstraintMap<TResult, TypedConstraintSelection<T, K>>, TSelected>;
+  with<R extends TypedConstraintMap<T> & object>(constraint: R): Builder<T, WithLoadedRelationsFromConstraintMap<TResult, R>, TSelected>;
+  with<Rs extends ReadonlyArray<TypedEagerLoad<T>>>(relations: Rs): Builder<T, WithLoadedRelations<TResult, ExtractStringPaths<Rs[number]>>, TSelected>;
+  with<Rs extends ReadonlyArray<TypedEagerLoad<T>>>(...relations: Rs): Builder<T, WithLoadedRelations<TResult, ExtractStringPaths<Rs[number]>>, TSelected>;
+  with<R extends string & NestedRelationPath<T>>(relation: R): Builder<T, WithLoadedRelations<TResult, R>, TSelected>;
+  with(relation: LiteralUnion<string & NestedRelationPath<T>>): Builder<T, WithLoadedRelations<TResult, string>, TSelected>;
+  with<R extends string & MorphToRelationName<T>>(relation: R, callback: MorphToConstraintCallback): Builder<T, WithLoadedRelations<TResult, R>, TSelected>;
+  with<R extends string & NestedRelationPath<T>>(relation: R, callback: RelationConstraint<T, R>): Builder<T, WithLoadedRelations<TResult, R>, TSelected>;
+  with(relation: LiteralUnion<string & NestedRelationPath<T>>, callback: EagerLoadDefinition["constraint"]): Builder<T, WithLoadedRelations<TResult, string>, TSelected>;
   with(...relations: any[]): any {
     this.eagerLoads.push(...this.normalizeEagerLoads(relations as any));
     return this as any;
@@ -1455,7 +1455,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
   withWhereHas<R extends TypedEagerLoad<T>>(
     relation: R,
     callback?: RelationConstraint<any, any>
-  ): Builder<T, WithLoadedRelations<TResult, ExtractStringPaths<R>>> {
+  ): Builder<T, WithLoadedRelations<TResult, ExtractStringPaths<R>>, TSelected> {
     this.whereHas(relation as string, callback);
     return (this as any).with(relation);
   }
@@ -1556,8 +1556,8 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this.applyWhereMorphedTo(relationName, model, "and", true);
   }
 
-  withCount<R extends string & ModelRelationName<TResult>, A extends string | undefined = undefined>(relationName: R, alias?: A): Builder<T, WithRelationCount<TResult, R, A>>;
-  withCount<A extends string | undefined = undefined>(relationName: LiteralUnion<string & ModelRelationName<TResult>>, alias?: A): Builder<T, WithRelationCount<TResult, string, A>>;
+  withCount<R extends string & ModelRelationName<TResult>, A extends string | undefined = undefined>(relationName: R, alias?: A): Builder<T, WithRelationCount<TResult, R, A>, TSelected>;
+  withCount<A extends string | undefined = undefined>(relationName: LiteralUnion<string & ModelRelationName<TResult>>, alias?: A): Builder<T, WithRelationCount<TResult, string, A>, TSelected>;
   withCount(relationName: string, alias?: string): any {
     const relation = this.getModelRelation(relationName);
     const resultAlias = alias || `${relationName}_count`;
@@ -1573,12 +1573,12 @@ export class Builder<T = Record<string, any>, TResult = T> {
     this.booleanResultColumns.add(alias);
   }
 
-  withExists<R extends TypedExistsConstraintMap<T> & object>(relations: R): Builder<T, WithRelationExistsMap<TResult, R>>;
-  withExists<R extends ExistsConstraintMap<T>>(relations: R): Builder<T, WithRelationExistsMap<TResult, R>>;
-  withExists<R extends string & NestedRelationPath<T>>(relationName: R, callback?: RelationConstraint<T, R>): Builder<T, WithRelationExists<TResult, R>>;
-  withExists(relationName: LiteralUnion<string & NestedRelationPath<T>>, callback?: RelationConstraint<any, any>): Builder<T, WithRelationExists<TResult, string>>;
-  withExists<R extends string & NestedRelationPath<T>, A extends string>(relationName: R, alias: A, callback?: RelationConstraint<T, R>): Builder<T, WithRelationExists<TResult, R, A>>;
-  withExists<A extends string>(relationName: LiteralUnion<string & NestedRelationPath<T>>, alias: A, callback?: RelationConstraint<any, any>): Builder<T, WithRelationExists<TResult, string, A>>;
+  withExists<R extends TypedExistsConstraintMap<T> & object>(relations: R): Builder<T, WithRelationExistsMap<TResult, R>, TSelected>;
+  withExists<R extends ExistsConstraintMap<T>>(relations: R): Builder<T, WithRelationExistsMap<TResult, R>, TSelected>;
+  withExists<R extends string & NestedRelationPath<T>>(relationName: R, callback?: RelationConstraint<T, R>): Builder<T, WithRelationExists<TResult, R>, TSelected>;
+  withExists(relationName: LiteralUnion<string & NestedRelationPath<T>>, callback?: RelationConstraint<any, any>): Builder<T, WithRelationExists<TResult, string>, TSelected>;
+  withExists<R extends string & NestedRelationPath<T>, A extends string>(relationName: R, alias: A, callback?: RelationConstraint<T, R>): Builder<T, WithRelationExists<TResult, R, A>, TSelected>;
+  withExists<A extends string>(relationName: LiteralUnion<string & NestedRelationPath<T>>, alias: A, callback?: RelationConstraint<any, any>): Builder<T, WithRelationExists<TResult, string, A>, TSelected>;
   withExists(relationOrMap: any, aliasOrCallback?: any, callback?: any): any {
     if (typeof relationOrMap === "object" && relationOrMap !== null) {
       for (const [relation, constraint] of Object.entries(relationOrMap) as [string, RelationConstraint<TResult, any> | undefined][]) {
@@ -1635,22 +1635,22 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this.withAggregate(relationName, column, "MAX", aliasOrCallback, callback);
   }
 
-  addSelect(...columns: ModelColumn<T>[]): this {
+  addSelect<K extends ModelColumn<T>>(...columns: K[]): Builder<T, TResult, TSelected | K> {
     this.invalidateSqlCache();
     if (this.columns.length === 1 && this.columns[0] === "*") {
       this.columns = [`${this.tableName}.*`];
     }
     this.columns.push(...columns);
-    return this;
+    return this as unknown as Builder<T, TResult, TSelected | K>;
   }
 
-  selectRaw(sql: string, bindings: readonly unknown[] = []): this {
+  selectRaw(sql: string, bindings: readonly unknown[] = []): Builder<T, TResult, string> {
     this.invalidateSqlCache();
     if (this.columns.length === 1 && this.columns[0] === "*") {
       this.columns = [];
     }
     this.columns.push({ sql, bindings });
-    return this;
+    return this as unknown as Builder<T, TResult, string>;
   }
 
   private addSelectRaw(sql: string, bindings: readonly unknown[] = []): this {
@@ -1662,7 +1662,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this;
   }
 
-  fromSub(query: Builder<any> | string, as: string): this {
+  fromSub(query: Builder<any, any, any> | string, as: string): this {
     Connection.assertSafeIdentifier(as, "subquery alias");
     this.invalidateSqlCache();
     this.fromRaw = undefined;
@@ -1677,8 +1677,8 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this;
   }
 
-  clone(): Builder<T> {
-    const cloned = new Builder<T>(this.connection, this.tableName);
+  clone(): Builder<T, TResult, TSelected> {
+    const cloned = new Builder<T, TResult, TSelected>(this.connection, this.tableName);
     cloned.columns = [...this.columns];
     cloned.wheres = [...this.wheres];
     cloned.orders = [...this.orders];
@@ -1737,7 +1737,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return compiled;
   }
 
-  private compileEmbedded(query: Builder<any> | string): string {
+  private compileEmbedded(query: Builder<any, any, any> | string): string {
     if (typeof query === "string") return query;
     const previousBindings = query.bindings;
     const previousParameterize = query.parameterize;
@@ -1914,7 +1914,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
   }
 
   /** True when this arm carries clauses that must not leak to the compound query. */
-  private static needsUnionArmScope(query: Builder<any>): boolean {
+  private static needsUnionArmScope(query: Builder<any, any, any>): boolean {
     return query.limitValue !== undefined || query.offsetValue !== undefined || query.orders.length > 0;
   }
 
@@ -2015,9 +2015,11 @@ export class Builder<T = Record<string, any>, TResult = T> {
     }
 
     const cachedRows = cacheable && !cachesEagerGraph ? await Cache.get<any[]>(this.cacheKey!) : null;
-    const rows = this.decorateRecursiveRows(
-      cachedRows ?? Array.from(await this.connection.query(sql, bindings)).map((row: any) => this.coerceBooleanResultColumns(row))
-    );
+    const queriedRows = cachedRows ?? await this.connection.query(sql, bindings);
+    if (cachedRows === null && this.booleanResultColumns.size > 0) {
+      for (const row of queriedRows) this.coerceBooleanResultColumns(row);
+    }
+    const rows = this.decorateRecursiveRows(queriedRows);
 
     if (cacheable && !cachesEagerGraph && cachedRows === null) {
       await Cache.set(this.cacheKey!, rows, {
@@ -2261,18 +2263,25 @@ export class Builder<T = Record<string, any>, TResult = T> {
   }
 
   async json(): Promise<CollectionJson<TResult>> {
-    if (!this.model || this.eagerLoads.length > 0 || IdentityMap.current()) {
-      return (await this.get()).toJSON();
+    return (await this.get()).toJSON();
+  }
+
+  async rawJson(): Promise<DirectJson<T, TSelected, TResult>[]> {
+    if (!this.model) {
+      throw new Error("rawJson() requires a model query; DB.table().get() already returns raw rows.");
+    }
+    if (this.eagerLoads.length > 0) {
+      throw new Error(`${this.model.name}.rawJson() does not support eager-loaded relations.`);
     }
 
-    const plan = createFastJsonPlan(this.model, BaseModel);
-    if (!plan) return (await this.get()).toJSON();
+    const plan = createRawJsonPlan(this.model, BaseModel);
 
     const query = this.clone();
     query.model = undefined;
     query.eagerLoads = [];
     const rows = await query.get();
-    return rows.map((row) => serializeJsonRow(row as Record<string, unknown>, plan)) as CollectionJson<TResult>;
+    if (canReturnRawJsonRows(plan)) return rows as unknown as DirectJson<T, TSelected, TResult>[];
+    return rows.map((row) => serializeRawJsonRow(row as Record<string, unknown>, plan)) as DirectJson<T, TSelected, TResult>[];
   }
 
   async first(): Promise<TResult | null> {
@@ -2338,12 +2347,12 @@ export class Builder<T = Record<string, any>, TResult = T> {
   }
 
   async firstOrNew(attributes: ModelAttributeInput<T> = {}, values: ModelMassAssignmentInput<T> = {}): Promise<T> {
-    const found = await this.clone().where(attributes as any).first();
+    const found = await this.clone().where(attributes as any).first() as T | null;
     return found ?? this.newModelForCreation("firstOrNew", attributes, values);
   }
 
   async firstOrCreate(attributes: ModelAttributeInput<T> = {}, values: ModelMassAssignmentInput<T> = {}): Promise<T> {
-    const found = await this.clone().where(attributes as any).first();
+    const found = await this.clone().where(attributes as any).first() as T | null;
     if (found) return found;
     const instance = this.newModelForCreation("firstOrCreate", attributes, values);
     await instance.save();
@@ -2351,7 +2360,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
   }
 
   async updateOrCreate(attributes: ModelAttributeInput<T>, values: ModelMassAssignmentInput<T> = {}): Promise<T> {
-    const found = await this.clone().where(attributes as any).first();
+    const found = await this.clone().where(attributes as any).first() as T | null;
     if (found) {
       const model = found as any;
       if (typeof model.fill === "function") {
@@ -2664,7 +2673,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
       if (items.length === 0) break;
 
       for (const item of items) {
-        yield item;
+        yield item as unknown as T;
       }
 
       if (items.length < chunkSize) break;
@@ -2805,7 +2814,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
       const items = await this.clone().withoutCache().forPage(page, count).get();
       if (items.length === 0) break;
       for (const item of items) {
-        yield item;
+        yield item as unknown as T;
       }
       if (items.length < count) break;
       page++;

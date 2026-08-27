@@ -41,6 +41,7 @@ export type {
   ModelColumn,
   ModelColumnValue,
   ModelJson,
+  DirectJson,
   ModelConstructor,
   ModelRelationName,
   BelongsToRelationName,

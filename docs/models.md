@@ -827,37 +827,34 @@ user.json({ relations: false });   // attributes only, no relations
 
 ### Direct query JSON
 
-`Builder.json()` can avoid constructing one model per row when the model opts in
-and all of its JSON behavior is static:
+`Builder.json()` always hydrates models and preserves their complete instance
+semantics. `Builder.rawJson()` is the explicit direct-row alternative:
 
 ```ts
 class User extends Model {
-  static override fastJson = true;
   static override casts = { active: "boolean" };
   static override hidden = ["password"];
 }
 
-const payload = await User.select("id", "name", "active").orderBy("id").json();
+const payload = await User.select("id", "name", "active").orderBy("id").rawJson();
 ```
 
-Eligible direct queries preserve built-in casts, backed-enum validation, static
-`hidden` / `visible` rules, selected aliases and aggregates, ordering, query
-caching, recursive decorations, and the builder's resolved tenant connection.
-The result remains a `Collection`-compatible JSON array.
+Direct queries preserve built-in casts, implicit timestamp casts, backed-enum
+validation, static defaults, `hidden` / `visible`, aliases, aggregates,
+ordering, query caching, recursive decorations, and the builder's resolved
+tenant connection. The result remains a `Collection`-compatible JSON array and
+its `DirectJson` type contains selected attributes plus query-added aggregates;
+it does not advertise appends or unloaded relations.
 
-`fastJson = true` is explicit permission for direct query JSON to skip per-row
-constructor side effects. Put serialization configuration in the documented
-static properties rather than a custom constructor. The flag does not force the
-optimization: the ORM falls back to hydrated models for eager loads, an active
-Identity Map, non-empty `appends` or `accessors`, custom cast classes or objects,
-default `attributes`, a static `hydrate()` override, and relevant prototype
-serialization or connection method overrides. Existing models default to
-`fastJson = false`.
+`rawJson()` always omits `appends` and ignores an active Identity Map. It throws
+instead of silently hydrating when the query has eager loads, an output key has
+an accessor or custom cast, or the model overrides `hydrate()`, `toJSON()`,
+`json()`, `serialize()`, or `setConnection()`. Accessors and custom casts on
+unselected or hidden keys do not block the query.
 
-Methods installed by a constructor or class field are part of the same
-constructor boundary and cannot be detected from static metadata. Do not enable
-`fastJson` on models that install serialization or connection behavior that
-way.
+Constructor-installed behavior cannot be detected from static metadata.
+`rawJson()` deliberately does not run it; use `json()` when constructor or other
+instance behavior matters.
 
 These forms always retain their existing semantics:
 
@@ -870,8 +867,8 @@ const rows = (await DB.table<UserRow>("users").get()).toArray();
 // Raw rows: no model casts, visibility, accessors, or constructors.
 ```
 
-Instance `json()`, `toJSON()`, `JSON.stringify(model)`, and collection
-serialization never use the direct-query fast path.
+Instance `json()`, `toJSON()`, `JSON.stringify(model)`, collection serialization,
+and `Builder.json()` always use hydrated models.
 
 ### Picking fields
 

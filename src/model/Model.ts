@@ -41,6 +41,7 @@ import type {
   ModelMassAssignmentInputWithout,
   LoadMorphRelationName,
   ModelJson,
+  DirectJson,
 } from "./ModelBase.js";
 import { Builder } from "../query/Builder.js";
 import { Collection } from "../support/Collection.js";
@@ -109,6 +110,7 @@ export type {
   WithLoadedRelationsFromConstraintMap,
   LoadMorphRelationName,
   ModelJson,
+  DirectJson,
   ExtractStringPaths,
   LiteralUnion,
 } from "./ModelBase.js";
@@ -212,11 +214,11 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
     return (this as any).query().groupBy(...columns);
   }
 
-  static select<M extends ModelConstructor>(this: M, ...columns: ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
+  static select<M extends ModelConstructor, K extends ModelColumn<InstanceType<M>>>(this: M, ...columns: K[]): Builder<InstanceType<M>, InstanceType<M>, K> {
     return (this as any).query().select(...columns);
   }
 
-  static addSelect<M extends ModelConstructor>(this: M, ...columns: ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
+  static addSelect<M extends ModelConstructor, K extends ModelColumn<InstanceType<M>>>(this: M, ...columns: K[]): Builder<InstanceType<M>, InstanceType<M>, "*" | K> {
     return (this as any).query().addSelect(...columns);
   }
 

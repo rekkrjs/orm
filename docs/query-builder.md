@@ -148,31 +148,33 @@ const result = await User.where("email", "a@b.com").firstOr(() => guestUser);
 const byId = await User.findOr(1, () => guestUser);
 const users = await User.where("active", true).get();        // Collection<User>
 const arr = users.toArray();                                 // plain User[]
-const payload = await User.where("active", true).json();     // serialized rows
+const payload = await User.where("active", true).json();     // hydrated, then serialized
+const direct = await User.where("active", true).rawJson();   // direct rows, or an error
 ```
 
 `get()` returns a [Collection](./collections.md) with helpers like `map`,
 `filter`, and `groupBy`. Call `.toArray()` when an API requires a plain array;
 its entries remain hydrated `User` models.
 
-`Builder.json()` normally hydrates those models and serializes them. A model can
-opt compatible direct JSON queries into static row serialization:
+`Builder.json()` always hydrates models before serializing them. Use
+`Builder.rawJson()` when an HTTP response only needs static model behavior and
+must not construct one model per row:
 
 ```ts
 class User extends Model {
-  // Direct query JSON may bypass per-row construction when the model is eligible.
-  static override fastJson = true;
+  static override casts = { active: "boolean" };
+  static override hidden = ["password"];
 }
 
-const payload = await User.select("id", "name", "active").orderBy("id").json();
+const payload = await User.select("id", "name", "active").orderBy("id").rawJson();
 ```
 
-The optimized path preserves built-in casts, backed enums, `hidden` / `visible`,
-SQL aliases, result order, relation aggregates, recursive decorations, query
-caching, and tenant connections. The flag is only permission to optimize, not a
-guarantee: eager loads, an active Identity Map, appends, accessors, custom casts,
-default model attributes, a static `hydrate()` override, or relevant prototype
-method overrides automatically use normal hydration.
+`rawJson()` preserves built-in and implicit timestamp casts, backed enums,
+static defaults, `hidden` / `visible`, aliases, aggregates, ordering, recursive
+decorations, query caching, and the resolved tenant connection. It omits
+`appends`, ignores the Identity Map, and rejects eager loads, visible accessors,
+visible custom casts, and overrides of hydration, serialization, or connection
+behavior. There is no silent fallback.
 
 Fetching first always requests models and exact instance behavior:
 
@@ -181,10 +183,9 @@ const users = await User.select("id", "name", "active").get();
 const payloadWithInstanceBehavior = users.json();
 ```
 
-For a read-only endpoint that wants database values without model serialization
-rules, query with `DB.table<UserRow>("users")` instead. It returns plain rows and
-skips model hydration; apply any output-only conversion (for example,
-`Boolean(row.active)`) explicitly before returning the response.
+For database values without model casts or visibility rules, query with
+`DB.table<UserRow>("users")` instead. It already returns plain rows, so
+`rawJson()` is only available on model queries.
 
 ### Throw-on-miss variants
 

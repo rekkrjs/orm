@@ -5,9 +5,11 @@ import {
 } from "./BackedEnum.js";
 import type { CastDefinition, ModelConstructor } from "./ModelTypes.js";
 
-export interface FastJsonPlan {
+export interface RawJsonPlan {
   readonly modelName: string;
   readonly casts: Readonly<Record<string, CastDefinition>>;
+  readonly defaults: Readonly<Record<string, unknown>>;
+  readonly accessors: Record<string, any>;
   readonly visible?: ReadonlySet<string>;
   readonly hidden?: ReadonlySet<string>;
 }
@@ -25,17 +27,10 @@ function utcCalendarDate(year: number, month: number, day: number): Date {
   return date;
 }
 
-const instanceSerializationMethods = [
+const unsupportedInstanceOverrides = [
   "toJSON",
   "json",
   "serialize",
-  "getAttribute",
-  "castAttribute",
-  "getAppends",
-  "getModelConstructor",
-  "getCastDefinition",
-  "validateBackedEnumAttribute",
-  "assertBackedEnumValue",
   "setConnection",
 ] as const;
 
@@ -47,35 +42,64 @@ function hasAccessorConfiguration(value: unknown): boolean {
   return prototype !== Object.prototype && prototype !== null;
 }
 
-export function createFastJsonPlan(
+/** The implicit datetime casts shared by hydrated and direct row serialization. */
+export function implicitDateCasts(model: ModelConstructor): Record<string, CastDefinition> | undefined {
+  let casts: Record<string, CastDefinition> | undefined;
+  const add = (column: unknown) => {
+    if (typeof column === "string" && column.length > 0) (casts ??= {})[column] = "datetime";
+  };
+
+  if (model.timestamps) {
+    try {
+      add(model.getCreatedAtColumn());
+      add(model.getUpdatedAtColumn());
+    } catch { /* misconfigured columns report themselves on the write paths */ }
+  }
+  if (model.softDeletes) add(model.deletedAtColumn);
+  return casts;
+}
+
+export function createRawJsonPlan(
   model: ModelConstructor,
   baseModel: ModelConstructor,
-): FastJsonPlan | null {
-  if (model.fastJson !== true) return null;
-  if ((model.appends ?? []).length > 0) return null;
-  if (hasAccessorConfiguration(model.accessors)) return null;
-  if (Object.keys(model.attributes ?? {}).length > 0) return null;
-  if (model.hydrate !== baseModel.hydrate) return null;
-
-  for (const method of instanceSerializationMethods) {
-    if (model.prototype[method] !== baseModel.prototype[method]) return null;
+): RawJsonPlan {
+  if (model.hydrate !== baseModel.hydrate) {
+    throw new Error(`${model.name}.rawJson() does not support an overridden hydrate().`);
   }
 
-  const casts = { ...(model.casts ?? {}) } as Record<string, CastDefinition>;
-  for (const cast of Object.values(casts)) {
-    if (typeof cast !== "string" && !isBackedEnumDefinition(cast)) return null;
+  for (const method of unsupportedInstanceOverrides) {
+    if (model.prototype[method] !== baseModel.prototype[method]) {
+      throw new Error(`${model.name}.rawJson() does not support an overridden ${method}().`);
+    }
   }
+
+  const casts = {
+    ...implicitDateCasts(model),
+    ...(model.casts ?? {}),
+  } as Record<string, CastDefinition>;
 
   const visibleValues = model.visible ?? [];
   const hiddenValues = model.hidden ?? [];
-  if (!Array.isArray(visibleValues) || !Array.isArray(hiddenValues)) return null;
+  if (!Array.isArray(visibleValues) || !Array.isArray(hiddenValues)) {
+    throw new Error(`${model.name}.rawJson() requires static hidden and visible arrays.`);
+  }
 
   return {
     modelName: model.name,
     casts,
+    defaults: { ...(model.attributes ?? {}) },
+    accessors: model.accessors ?? {},
     visible: visibleValues.length > 0 ? new Set(visibleValues) : undefined,
     hidden: hiddenValues.length > 0 ? new Set(hiddenValues) : undefined,
   };
+}
+
+export function canReturnRawJsonRows(plan: RawJsonPlan): boolean {
+  return Object.keys(plan.casts).length === 0
+    && Object.keys(plan.defaults).length === 0
+    && !hasAccessorConfiguration(plan.accessors)
+    && !plan.visible
+    && !plan.hidden;
 }
 
 export function normalizeHydratedCastValue(cast: unknown, value: unknown): unknown {
@@ -165,33 +189,43 @@ export function castBuiltInAttribute(
   }
 }
 
-export function serializeJsonRow(
+export function serializeRawJsonRow(
   row: Record<string, unknown>,
-  plan: FastJsonPlan,
+  plan: RawJsonPlan,
 ): Record<string, unknown> {
+  const attributes = Object.keys(plan.defaults).length > 0
+    ? { ...plan.defaults, ...row }
+    : row;
   let normalizedValues: Map<string, unknown> | undefined;
   for (const [key, cast] of Object.entries(plan.casts)) {
-    if (!Object.hasOwn(row, key)) continue;
+    if (!Object.hasOwn(attributes, key)) continue;
     if (isBackedEnumDefinition(cast)) {
-      castBuiltInAttribute(cast, row[key], { modelName: plan.modelName, attribute: key });
+      castBuiltInAttribute(cast, attributes[key], { modelName: plan.modelName, attribute: key });
       continue;
     }
-    const normalized = normalizeHydratedCastValue(cast, row[key]);
-    if (normalized !== row[key]) {
+    const normalized = normalizeHydratedCastValue(cast, attributes[key]);
+    if (normalized !== attributes[key]) {
       (normalizedValues ??= new Map()).set(key, normalized);
     }
   }
 
   const output: Record<string, unknown> = {};
-  for (const key of Object.keys(row)) {
-    const cast = plan.casts[key];
+  for (const key of Object.keys(attributes)) {
     if ((plan.visible && !plan.visible.has(key)) || plan.hidden?.has(key)) continue;
+    if (plan.accessors[key]?.get) {
+      throw new Error(`${plan.modelName}.rawJson() does not support accessor ${key} because it appears in the output.`);
+    }
+
+    const cast = plan.casts[key];
+    if (cast !== undefined && typeof cast !== "string" && !isBackedEnumDefinition(cast)) {
+      throw new Error(`${plan.modelName}.rawJson() does not support the custom cast on ${key} because it appears in the output.`);
+    }
 
     output[key] = cast === undefined || isBackedEnumDefinition(cast)
-      ? row[key]
+      ? attributes[key]
       : castBuiltInAttribute(
           cast,
-          normalizedValues?.has(key) ? normalizedValues.get(key) : row[key],
+          normalizedValues?.has(key) ? normalizedValues.get(key) : attributes[key],
           { modelName: plan.modelName, attribute: key },
         );
   }
