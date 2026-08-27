@@ -87,7 +87,8 @@ describe("Benchmark: model query JSON", () => {
     expect(directValue).toEqual(rawValue);
     expect(hydratedValue).toEqual(rawValue);
     expect(fallbackValue).toEqual(rawValue);
-    expect(directValue).toBeInstanceOf(Collection);
+    expect(Object.getPrototypeOf(directValue)).toBe(Array.prototype);
+    expect(directValue).not.toBeInstanceOf(Collection);
 
     console.log(`response bytes: ${JSON.stringify(rawValue).length}`);
     await measure("DB.table().get().toArray()", raw);

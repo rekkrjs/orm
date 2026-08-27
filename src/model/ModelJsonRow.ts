@@ -8,6 +8,7 @@ import type { CastDefinition, ModelConstructor } from "./ModelTypes.js";
 export interface RawJsonPlan {
   readonly modelName: string;
   readonly casts: Readonly<Record<string, CastDefinition>>;
+  readonly enumKeys: readonly string[];
   readonly defaults: Readonly<Record<string, unknown>>;
   readonly accessors: Record<string, any>;
   readonly visible?: ReadonlySet<string>;
@@ -87,6 +88,7 @@ export function createRawJsonPlan(
   return {
     modelName: model.name,
     casts,
+    enumKeys: Object.keys(casts).filter((key) => isBackedEnumDefinition(casts[key])),
     defaults: { ...(model.attributes ?? {}) },
     accessors: model.accessors ?? {},
     visible: visibleValues.length > 0 ? new Set(visibleValues) : undefined,
@@ -196,16 +198,12 @@ export function serializeRawJsonRow(
   const attributes = Object.keys(plan.defaults).length > 0
     ? { ...plan.defaults, ...row }
     : row;
-  let normalizedValues: Map<string, unknown> | undefined;
-  for (const [key, cast] of Object.entries(plan.casts)) {
-    if (!Object.hasOwn(attributes, key)) continue;
-    if (isBackedEnumDefinition(cast)) {
-      castBuiltInAttribute(cast, attributes[key], { modelName: plan.modelName, attribute: key });
-      continue;
-    }
-    const normalized = normalizeHydratedCastValue(cast, attributes[key]);
-    if (normalized !== attributes[key]) {
-      (normalizedValues ??= new Map()).set(key, normalized);
+  for (const key of plan.enumKeys) {
+    if (Object.hasOwn(attributes, key)) {
+      castBuiltInAttribute(plan.casts[key], attributes[key], {
+        modelName: plan.modelName,
+        attribute: key,
+      });
     }
   }
 
@@ -217,15 +215,16 @@ export function serializeRawJsonRow(
     }
 
     const cast = plan.casts[key];
-    if (cast !== undefined && typeof cast !== "string" && !isBackedEnumDefinition(cast)) {
+    const backedEnum = isBackedEnumDefinition(cast);
+    if (cast !== undefined && typeof cast !== "string" && !backedEnum) {
       throw new Error(`${plan.modelName}.rawJson() does not support the custom cast on ${key} because it appears in the output.`);
     }
 
-    output[key] = cast === undefined || isBackedEnumDefinition(cast)
+    output[key] = cast === undefined || backedEnum
       ? attributes[key]
       : castBuiltInAttribute(
           cast,
-          normalizedValues?.has(key) ? normalizedValues.get(key) : attributes[key],
+          normalizeHydratedCastValue(cast, attributes[key]),
           { modelName: plan.modelName, attribute: key },
         );
   }

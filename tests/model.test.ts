@@ -1,5 +1,5 @@
 import { expect, test, describe, beforeAll } from "bun:test";
-import { Model, ModelNotFoundError, Schema } from "../src/index.js";
+import { Model, ModelNotFoundError, Schema, type Connection } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 function expectType<T>(_value: T): void {}
@@ -49,6 +49,15 @@ class HiddenVisibleUser extends PermissiveModel {
 class InstanceHiddenUser extends PermissiveModel {
   static timestamps = false;
   static visible = ["name", "secret"];
+}
+
+class OverrideHydrationUser extends TestUser {
+  static hydrateCalls = 0;
+
+  static override hydrate(row: Record<string, any>, connection?: Connection): OverrideHydrationUser {
+    this.hydrateCalls++;
+    return super.hydrate({ ...row, hydrated_by_override: true }, connection) as OverrideHydrationUser;
+  }
 }
 
 describe("Model", () => {
@@ -367,6 +376,42 @@ describe("Model", () => {
 
     expect(calls).toBe(1);
     expect(user.$connection).toBe(connection);
+  });
+
+  test("query hydration owns fresh rows while keeping attributes and original state separate", async () => {
+    const created = await TestUser.create({ name: "Owned", email: "owned@example.com" });
+    const connection = Model.getConnection();
+    const originalQuery = connection.query.bind(connection);
+    let returnedRow: Record<string, any> | undefined;
+    connection.query = (async (sql: string, bindings?: any[]) => {
+      const rows = await originalQuery(sql, bindings);
+      if (sql.includes("test_users") && rows.length === 1) returnedRow = rows[0];
+      return rows;
+    }) as any;
+
+    try {
+      const user = await TestUser.find(created.id);
+
+      expect(user).not.toBeNull();
+      expect(user!.$original).toBe(returnedRow!);
+      expect(user!.$attributes).not.toBe(returnedRow!);
+      expect(user!.isDirty()).toBe(false);
+      user!.name = "Changed";
+      expect(user!.getOriginal("name")).toBe("Owned");
+      expect(user!.getDirty()).toMatchObject({ name: "Changed" });
+    } finally {
+      connection.query = originalQuery as any;
+    }
+  });
+
+  test("query hydration preserves overridden hydrate methods", async () => {
+    const created = await TestUser.create({ name: "Override", email: "override@example.com" });
+    OverrideHydrationUser.hydrateCalls = 0;
+
+    const user = await OverrideHydrationUser.find(created.id);
+
+    expect(OverrideHydrationUser.hydrateCalls).toBe(1);
+    expect(user!.getAttribute("hydrated_by_override")).toBe(true);
   });
 
   test("create persists default attributes", async () => {

@@ -842,9 +842,9 @@ const payload = await User.select("id", "name", "active").orderBy("id").rawJson(
 Direct queries preserve built-in casts, implicit timestamp casts, backed-enum
 validation, static defaults, `hidden` / `visible`, aliases, aggregates,
 ordering, query caching, recursive decorations, and the builder's resolved
-tenant connection. The result remains a `Collection`-compatible JSON array and
-its `DirectJson` type contains selected attributes plus query-added aggregates;
-it does not advertise appends or unloaded relations.
+tenant connection. The result is a plain `Array` whose `DirectJson` type contains
+selected attributes plus query-added aggregates; it does not advertise appends
+or unloaded relations.
 
 `rawJson()` always omits `appends` and ignores an active Identity Map. It throws
 instead of silently hydrating when the query has eager loads, an output key has

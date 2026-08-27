@@ -34,6 +34,54 @@ export function validateBulkInsertChunkSize(chunkSize?: number): number {
   return chunkSize ?? 100;
 }
 
+function hydrateModelRow<M extends ModelConstructor>(
+  model: M,
+  row: Record<string, any>,
+  connection: Connection | undefined,
+  ownsRow: boolean,
+): InstanceType<M> {
+  const instance = new model() as InstanceType<M>;
+  const hydrated = ownsRow ? row : { ...row };
+  for (const key of Object.keys(instance.$mergedCasts)) {
+    const cast = instance.$mergedCasts[key];
+    if (isBackedEnumDefinition(cast)) {
+      if (Object.hasOwn(hydrated, key)) {
+        instance.validateBackedEnumAttribute(key, hydrated[key]);
+      }
+      continue;
+    }
+    const normalized = normalizeHydratedCastValue(cast, hydrated[key]);
+    if (normalized !== hydrated[key]) hydrated[key] = normalized;
+  }
+  instance.$dirtyKeys?.clear();
+  const defaults = instance.$attributes as Record<string, any>;
+  // Read off the instance, not the prototype: an override can be an instance
+  // field (`setConnection = (conn) => …`), which never reaches the prototype.
+  const usesDefaultSetConnection = instance.setConnection === ModelCore.prototype.setConnection;
+
+  // Every key below is already an own data property on the instance: the
+  // class fields in ModelCore are emitted as definitions (target ESNext, so
+  // useDefineForClassFields is on), including the ones with no initialiser
+  // like `$connection`. That matters, because `defineProperties` only keeps
+  // writable/enumerable/configurable when the property already exists — on a
+  // fresh key it would default them to false and freeze `$connection`, so a
+  // later `setConnection` would throw. Defining them together also avoids
+  // sending every internal assignment through the model's public Proxy.
+  Object.defineProperties(instance, {
+    $attributes: {
+      value: Object.keys(defaults).length > 0
+        ? { ...defaults, ...hydrated }
+        : ownsRow ? { ...hydrated } : hydrated,
+    },
+    $original: { value: ownsRow ? hydrated : { ...hydrated } },
+    $castCache: { value: {} },
+    $exists: { value: true },
+    ...(connection && usesDefaultSetConnection ? { $connection: { value: connection } } : {}),
+  });
+  if (connection && !usesDefaultSetConnection) instance.setConnection(connection);
+  return instance;
+}
+
 /** Internal bulk writer shared by public Model.insert() and trusted factories. */
 export async function bulkInsertModelRecords<M extends ModelConstructor>(
   model: M,
@@ -185,44 +233,20 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
   static hydrate<M extends ModelConstructor>(
     this: M,
     row: Record<string, any>,
-    connection?: import("../connection/Connection.js").Connection
+    connection?: Connection
   ): InstanceType<M> {
-    const instance = new this() as InstanceType<M>;
-    const hydrated = { ...row };
-    for (const key of Object.keys(instance.$mergedCasts)) {
-      const cast = instance.$mergedCasts[key];
-      if (isBackedEnumDefinition(cast)) {
-        if (Object.hasOwn(hydrated, key)) {
-          instance.validateBackedEnumAttribute(key, hydrated[key]);
-        }
-        continue;
-      }
-      const normalized = normalizeHydratedCastValue(cast, hydrated[key]);
-      if (normalized !== hydrated[key]) hydrated[key] = normalized;
-    }
-    instance.$dirtyKeys?.clear();
-    const defaults = instance.$attributes as Record<string, any>;
-    // Read off the instance, not the prototype: an override can be an instance
-    // field (`setConnection = (conn) => …`), which never reaches the prototype.
-    const usesDefaultSetConnection = instance.setConnection === ModelCore.prototype.setConnection;
+    return hydrateModelRow(this, row, connection, false);
+  }
 
-    // Every key below is already an own data property on the instance: the
-    // class fields in ModelCore are emitted as definitions (target ESNext, so
-    // useDefineForClassFields is on), including the ones with no initialiser
-    // like `$connection`. That matters, because `defineProperties` only keeps
-    // writable/enumerable/configurable when the property already exists — on a
-    // fresh key it would default them to false and freeze `$connection`, so a
-    // later `setConnection` would throw. Defining them together also avoids
-    // sending every internal assignment through the model's public Proxy.
-    Object.defineProperties(instance, {
-      $attributes: { value: Object.keys(defaults).length > 0 ? { ...defaults, ...hydrated } : hydrated },
-      $original: { value: { ...hydrated } },
-      $castCache: { value: {} },
-      $exists: { value: true },
-      ...(connection && usesDefaultSetConnection ? { $connection: { value: connection } } : {}),
-    });
-    if (connection && !usesDefaultSetConnection) instance.setConnection(connection);
-    return instance;
+  /** @internal Builder fast path for fresh rows that are not shared with a cache. */
+  protected static hydrateOwnedRow<M extends ModelConstructor>(
+    this: M,
+    row: Record<string, any>,
+    connection?: Connection,
+  ): InstanceType<M> {
+    return this.hydrate === defaultHydrate
+      ? hydrateModelRow(this, row, connection, true)
+      : this.hydrate(row, connection);
   }
 
   static async create<M extends ModelConstructor>(
@@ -823,3 +847,5 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     return this;
   }
 }
+
+const defaultHydrate = ModelPersistence.hydrate;

@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.1.0 - 2026-08-27
+
+### Changed
+
+- Fresh, uncached model queries now let the internal hydration path own each
+  driver row and use it as the original snapshot. This removes one defensive
+  row copy while keeping public `Model.hydrate()`, cached reads, custom
+  `hydrate()` methods, defaults, casts, proxies, and dirty tracking unchanged.
+- `Builder.rawJson()` now returns the plain `Array` declared by its public type
+  instead of leaking the internal `Collection`. Cast normalization happens in
+  the output pass without allocating a per-row `Map`; backed enums remain
+  validated before other read casts, including hidden enum attributes.
+
+### Compatibility
+
+- TypeScript already exposed `rawJson()` as an array. JavaScript callers that
+  relied on `Collection`-only helpers on its runtime result must use standard
+  array methods or choose hydrated `json()` / `get()` results instead.
+- No migration or opt-in is required for hydration ownership. Cache-backed
+  queries and model hydration overrides deliberately retain the defensive path.
+
+### Performance
+
+- For 500 rows, query plus `JSON.stringify(rawJson())` improved from 0.122 ms to
+  0.083 ms (32.5%), while encoding an already fetched result improved from
+  0.046 ms to 0.014 ms (about 70%).
+- Ownership-aware hydration improved the measured row-to-model path by about
+  2.2% for small rows and 19% for rows with 101 columns.
+
+### Verification
+
+- Typechecked and built the package. The complete non-benchmark Bun suite passed
+  with 1,561 tests across 120 files and no failures; focused cross-driver direct
+  JSON regressions and the direct-JSON benchmark passed separately.
+
 ## 2.0.0 - 2026-08-27
 
 ### Added

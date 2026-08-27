@@ -2051,7 +2051,9 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
           }
         }
 
-        const instance = (this.model as any).hydrate(row, this.connection);
+        const instance = cacheable
+          ? (this.model as any).hydrate(row, this.connection)
+          : (BaseModel as any).hydrateOwnedRow.call(this.model, row, this.connection);
 
         if (identityMap) {
           const pk = row[primaryKey];
@@ -2280,8 +2282,11 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     query.model = undefined;
     query.eagerLoads = [];
     const rows = await query.get();
-    if (canReturnRawJsonRows(plan)) return rows as unknown as DirectJson<T, TSelected, TResult>[];
-    return rows.map((row) => serializeRawJsonRow(row as Record<string, unknown>, plan)) as DirectJson<T, TSelected, TResult>[];
+    if (canReturnRawJsonRows(plan)) return Array.from(rows) as DirectJson<T, TSelected, TResult>[];
+    return Array.from(
+      rows,
+      (row) => serializeRawJsonRow(row as Record<string, unknown>, plan),
+    ) as DirectJson<T, TSelected, TResult>[];
   }
 
   async first(): Promise<TResult | null> {

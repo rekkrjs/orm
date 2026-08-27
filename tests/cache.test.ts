@@ -318,6 +318,30 @@ describe("Query builder cache", () => {
     expect(second[0].name).toBe("Alpha");
   });
 
+  test("remember keeps hydrated state isolated when a cache store retains row references", async () => {
+    const connection = setupTestDb();
+    const store = new CustomCacheStore();
+    Cache.configure({ store });
+    await Schema.create("cached_widgets", (table) => {
+      table.increments("id");
+      table.string("name");
+    });
+    await CachedWidget.create({ name: "Isolated" });
+
+    const builder = CachedWidget.query().remember("reference-rows", 60);
+    const cold = await builder.get();
+    const cachedRows = store.values.get("reference-rows") as Record<string, any>[];
+
+    expect(cold[0].$original).not.toBe(cachedRows[0]);
+    cachedRows[0].name = "Changed in cache";
+    expect(cold[0].name).toBe("Isolated");
+
+    const cached = await builder.clone().get();
+    expect(cached[0].$original).not.toBe(cachedRows[0]);
+    cachedRows[0].name = "Changed again";
+    expect(cached[0].name).toBe("Changed in cache");
+  });
+
   test("remember caches eager-loaded relations as hydrated model graphs", async () => {
     const connection = setupTestDb();
     Cache.configure({ store: new MemoryCacheStore() });

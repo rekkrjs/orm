@@ -407,7 +407,8 @@ describe("Builder.rawJson", () => {
     const hydrated = models.toJSON();
     expect(eligibleConstructions).toBe(2);
     expect(direct).toEqual(hydrated);
-    expect(direct).toBeInstanceOf(Collection);
+    expect(Object.getPrototypeOf(direct)).toBe(Array.prototype);
+    expect(direct).not.toBeInstanceOf(Collection);
     expect(Object.keys(direct[0]!)).toEqual([
       "id", "name", "active", "score", "amount", "occurred_at", "metadata",
       "tags", "profile", "encoded", "state", "nullable_number", "passthrough",
