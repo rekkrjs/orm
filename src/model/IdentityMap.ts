@@ -25,27 +25,17 @@ export class IdentityMap {
     return id;
   }
 
-  private static cacheKey(table: string, key: string | number, connection?: Connection): string {
-    const prefix = connection ? `${this.connectionId(connection)}\0` : "";
-    return `${prefix}${table}:${String(key)}`;
+  private static cacheKey(table: string, key: string | number, connection: Connection): string {
+    return `${this.connectionId(connection)}\0${table}:${String(key)}`;
   }
 
-  static get(table: string, key: string | number, connection?: Connection): Model | undefined {
+  static get(table: string, key: string | number, connection: Connection): Model | undefined {
     const map = this.current();
     if (!map) return undefined;
-    if (connection) return map.get(this.cacheKey(table, key, connection));
-
-    const legacyKey = this.cacheKey(table, key);
-    const legacy = map.get(legacyKey);
-    if (legacy) return legacy;
-    const suffix = `\0${legacyKey}`;
-    for (const [cacheKey, model] of map) {
-      if (cacheKey.endsWith(suffix)) return model;
-    }
-    return undefined;
+    return map.get(this.cacheKey(table, key, connection));
   }
 
-  static set(table: string, key: string | number, model: Model, connection?: Connection): void {
+  static set(table: string, key: string | number, model: Model, connection: Connection): void {
     const map = this.current();
     if (!map) return;
     map.set(this.cacheKey(table, key, connection), model);
@@ -57,28 +47,18 @@ export class IdentityMap {
     map.clear();
   }
 
-  static clearTable(table: string, connection?: Connection): void {
+  static clearTable(table: string, connection: Connection): void {
     const map = this.current();
     if (!map) return;
-    const prefix = connection ? `${this.connectionId(connection)}\0${table}:` : `${table}:`;
-    const scopedMarker = `\0${table}:`;
+    const prefix = `${this.connectionId(connection)}\0${table}:`;
     for (const key of map.keys()) {
-      if (key.startsWith(prefix) || (!connection && key.includes(scopedMarker))) map.delete(key);
+      if (key.startsWith(prefix)) map.delete(key);
     }
   }
 
-  static delete(table: string, key: string | number, connection?: Connection): void {
+  static delete(table: string, key: string | number, connection: Connection): void {
     const map = this.current();
     if (!map) return;
-    if (connection) {
-      map.delete(this.cacheKey(table, key, connection));
-      return;
-    }
-
-    const legacyKey = this.cacheKey(table, key);
-    const suffix = `\0${legacyKey}`;
-    for (const cacheKey of map.keys()) {
-      if (cacheKey === legacyKey || cacheKey.endsWith(suffix)) map.delete(cacheKey);
-    }
+    map.delete(this.cacheKey(table, key, connection));
   }
 }

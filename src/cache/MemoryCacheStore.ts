@@ -32,9 +32,7 @@ export class MemoryCacheStore implements CacheStore {
     try {
       return JSON.parse(entry.value) as T;
     } catch {
-      // An entry written by an older version (or by anything that bypassed
-      // Cache.set) can be unparseable. Treat it as a miss and drop it, rather
-      // than throwing on every read of that key forever.
+      // Treat a corrupted entry as a miss and remove it so reads can recover.
       await this.forget(key);
       return null;
     }

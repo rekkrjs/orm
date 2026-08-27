@@ -7,28 +7,28 @@ describe("Query Builder", () => {
     const connection = setupTestDb();
     const builder = new Builder(connection, "users");
     builder.where("age", ">", 18).orderBy("name").limit(10);
-    const sql = builder.toSql();
+    const sql = builder.toRawSql();
     expect(sql).toContain('SELECT * FROM "users"');
     expect(sql).toContain('WHERE "age" > 18');
     expect(sql).toContain('ORDER BY "name" ASC');
     expect(sql).toContain("LIMIT 10");
   });
 
-  test("toSql caches compiled SQL and invalidates after mutations", () => {
+  test("toRawSql caches compiled SQL and invalidates after mutations", () => {
     const connection = setupTestDb();
     const builder = new Builder(connection, "users").where("age", ">", 18);
 
-    const first = builder.toSql();
-    const second = builder.toSql();
+    const first = builder.toRawSql();
+    const second = builder.toRawSql();
     expect(second).toBe(first);
 
     builder.orderBy("name");
-    const afterOrder = builder.toSql();
+    const afterOrder = builder.toRawSql();
     expect(afterOrder).not.toBe(first);
     expect(afterOrder).toContain('ORDER BY "name" ASC');
 
     builder.limit(5);
-    const afterLimit = builder.toSql();
+    const afterLimit = builder.toRawSql();
     expect(afterLimit).not.toBe(afterOrder);
     expect(afterLimit).toContain("LIMIT 5");
   });
@@ -37,7 +37,7 @@ describe("Query Builder", () => {
     const connection = setupTestDb();
     const builder = new Builder(connection, "users");
     builder.whereIn("id", [1, 2, 3]);
-    const sql = builder.toSql();
+    const sql = builder.toRawSql();
     expect(sql).toContain('"id" IN (1, 2, 3)');
   });
 
@@ -258,7 +258,7 @@ describe("Query Builder", () => {
 
     // Previously pluck() overwrote the builder's columns and bindings, so this
     // came back as a single-column row with the WHERE binding already consumed.
-    expect(builder.toSql()).toBe('SELECT * FROM "plk_keep" WHERE "id" = 1');
+    expect(builder.toRawSql()).toBe('SELECT * FROM "plk_keep" WHERE "id" = 1');
     expect(await builder.get()).toEqual([{ id: 1, email: "ada@example.com" }] as any);
   });
 

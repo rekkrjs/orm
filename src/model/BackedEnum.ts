@@ -91,12 +91,3 @@ export function assertBackedEnumValue(
     );
   }
 }
-
-export function assertDeclaredEnumCast(cast: unknown): void {
-  if (typeof cast === "string" && (cast === "enum" || cast.startsWith("enum:"))) {
-    throw new Error(
-      'The "enum" string cast has no declared values. ' +
-        "Use a backedEnum({...}) descriptor directly in static casts.",
-    );
-  }
-}

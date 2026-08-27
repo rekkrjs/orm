@@ -203,13 +203,6 @@ describe("Collection", () => {
     ]);
   });
 
-  test("getArray returns a plain array compatibility escape hatch", async () => {
-    const users = await CollectionUser.orderBy("id").getArray();
-    expect(users).toBeArray();
-    expect(users).not.toBeInstanceOf(Collection);
-    expect(users.map((user) => user.getAttribute("name"))).toEqual(["Ada", "Linus", "Grace"]);
-  });
-
   test("paginator data and chunk callbacks use collections", async () => {
     const page = await CollectionUser.orderBy("id").paginate(2, 1);
     expect(page.data).toBeInstanceOf(Collection);

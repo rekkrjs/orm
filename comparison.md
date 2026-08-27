@@ -9,7 +9,7 @@
 | Model queries            | `User::where(...)->get()`                                                                 | `User.where(...).get()`                                                                |
 | Single row lookup        | `User::find(1)`, `firstOrFail()`                                                          | `User.find(1)`, `firstOrFail()`                                                        |
 | Multi-row results        | `Illuminate\Support\Collection`                                                           | `Collection<T>`                                                                        |
-| Plain array escape hatch | `->all()` on a collection                                                                 | `getArray()` on the builder, or `collection.all()`                                     |
+| Plain array conversion   | `->all()` on a collection                                                                 | `collection.toArray()`                                                                 |
 | Collection helpers       | `map`, `filter`, `pluck`, `groupBy`, `keyBy`, `sum`, `avg`                                | Same style helpers on `Collection<T>`                                                  |
 | TypeScript typing        | PHPDoc / static analysis tooling                                                          | Native TypeScript generics throughout                                                  |
 | Model defaults           | `$attributes` or constructor defaults via app code                                        | `static attributes`                                                                    |
@@ -25,14 +25,14 @@
 | Soft deletes             | `SoftDeletes`, `withTrashed()`, `onlyTrashed()`                                           | `softDeletes`, `withTrashed()`, `onlyTrashed()`                                        |
 | Force delete / restore   | `forceDelete()`, `restore()`                                                              | `forceDelete()`, `restore()`                                                           |
 | Query builder filters    | `where`, `orWhere`, `whereIn`, date helpers, `groupBy`, `having`                          | Same chainable style with typed builder methods                                        |
-| Query debug helpers      | `toSql()`, `dump()`, `dd()`                                                               | Same helpers, plus typed builders and `explain()`                                      |
+| Query debug helpers      | `toSql()`, `dump()`, `dd()`                                                               | `toSql()`, `toRawSql()`, `dump()`, `dd()`, and `explain()`                            |
 | Streaming large sets     | `chunk`, `cursor`, `lazy`, `each`                                                         | `chunk`, `cursor`, `lazy`, `each`                                                      |
 | Pagination               | `paginate()` returns a paginator object with `data` collection                            | `paginate()` returns a paginator object with `data: Collection<T>`                     |
-| Migrations               | `artisan migrate`, migration classes, `Schema` facade                                     | `bun run orm migrate`, migration classes, `Schema`                                   |
+| Migrations               | `artisan migrate`, migration classes, `Schema` facade                                     | `orm migrate`, migration classes, `Schema`                                             |
 | Migration variants       | `migrate:rollback`, `migrate:reset`, `migrate:refresh`, `migrate:fresh`, `migrate:status` | Same CLI commands                                                                      |
 | Migration storage        | `migrations` table                                                                        | `migrations` table, auto-created on first run                                          |
 | Schema dumps             | `schema:dump`, `schema:load` workflows                                                    | `schema:dump` and `schema:squash`                                                      |
-| Seeders                  | `artisan db:seed`, seeder classes                                                         | `bun run orm seed`, seeder classes and paths                                         |
+| Seeders                  | `artisan db:seed`, seeder classes                                                         | `orm db:seed`, seeder classes and paths                                                 |
 | Factories                | Model factories and factory states                                                        | Lightweight factories with `Factory` / `factory()`                                     |
 | Observers                | `creating`, `created`, `updating`, `updated`, etc.                                        | `ObserverRegistry` with the same lifecycle events                                      |
 | REPL / shell             | `php artisan tinker`                                                                      | `orm repl`                                                                           |

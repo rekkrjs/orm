@@ -2,19 +2,21 @@ import { describe, expect, test } from "bun:test";
 import { Validator } from "../src/validation/index.js";
 
 describe("validation safeParse result shapes", () => {
-  test("Validator.safeParse returns an error bag while schema.safeParse returns standard issues", async () => {
+  test("every safeParse entry point returns standard issues", async () => {
     const entries = {
       email: Validator.required().email(),
     };
 
-    const legacyResult = await Validator.safeParse(entries, { email: "not-an-email" });
-    expect(legacyResult.success).toBe(false);
-    if (!legacyResult.success) {
-      expect(Array.isArray(legacyResult.issues)).toBe(false);
-      expect(legacyResult.issues).toEqual({
-        email: ["The email field must be a valid email address."],
-      });
-      expect(legacyResult.input).toEqual({ email: "not-an-email" });
+    const staticResult = await Validator.safeParse(entries, { email: "not-an-email" });
+    expect(staticResult.success).toBe(false);
+    if (!staticResult.success) {
+      expect(staticResult.issues).toEqual([
+        {
+          message: "The email field must be a valid email address.",
+          path: [{ key: "email" }],
+        },
+      ]);
+      expect(staticResult.input).toEqual({ email: "not-an-email" });
     }
 
     const schema = Validator.schema(entries);

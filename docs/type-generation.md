@@ -33,7 +33,10 @@ bunx orm types:generate --landlord
 bunx orm types:generate --tenant acme
 ```
 
-You usually don't need to run this by hand. If `typesOutDir` (or `modelsPath`) is set, the migrator regenerates types automatically after every `migrate` and `migrate:rollback` — see [Migrations — Auto type generation](./migrations.md#auto-type-generation).
+With `modelsPath` configured, CLI migration commands regenerate declarations
+when passed `--types`. The `configureOrm()` facade does so automatically for
+its programmatic migration helpers. See
+[Migrations — Type generation after migrations](./migrations.md#type-generation-after-migrations).
 
 ## Configuration
 
@@ -43,11 +46,8 @@ export default {
   connection: { url: "sqlite://app.db" },
   migrationsPath: ["./database/migrations", "./database/tenant-migrations"],
 
-  // Per-model-root output (recommended)
+  // Generated declarations are written to types/ beside each model root
   modelsPath: ["./src/models", "./src/admin/models"],
-
-  // Or a single legacy output directory
-  typesOutDir: "./src/generated/model-types",
 
   // Module specifier prefix used in generated `declare module` blocks
   typeDeclarationImportPrefix: "$models",
@@ -92,7 +92,9 @@ This keeps generated declarations close to the files they augment. Make sure you
 }
 ```
 
-If you set `typesOutDir` instead, all `.d.ts` files land in one directory — convenient for `.gitignore` but requires a working module specifier from the consumer's path.
+Pass an explicit directory to `orm types:generate <dir>` for a one-off custom
+output location. Automatic migration generation always writes beside model
+roots.
 
 ### Module specifiers
 
@@ -128,7 +130,6 @@ export default {
     landlord: "./src/models/landlord",
     tenant:   "./src/models/tenant",
   },
-  typesOutDir: "./src/generated/types",
   typeDeclarationImportPrefix: "$models",
   tenancy: {
     resolveTenant: (tenantId) => ({
@@ -256,8 +257,8 @@ The `configureOrm()` facade and the `orm types:generate` CLI both wrap this.
 
 The typical cycle is:
 
-1. Write a migration with `orm migrate:make`.
-2. Run `bunx orm migrate` — schema changes and types regenerate.
+1. Write a migration with `orm make:migration`.
+2. Run `bunx orm migrate --types` — schema changes and types regenerate.
 3. Use the new column / relation in your code; IntelliSense already knows about it.
 
 You can safely add the generated directory to `.gitignore` if you regenerate as part of `bun install` or CI — types are pure derivatives of your schema. Keeping them committed is also fine if you want commit history to track schema changes.
@@ -272,5 +273,5 @@ You can safely add the generated directory to `.gitignore` if you regenerate as 
 ## Where to next
 
 - [TypeScript](./typescript.md) — full typing flow, including accessors and scopes.
-- [Migrations — Auto type generation](./migrations.md#auto-type-generation) — when types regenerate automatically.
+- [Migrations — Type generation after migrations](./migrations.md#type-generation-after-migrations) — when migration commands regenerate types.
 - [Configuration — Type generation](./configuration.md#type-generation) — every related config field.

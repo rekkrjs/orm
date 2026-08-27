@@ -122,10 +122,8 @@ export default class CreateTestItems extends Migration {
     await Bun.write(filePath, content);
 
     const migrator = new Migrator(connection, TEST_MIGRATIONS_DIR);
-    const applied = await migrator.runWithResult();
+    const applied = await migrator.run();
     expect(applied).toEqual([`tests/temp_migrations/${fileName}`]);
-    const compatibleRun: () => Promise<void> = () => migrator.run();
-    expect(await compatibleRun()).toBeUndefined();
     expect(await Schema.hasTable("test_items", connection)).toBe(true);
   });
 
@@ -304,8 +302,9 @@ export default class CreateJsonScopeTable extends Migration {
     expect(pending.length).toBeGreaterThanOrEqual(1);
   });
 
-  test("regenerates types after migration when typesOutDir is set", async () => {
-    const typesDir = join(process.cwd(), "tests", "temp_migration_types");
+  test("regenerates types beside configured model roots after migration", async () => {
+    const modelsDir = join(process.cwd(), "tests", "temp_migration_models");
+    const typesDir = join(modelsDir, "types");
     const fileName = `20260301000000_create_type_test_table.ts`;
     const filePath = join(TEST_MIGRATIONS_DIR, fileName);
     const content = `
@@ -322,8 +321,13 @@ export default class CreateTypeTestTable extends Migration {
   }
 }`;
     await Bun.write(filePath, content);
+    await mkdir(modelsDir, { recursive: true });
+    await Bun.write(join(modelsDir, "TypeTestTable.ts"), `
+import { Model } from "../../src/index.js";
+export class TypeTestTable extends Model { static table = "type_test_table"; }
+`);
 
-    const migrator = new Migrator(connection, TEST_MIGRATIONS_DIR, typesDir);
+    const migrator = new Migrator(connection, TEST_MIGRATIONS_DIR, { modelDirectory: modelsDir });
     await migrator.run();
 
     // Verify types were generated
@@ -337,7 +341,7 @@ export default class CreateTypeTestTable extends Migration {
 
     // Cleanup
     await unlink(filePath);
-    await rm(typesDir, { recursive: true, force: true });
+    await rm(modelsDir, { recursive: true, force: true });
   });
 
   test("dispatches migration events and dumps schema", async () => {
@@ -407,7 +411,7 @@ export default class CreateEventTestTable extends Migration {
       qualifyTable: (table: string) => table,
     } as unknown as Connection;
 
-    const migrator = new Migrator(fakeConnection, TEST_MIGRATIONS_DIR, undefined, {}, {
+    const migrator = new Migrator(fakeConnection, TEST_MIGRATIONS_DIR, {}, {
       createIfMissing: {
         database: true,
         schema: true,
@@ -553,8 +557,8 @@ export default class CreateTenantStatusMarker extends Migration {
 }`
     );
 
-    const acmeMigrator = new Migrator(connection, TEST_MIGRATIONS_DIR_TENANT, undefined, {}, { tenantId: "acme" });
-    const betaMigrator = new Migrator(connection, TEST_MIGRATIONS_DIR_TENANT, undefined, {}, { tenantId: "beta" });
+    const acmeMigrator = new Migrator(connection, TEST_MIGRATIONS_DIR_TENANT, {}, { tenantId: "acme" });
+    const betaMigrator = new Migrator(connection, TEST_MIGRATIONS_DIR_TENANT, {}, { tenantId: "beta" });
     await acmeMigrator.run();
 
     const acmeStatus = await acmeMigrator.status();
@@ -569,7 +573,7 @@ export default class CreateTenantStatusMarker extends Migration {
 
   test("uses separate migration locks per tenant", async () => {
     await mkdir(TEST_MIGRATIONS_DIR_LOCKS, { recursive: true });
-    const acmeMigrator = new Migrator(connection, TEST_MIGRATIONS_DIR_LOCKS, undefined, {}, { tenantId: "acme" });
+    const acmeMigrator = new Migrator(connection, TEST_MIGRATIONS_DIR_LOCKS, {}, { tenantId: "acme" });
     await acmeMigrator.run();
 
     await connection.run(
@@ -577,8 +581,8 @@ export default class CreateTenantStatusMarker extends Migration {
       ["migrations:tenant:acme", "test-owner", new Date().toISOString()]
     );
 
-    const lockedAcme = new Migrator(connection, TEST_MIGRATIONS_DIR_LOCKS, undefined, {}, { tenantId: "acme", lockTimeoutMs: 1 });
-    const betaMigrator = new Migrator(connection, TEST_MIGRATIONS_DIR_LOCKS, undefined, {}, { tenantId: "beta", lockTimeoutMs: 1 });
+    const lockedAcme = new Migrator(connection, TEST_MIGRATIONS_DIR_LOCKS, {}, { tenantId: "acme", lockTimeoutMs: 1 });
+    const betaMigrator = new Migrator(connection, TEST_MIGRATIONS_DIR_LOCKS, {}, { tenantId: "beta", lockTimeoutMs: 1 });
 
     await expect(lockedAcme.run()).rejects.toThrow('Could not acquire migration lock "migrations:tenant:acme"');
     await betaMigrator.run();
@@ -593,7 +597,7 @@ export default class CreateTenantStatusMarker extends Migration {
       ["migrations:tenant:orphan", "dead-process", new Date(Date.now() - 60_000).toISOString()]
     );
 
-    const migrator = new Migrator(connection, TEST_MIGRATIONS_DIR_LOCKS, undefined, {}, {
+    const migrator = new Migrator(connection, TEST_MIGRATIONS_DIR_LOCKS, {}, {
       tenantId: "orphan",
       lockTimeoutMs: 1,
       lockMaxAgeMs: 1_000,
@@ -613,7 +617,7 @@ export default class CreateTenantStatusMarker extends Migration {
       ["migrations:tenant:fresh", "live-process", new Date().toISOString()]
     );
 
-    const migrator = new Migrator(connection, TEST_MIGRATIONS_DIR_LOCKS, undefined, {}, {
+    const migrator = new Migrator(connection, TEST_MIGRATIONS_DIR_LOCKS, {}, {
       tenantId: "fresh",
       lockTimeoutMs: 1,
       lockMaxAgeMs: 60_000,

@@ -697,7 +697,7 @@ export abstract class Relation<T extends ModelType = ModelType> {
   }
 
   getRelationExistenceSql(parentQuery: Builder<any>, callback?: (query: Builder<any>) => void | Builder<any>): string {
-    return this.newExistenceQuery(parentQuery, "1", callback).toSql();
+    return this.newExistenceQuery(parentQuery, "1", callback).toRawSql();
   }
 
   getRelationCountSql(parentQuery: Builder<any>, callback?: (query: Builder<any>) => void | Builder<any>): string {
@@ -705,7 +705,7 @@ export abstract class Relation<T extends ModelType = ModelType> {
   }
 
   getRelationAggregateSql(parentQuery: Builder<any>, aggregate: string, callback?: (query: Builder<any>) => void | Builder<any>): string {
-    return this.newExistenceQuery(parentQuery, aggregate, callback).toSql();
+    return this.newExistenceQuery(parentQuery, aggregate, callback).toRawSql();
   }
 
   where(column: any, operatorOrValue: any, value?: any): this {

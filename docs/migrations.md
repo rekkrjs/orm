@@ -60,29 +60,79 @@ accept `NULL`.
 Scaffold a new file with the CLI:
 
 ```bash
-bunx orm migrate:make CreateBlogTables
+bunx orm make:migration create_blog_tables
 # → ./database/migrations/20260101000000_create_blog_tables.ts
 
-bunx orm migrate:make AddBioToUsers ./database/migrations
+bunx orm make:migration add_bio_to_users_table --dir=./database/migrations
 ```
 
-The timestamp prefix dictates run order, so always create new migrations via the CLI rather than hand-writing the filename.
+`create_<table>_table` generates a `Schema.create()` / `dropIfExists()` pair.
+`add_<something>_to_<table>_table` generates `Schema.table("<table>", ...)`
+skeletons for both directions. The timestamp prefix dictates run order, so
+always create new migrations through `make:migration` rather than hand-writing
+the filename.
 
 ## CLI commands
 
 | Command | What it does |
 |---|---|
-| `orm migrate:make <Name> [dir]` | Scaffold a new migration file. |
-| `orm migrate` | Run all pending migrations. |
-| `orm migrate:rollback [--step=N]` | Reverse the last batch, or the last `N` batches. |
-| `orm migrate:reset` | Roll back every migration. |
-| `orm migrate:refresh` | `reset` + `migrate`. |
-| `orm migrate:fresh` | Drop every table + `migrate`. |
+| `orm make:migration <name>` | Scaffold a timestamped TypeScript migration. |
+| `orm migrate [--pretend] [--force]` | Run pending migrations, or print their SQL. |
+| `orm migrate:rollback [--step=N] [--pretend] [--force]` | Reverse the last batch(es), or print their SQL. |
+| `orm migrate:reset [--force]` | Roll back every migration. |
+| `orm migrate:refresh [--seed] [--seeder=Name] [--force]` | `reset` + `migrate`, optionally followed by seeding. |
+| `orm migrate:fresh [--seed] [--seeder=Name] [--force]` | Drop every table + `migrate`, optionally followed by seeding. |
 | `orm migrate:status` | Report of ran / pending migrations, with the batch each ran in. |
 | `orm schema:dump <path>` | Dump current schema to a SQL file. |
 | `orm schema:squash <path>` | Dump schema *and* mark configured migrations as ran. |
 
 Each command honors `migrationsPath` (single path) or `migrations.landlord` / `migrations.tenant` (grouped) from `orm.config.ts`. See [Configuration](./configuration.md#migrationspath-vs-migrations).
+
+### Seeding after `refresh` or `fresh`
+
+Run the default `DatabaseSeeder` after all migrations succeed, or select one
+seeder by name:
+
+```bash
+orm migrate:fresh --seed
+orm migrate:fresh --seed --seeder=UserSeeder
+orm migrate:refresh --seed
+orm migrate:refresh --seed --seeder=UserSeeder
+```
+
+`--seeder` requires `--seed`. Seeders never run when rollback, table dropping,
+or migration fails, and a seeder failure makes the command fail. `--landlord`,
+`--tenants`, and `--tenant` select the same target for migrations and seeding.
+Production seeding keeps the `db:seed` confirmation safeguard; pass `--force`
+for a non-interactive production run.
+
+### `--pretend`
+
+`migrate --pretend` inspects pending migrations and
+`migrate:rollback --pretend --step=N` inspects the batches that rollback would
+select. Each migration is printed with its `up` or `down` direction, followed
+by the SQL statements and bindings in execution order:
+
+```console
+$ orm migrate --pretend
+database/migrations/20260101000000_create_users_table.ts (up)
+  CREATE TABLE "users" (...)
+  INSERT INTO "users" ("name") VALUES (?)
+  Bindings: ["Admin"]
+```
+
+Migration methods still run through the selected connection's real `Schema`
+and query grammars, so quoting and placeholders match SQLite, MySQL, or
+PostgreSQL. Every statement is captured without execution, including reads, so
+the schema, data, and migration records remain unchanged. Pretend mode never
+prompts in production and does not require `--force`.
+
+### Production protection
+
+Under `NODE_ENV=production`, `migrate`, `migrate:rollback`, `migrate:reset`,
+`migrate:refresh`, and `migrate:fresh` request confirmation before changing the
+database. Non-interactive runs must pass `--force`. `migrate:status` and both
+pretend commands never prompt; pretend commands do not execute SQL.
 
 ### `--config <path>`
 
@@ -136,11 +186,19 @@ $ orm migrate:rollback --step=2 --json
 
 $ orm migrate:status --json
 {"migrations":[{"migration":"database/migrations/20260101000000_create_users_table.ts","status":"Ran","tenant":null,"batch":1,"checksum":"…","storedChecksum":"…"}]}
+
+$ orm migrate --pretend --json
+{"pretend":[{"migration":"database/migrations/20260101000000_create_users_table.ts","direction":"up","tenant":null,"statements":[{"sql":"CREATE TABLE …","bindings":[]}]}]}
 ```
 
 `status` is `Pending`, `Ran` or `Changed`. `migrate:refresh` emits both keys
 (`{"rolledBack":[…],"applied":[…]}`), `migrate:reset` emits `rolledBack`, and
-`migrate:fresh` emits `applied`.
+`migrate:fresh` emits `applied`. With `migrate:fresh --seed` or
+`migrate:refresh --seed`, the same document also contains `"seeded":true`,
+written only after seeding succeeds. Pretend mode emits one `pretend` array;
+each entry contains one migration, direction, tenant, and ordered statements.
+Bigint bindings are represented as decimal strings because JSON has no bigint
+number type.
 
 A failing command writes its error — and any usage help — to stderr and exits
 non-zero, so stdout stays parseable or empty. Under `--tenants`, one document
@@ -155,8 +213,8 @@ batches, in reverse order of application:
 orm migrate:rollback --step=2
 ```
 
-`--steps=` is accepted as an alias. Anything that is not a positive whole number
-is rejected before the database is touched.
+Anything that is not a positive whole number is rejected before the database
+is touched.
 
 ### `--allow-changed`
 
@@ -284,18 +342,11 @@ import { Migrator } from "@rekkr/orm";
 
 const migrator = new Migrator(connection, "./database/migrations");
 
-await migrator.run();
-await migrator.rollback(2);
-await migrator.reset();
-await migrator.refresh();
-await migrator.fresh();
-
-// Result-returning variants for tooling; the original methods remain Promise<void>.
-const applied    = await migrator.runWithResult();
-const rolledBack = await migrator.rollbackWithResult(2);
-await migrator.resetWithResult();   // string[]
-await migrator.refreshWithResult(); // { rolledBack: string[]; applied: string[] }
-await migrator.freshWithResult();   // string[]
+const applied = await migrator.run();
+const rolledBack = await migrator.rollback(2);
+await migrator.reset();   // string[]
+await migrator.refresh(); // { rolledBack: string[]; applied: string[] }
+await migrator.fresh();   // string[]
 const status = await migrator.status(); // includes `batch` per row
 
 await migrator.dumpSchema("./database/schema.sql");
@@ -343,7 +394,7 @@ older than that, the next migrator takes it over. Raise it above the runtime of
 your slowest migration so a long-running deploy never has its lock stolen.
 
 ```ts
-new Migrator(connection, path, undefined, {}, {
+new Migrator(connection, path, {}, {
   lock: true,
   lockTimeoutMs: 60_000,   // how long to wait for a busy lock (default 30s)
   lockMaxAgeMs: 900_000,   // SQLite only: orphan takeover age (default 15 min)
@@ -352,17 +403,26 @@ new Migrator(connection, path, undefined, {}, {
 
 Set `lock: false` only in development — never on production deploys.
 
-## Auto type generation
+The CLI always uses this lock by default. There is no `--isolated` option:
+automatic locking is the safer baseline for every real migration run. Pretend
+mode is read-only and therefore does not acquire a migration lock.
 
-If `typesOutDir` is set in your config, attribute interface declarations are regenerated automatically after every `migrate` and `migrate:rollback`. With `modelsPath`, ORM writes a `types/` directory beside each model root:
+## Type generation after migrations
+
+With `modelsPath` configured, pass `--types` to a CLI migration command to
+regenerate attribute declarations after it succeeds. ORM writes a `types/`
+directory beside each model root:
 
 ```bash
-bunx orm migrate
+bunx orm migrate --types
 # → Migrated: 20260101000000_create_users_table.ts
 # → Regenerated types in ./src/models/types
 ```
 
-See [Type Generation](./type-generation.md) for what is emitted and how IntelliSense picks it up.
+The `configureOrm()` facade enables the same regeneration automatically for its
+programmatic migration helpers. A directly constructed `Migrator` only
+generates types when given type-generator options. See
+[Type Generation](./type-generation.md) for the full contract.
 
 ## Common pitfalls
 
@@ -370,11 +430,13 @@ See [Type Generation](./type-generation.md) for what is emitted and how IntelliS
 - **Missing `down()`.** Tools and dev workflows assume `down()` is the inverse of `up()`. Skipping it makes `rollback` unsafe. If a change is truly irreversible, throw with a clear message inside `down()`.
 - **Non-idempotent `up()`.** If `up()` calls `Schema.table()` to add a column that already exists (e.g. from a fresh dump-and-reload), the migration fails. Use `Schema.hasColumn()` guards in long-running projects.
 - **Running migrations without `createIfMissing` on a fresh DB.** You'll see "database does not exist" / "schema does not exist" errors. Enable `createIfMissing` or create the target manually first.
-- **`migrate:fresh` in production.** This drops every table. Lock it down to dev / staging — e.g. guard the CLI invocation with `NODE_ENV !== "production"`.
+- **`migrate:fresh` in production.** This drops every table. The CLI confirms
+  first and non-interactive runs require `--force`; keep that flag out of normal
+  production automation unless a full rebuild is deliberate.
 
 ## Where to next
 
 - [Schema Builder](./schema-builder.md) — the full set of column, index, and foreign key helpers you use inside `up()`.
 - [Configuration](./configuration.md#migrationspath-vs-migrations) — how `migrationsPath` and `migrations.{landlord,tenant}` are resolved.
 - [Library Usage](./library-usage.md) — running migrations from app code with the `configureOrm()` facade.
-- [Type Generation](./type-generation.md) — what auto-regenerates after each migration.
+- [Type Generation](./type-generation.md) — generating declarations after migrations.

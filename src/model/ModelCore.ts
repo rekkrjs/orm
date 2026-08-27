@@ -26,11 +26,10 @@ import { formatDecimal, snakeCase } from "../utils.js";
 import { MassAssignmentError } from "./MassAssignmentError.js";
 import {
   assertBackedEnumValue as assertEnumValue,
-  assertDeclaredEnumCast,
   isBackedEnumDefinition,
   type BackedEnumDefinition,
 } from "./BackedEnum.js";
-import { castBuiltInAttribute, removedEncryptedCastError } from "./ModelJsonRow.js";
+import { assertSupportedStringCast, castBuiltInAttribute } from "./ModelJsonRow.js";
 
 function dateCastKeys(casts: Record<string, any>): string[] {
   const keys: string[] = [];
@@ -610,10 +609,8 @@ export class ModelCore<T extends Record<string, any> = any> {
         return typeof value === "string" ? value : JSON.stringify(value);
       case "base64":
         return Buffer.from(String(value), "utf8").toString("base64");
-      case "encrypted":
-        throw removedEncryptedCastError(this.constructor.name, key);
       default:
-        return value;
+        throw new Error(`Unsupported cast "${type}" (${this.constructor.name}.${key}).`);
     }
   }
 
@@ -627,7 +624,7 @@ export class ModelCore<T extends Record<string, any> = any> {
 
   protected getCastDefinition(key: string): CastDefinition | undefined {
     const cast = this.$mergedCasts[key];
-    assertDeclaredEnumCast(cast);
+    assertSupportedStringCast(cast, this.constructor.name, key);
     return cast;
   }
 
@@ -651,7 +648,7 @@ export class ModelCore<T extends Record<string, any> = any> {
   ): void {
     for (const [key, cast] of Object.entries(this.$mergedCasts)) {
       if (!Object.hasOwn(attributes, key)) continue;
-      assertDeclaredEnumCast(cast);
+      assertSupportedStringCast(cast, this.constructor.name, key);
       const value = attributes[key];
       if (isBackedEnumDefinition(cast) && value !== null) {
         this.assertBackedEnumValue(key, value, cast);

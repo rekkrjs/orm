@@ -101,7 +101,7 @@ import type { Collection } from "@rekkr/orm";
 
 const builder = User.where("name", "Alice");       // Builder<User>
 const users: Collection<User> = await builder.get();
-const usersArray: User[] = await builder.getArray();
+const usersArray: User[] = users.toArray();
 
 const found: User | null = await User.find(1);
 const first: User | null = await User.first();
@@ -256,7 +256,7 @@ An empty marked subset rejects every property.
 - **Accessor parameters widen to `any` without the annotation.** Add `: AccessorMap<TAttrs, TModel>` to `static accessors` (or use `satisfies`).
 - **Computed attributes need a `declare`.** Otherwise TS doesn't know `user.full_name` exists.
 - **Relation type before `.with()` is the relation method, not its result.** Either eager-load (`User.with("posts").get()`) or call the relation explicitly (`await user.posts().get()`).
-- **`getArray()` returns `T[]`, `get()` returns `Collection<T>`.** Pick the right one for the return type of your function.
+- **`get()` returns `Collection<T>`.** Call `.toArray()` when an API requires a plain `T[]`.
 - **Circular relation imports.** Two models that reference each other will hit a runtime circular import. Use `type`-only imports for the relation type and a lazy require inside the relation method, or split via a `relations.ts` registry.
 
 ## Where to next

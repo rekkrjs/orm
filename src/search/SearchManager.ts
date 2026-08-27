@@ -1,4 +1,3 @@
-import { Model } from "../model/Model.js";
 import type { ModelConstructor } from "../model/Model.js";
 import { Connection } from "../connection/Connection.js";
 import type { ConnectionConfig } from "../types/index.js";
@@ -226,19 +225,10 @@ function defineSearch<TBase extends ModelConstructor>(
   modelClass: TBase,
   options?: SearchableOptions<InstanceType<TBase>>,
 ): SearchableClass<TBase>;
-function defineSearch<A extends Record<string, any>>(
-  tableName: string,
-  options?: SearchableOptions<Model<A> & A>,
-): ReturnType<typeof Model.define<A>>
-  & SearchableModelStatics<Model<A> & A>
-  & { new (...args: any[]): Model<A> & A & SearchableInstance };
 function defineSearch(
-  modelOrTable: ModelConstructor | string,
+  modelClass: ModelConstructor,
   options: SearchableOptions<any> = {},
 ): any {
-  const modelClass = typeof modelOrTable === "string"
-    ? Model.define(modelOrTable)
-    : modelOrTable;
   const searchableClass = Searchable(modelClass as any, options);
   return Search.register(searchableClass as any);
 }
@@ -303,12 +293,7 @@ export const Search = {
     return modelClass as any;
   },
 
-  /**
-   * Define a searchable model in one call. Accepts either a table name
-   * (`Search.define("posts")`) or an existing Model class
-   * (`Search.define(PostBase)`). In both cases the class is passed through
-   * `Searchable()` and registered for observer attachment.
-   */
+  /** Make an existing Model class searchable and register its observers. */
   define: defineSearch,
 
   unregister(modelClass: ModelConstructor): void {

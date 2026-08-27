@@ -172,7 +172,7 @@ describe("Nested Where Groups", () => {
     const sql = Product
       .where("category", "electronics")
       .where((q) => q.where("price", "<", 150).orWhere("name", "B"))
-      .toSql();
+      .toRawSql();
 
     expect(sql).toContain('("price" < 150 OR "name" = \'B\')');
   });

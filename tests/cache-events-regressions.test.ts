@@ -19,8 +19,7 @@ describe("Cache: non-serializable values", () => {
 
   test("remember() passes an undefined resolver result through without caching", async () => {
     expect(await Cache.remember("k", () => undefined as any)).toBeUndefined();
-    // The key stays readable: previously this stored the literal string
-    // "undefined" and every later get() threw a SyntaxError, forever.
+    // The key stays readable because no unparseable value was stored.
     expect(await Cache.get("k")).toBeNull();
     expect(await Cache.get("k")).toBeNull();
 

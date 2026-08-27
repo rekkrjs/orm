@@ -7,7 +7,7 @@ import { normalizePathList } from "../utils.js";
 import { relayStdoutToStderr, writeToStdout } from "./StdoutContract.js";
 import { resolve, sep } from "path";
 import type { OrmConfig, ModelsPath } from "../config/OrmConfig.js";
-import type { MigrationStatusRow, MigratorOptions } from "../migration/Migrator.js";
+import type { MigrationStatusRow, MigratorOptions, PretendMigrationResult } from "../migration/Migrator.js";
 
 export type MigrationCommand =
   | "migrate"
@@ -27,6 +27,8 @@ export interface MigrationCommandOptions {
   steps?: number;
   /** `migrate` only: migrate even though applied migration files have changed. */
   allowChanged?: boolean;
+  /** Compile pending or rollback SQL without changing the database. */
+  pretend?: boolean;
 }
 
 /**
@@ -38,6 +40,7 @@ export interface MigrationCommandResult {
   applied?: string[];
   rolledBack?: string[];
   migrations?: MigrationStatusRow[];
+  pretend?: PretendMigrationResult[];
 }
 
 export type MigrationTarget =
@@ -45,6 +48,29 @@ export type MigrationTarget =
   | { scope: "landlord" }
   | { scope: "tenants" }
   | { scope: "tenant"; tenantId: string };
+
+export interface ProductionCommandContext {
+  option(name: string): string | boolean | undefined;
+  confirm(question: string, defaultValue?: boolean): Promise<boolean>;
+  warn(message: string): void;
+}
+
+export async function confirmProductionMigration(
+  command: ProductionCommandContext,
+  pretend: boolean = false,
+): Promise<boolean> {
+  if (
+    !pretend &&
+    process.env.NODE_ENV === "production" &&
+    !command.option("force") &&
+    !await command.confirm("Application is in production. Run database migrations?", false)
+  ) {
+    command.warn("Database migration cancelled. Pass --force to run non-interactively in production.");
+    process.exitCode = 1;
+    return false;
+  }
+  return true;
+}
 
 /** Read migration target from a command's options (--landlord / --tenants / --tenant=) */
 export function parseTargetFromOptions(cmd: {
@@ -57,7 +83,7 @@ export function parseTargetFromOptions(cmd: {
   return { scope: "default" };
 }
 
-/** Reads `--step=` / `--steps=` into a batch count. */
+/** Reads `--step=` into a batch count. */
 export function parseStepsOption(value: string | boolean | undefined): number | undefined {
   if (value === undefined || value === true || value === false || value === "") return undefined;
   const steps = Number(value);
@@ -65,11 +91,6 @@ export function parseStepsOption(value: string | boolean | undefined): number | 
     throw new Error(`--step must be a positive whole number of batches, got "${value}".`);
   }
   return steps;
-}
-
-/** Accepts the old `generateTypes` boolean in the options position. */
-function normalizeCommandOptions(options: boolean | MigrationCommandOptions = {}): MigrationCommandOptions {
-  return typeof options === "boolean" ? { generateTypes: options } : options;
 }
 
 /**
@@ -93,11 +114,17 @@ function mergeResult(target: MigrationCommandResult, next: MigrationCommandResul
   if (next.applied)    (target.applied    ??= []).push(...next.applied);
   if (next.rolledBack) (target.rolledBack ??= []).push(...next.rolledBack);
   if (next.migrations) (target.migrations ??= []).push(...next.migrations);
+  if (next.pretend)    (target.pretend    ??= []).push(...next.pretend);
   return target;
+}
+
+function stringifyJson(value: unknown): string {
+  return JSON.stringify(value, (_key, item) => typeof item === "bigint" ? item.toString() : item);
 }
 
 /** The keys a given command always emits, empty or not. */
 function jsonPayload(command: MigrationCommand, result: MigrationCommandResult): Record<string, unknown> {
+  if (result.pretend) return { pretend: result.pretend };
   switch (command) {
     case "migrate":
     case "migrate:fresh":
@@ -109,6 +136,17 @@ function jsonPayload(command: MigrationCommand, result: MigrationCommandResult):
       return { rolledBack: result.rolledBack ?? [], applied: result.applied ?? [] };
     default:
       return { migrations: result.migrations ?? [] };
+  }
+}
+
+function renderPretend(result: MigrationCommandResult, write: (line: string) => void): void {
+  for (const migration of result.pretend ?? []) {
+    const tenant = migration.tenant === null ? "" : ` [tenant: ${migration.tenant}]`;
+    write(`${migration.migration} (${migration.direction})${tenant}`);
+    for (const statement of migration.statements) {
+      write(`  ${statement.sql}`);
+      if (statement.bindings.length > 0) write(`  Bindings: ${stringifyJson(statement.bindings)}`);
+    }
   }
 }
 
@@ -137,8 +175,7 @@ export function getScopeExclusions(
 export function createTypeGeneratorOptions(config: OrmConfig, modelsPathOverride?: string | string[]) {
   const modelRoots = normalizePathList(
     modelsPathOverride ??
-    (typeof config.modelsPath === "string" || Array.isArray(config.modelsPath) ? config.modelsPath : undefined) ??
-    config.typeDeclarationModelsDir,
+    (typeof config.modelsPath === "string" || Array.isArray(config.modelsPath) ? config.modelsPath : undefined),
   );
   return {
     declarations: !config.typeStubs,
@@ -167,7 +204,6 @@ export function buildMigrator(
   return new Migrator(
     connection,
     path,
-    generateTypes ? config.typesOutDir : undefined,
     generateTypes ? createTypeGeneratorOptions(config, getModelPaths(config)[scope]) : {},
     { ...createMigrationOptions(config), ...extraOptions },
   );
@@ -179,11 +215,17 @@ export async function runMigratorCommand(
   options: MigrationCommandOptions = {},
   statusLabel?: string,
 ): Promise<MigrationCommandResult> {
-  if (command === "migrate")           return { applied: await migrator.runWithResult() };
-  if (command === "migrate:rollback")  return { rolledBack: await migrator.rollbackWithResult(options.steps ?? 1) };
-  if (command === "migrate:reset")     return { rolledBack: await migrator.resetWithResult() };
-  if (command === "migrate:refresh")   return await migrator.refreshWithResult();
-  if (command === "migrate:fresh")     return { applied: await migrator.freshWithResult() };
+  if (options.pretend && command === "migrate") {
+    return { pretend: await migrator.pretendRun() };
+  }
+  if (options.pretend && command === "migrate:rollback") {
+    return { pretend: await migrator.pretendRollback(options.steps ?? 1) };
+  }
+  if (command === "migrate")           return { applied: await migrator.run() };
+  if (command === "migrate:rollback")  return { rolledBack: await migrator.rollback(options.steps ?? 1) };
+  if (command === "migrate:reset")     return { rolledBack: await migrator.reset() };
+  if (command === "migrate:refresh")   return await migrator.refresh();
+  if (command === "migrate:fresh")     return { applied: await migrator.fresh() };
   const migrations = await migrator.status();
   if (!options.json) {
     if (statusLabel) console.log(statusLabel);
@@ -204,23 +246,22 @@ export async function runTenantMigrator(
   config: OrmConfig,
   connectionPath: string | string[],
   tenantId: string,
-  options: boolean | MigrationCommandOptions = {},
+  options: MigrationCommandOptions = {},
 ): Promise<MigrationCommandResult> {
-  const commandOptions = normalizeCommandOptions(options);
   let result: MigrationCommandResult = {};
   await TenantContext.run(tenantId, async () => {
     const context = TenantContext.current();
     if (!context) throw new Error(`Tenant "${tenantId}" did not resolve to an active context.`);
-    progressWriter(commandOptions)(`Tenant: ${tenantId}`);
+    progressWriter(options)(`Tenant: ${tenantId}`);
     const migrator = buildMigrator(
       config,
       context.connection,
       connectionPath,
       "tenant",
-      { ...migratorOptions(commandOptions), tenantId },
-      commandOptions.generateTypes,
+      { ...migratorOptions(options), tenantId },
+      options.generateTypes,
     );
-    result = await runMigratorCommand(command, migrator, commandOptions);
+    result = await runMigratorCommand(command, migrator, options);
   });
   return result;
 }
@@ -230,16 +271,12 @@ export async function runTenantMigrationCommand(
   config: OrmConfig,
   tenantPath: string | string[],
   tenantId: string,
-  options: boolean | MigrationCommandOptions = {},
+  options: MigrationCommandOptions = {},
 ): Promise<MigrationCommandResult> {
   try {
     return await runTenantMigrator(command, config, tenantPath, tenantId, options);
   } finally {
-    const context = ConnectionManager.getResolvedTenant(tenantId);
-    ConnectionManager.purgeTenant(tenantId);
-    if (context?.ownsConnection) {
-      await context.connection.close();
-    }
+    await ConnectionManager.closeTenant(tenantId);
   }
 }
 
@@ -248,26 +285,71 @@ export async function runConfiguredMigrationCommand(
   config: OrmConfig,
   connection: Connection,
   target: MigrationTarget,
-  options: boolean | MigrationCommandOptions = {},
+  options: MigrationCommandOptions = {},
 ): Promise<MigrationCommandResult> {
-  const commandOptions = normalizeCommandOptions(options);
   const previousConnectionLogQueries = connection.logQueries;
   const previousGlobalLogQueries = Connection.logQueries;
   connection.logQueries = false;
   Connection.logQueries = false;
   // Anything the run prints — a console.log inside a migration's up(), an event
   // listener, listTenants() — would otherwise corrupt the document on stdout.
-  const restoreStdout = commandOptions.json ? relayStdoutToStderr() : undefined;
+  const restoreStdout = options.json ? relayStdoutToStderr() : undefined;
   try {
-    const result = await runConfiguredMigrationCommandWithoutSqlLogging(command, config, connection, target, commandOptions);
+    const result = await runConfiguredMigrationCommandWithoutSqlLogging(command, config, connection, target, options);
+    if (options.pretend && !options.json) renderPretend(result, progressWriter(options));
     // One JSON document per invocation, written last: a tenant loop must not
     // produce one payload per tenant.
-    if (commandOptions.json) writeToStdout(`${JSON.stringify(jsonPayload(command, result))}\n`);
+    if (options.json) writeToStdout(`${stringifyJson(jsonPayload(command, result))}\n`);
     return result;
   } finally {
     restoreStdout?.();
     connection.logQueries = previousConnectionLogQueries;
     Connection.logQueries = previousGlobalLogQueries;
+  }
+}
+
+export async function runDbSeedCommand(
+  command: ProductionCommandContext,
+  config: OrmConfig,
+  connection: Connection,
+  scope: MigrationTarget,
+  seeder?: string,
+): Promise<boolean> {
+  if (
+    process.env.NODE_ENV === "production" &&
+    !command.option("force") &&
+    !await command.confirm("Application is in production. Run database seeders?", false)
+  ) {
+    command.warn("Database seeding cancelled.");
+    process.exitCode = 1;
+    return false;
+  }
+  await runSeederCommand(config, connection, scope, seeder);
+  return true;
+}
+
+export async function runMigrationWithSeeding(
+  migrationCommand: "migrate:refresh" | "migrate:fresh",
+  command: ProductionCommandContext,
+  config: OrmConfig,
+  connection: Connection,
+  scope: MigrationTarget,
+  options: MigrationCommandOptions,
+  seeder?: string,
+): Promise<MigrationCommandResult> {
+  const restoreStdout = options.json ? relayStdoutToStderr() : undefined;
+  try {
+    const result = await runConfiguredMigrationCommand(migrationCommand, config, connection, scope, {
+      ...options,
+      json: false,
+    });
+    if (!await runDbSeedCommand(command, config, connection, scope, seeder)) return result;
+    if (options.json) {
+      writeToStdout(`${stringifyJson({ ...jsonPayload(migrationCommand, result), seeded: true })}\n`);
+    }
+    return result;
+  } finally {
+    restoreStdout?.();
   }
 }
 

@@ -90,7 +90,7 @@ describe("UNION", () => {
   });
 
   test("a plain union stays unwrapped", () => {
-    const sql = QUser.query().union(QUser.query().where("name", "Linus")).toSql();
+    const sql = QUser.query().union(QUser.query().where("name", "Linus")).toRawSql();
     expect(sql).toBe('SELECT * FROM "q_users" UNION SELECT * FROM "q_users" WHERE "name" = \'Linus\'');
   });
 

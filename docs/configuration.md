@@ -159,14 +159,9 @@ connection: {
 }
 ```
 
-`foreignKeys` defaults to `true`, so SQLite enforces declared foreign keys like MySQL and PostgreSQL. Set it to `false` only for an existing database that deliberately relies on SQLite's legacy disabled behavior.
-
-Before upgrading an existing SQLite database, check for old orphaned references
-that SQLite previously allowed:
-
-```sql
-PRAGMA foreign_key_check;
-```
+`foreignKeys` defaults to `true`, so SQLite enforces declared foreign keys like
+MySQL and PostgreSQL. Set it to `false` only when the application intentionally
+manages referential integrity outside SQLite.
 
 You can also pin a Postgres schema and tune the connection pool from the URL form:
 
@@ -269,7 +264,7 @@ tenancy: {
 }
 ```
 
-The equivalent low-level handles are still available if you wire the runtime manually instead of through `configureOrm()`:
+For manual runtime wiring, configure the lifecycle directly:
 
 ```ts
 import { ConnectionManager } from "@rekkr/orm";
@@ -303,9 +298,8 @@ migrations: {
 
 When `migrations.landlord` or `migrations.tenant` is set, use
 `orm migrate --landlord`, `orm migrate --tenants`, or
-`orm migrate --tenant=<id>` to target a scope. The flat `migrationsPath` is
-still honored as a fallback when a scope is requested but its grouped path is
-missing.
+`orm migrate --tenant=<id>` to target a scope. When using the grouped form,
+configure every scope you target; `migrationsPath` is not consulted.
 
 ### `createIfMissing`
 
@@ -470,7 +464,6 @@ Used by `orm make:policy` when `--dir` is not provided.
 ## Type generation
 
 ```ts
-typesOutDir: "./src/generated/model-types",       // optional legacy output dir
 typeDeclarationImportPrefix: "$models",
 typeDeclarationSingularModels: true,
 typeDeclarations: {

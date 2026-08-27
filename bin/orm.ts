@@ -184,7 +184,7 @@ async function createReplBootstrap(config: OrmConfig, dir: string): Promise<stri
   const modelRoots = normalizePathList(
     typeof config.modelsPath === "object" && !Array.isArray(config.modelsPath)
       ? ([config.modelsPath.landlord, config.modelsPath.tenant].filter(Boolean) as string[]).flat()
-      : config.modelsPath || config.typeDeclarationModelsDir
+      : config.modelsPath
   );
   const tsConfigPath = join(process.cwd(), "orm.config.ts");
   const jsConfigPath = join(process.cwd(), "orm.config.js");
@@ -590,7 +590,7 @@ async function main() {
     }
   })();
   // `orm run foo` is the documented spelling for application commands.
-  // Keep direct `orm foo` dispatch for backwards compatibility.
+  // Built-ins use `orm foo`; application commands use `orm run foo`.
   const args    = rawArgs[0] === "run" ? rawArgs.slice(1) : rawArgs;
   const command = args[0];
   const isInit = command === "init";
@@ -611,15 +611,14 @@ async function main() {
 
   // Static metadata for built-in commands — shown before config loads
   const CORE_COMMANDS: Array<{ name: string; sig: string; desc: string }> = [
-    { name: "migrate",          sig: "migrate {--landlord} {--tenants} {--tenant=} {--allow-changed} {--json}", desc: "Run pending migrations" },
-    { name: "migrate:rollback", sig: "migrate:rollback {--step=} {--steps=} {--landlord} {--tenants} {--tenant=} {--json}", desc: "Rollback the last batch" },
-    { name: "migrate:reset",    sig: "migrate:reset {--landlord} {--tenants} {--tenant=} {--json}", desc: "Rollback all migrations" },
-    { name: "migrate:refresh",  sig: "migrate:refresh {--landlord} {--tenants} {--tenant=} {--json}", desc: "Reset and rerun all migrations" },
-    { name: "migrate:fresh",    sig: "migrate:fresh {--landlord} {--tenants} {--tenant=} {--json}", desc: "Drop all tables and rerun migrations" },
+    { name: "migrate",          sig: "migrate {--landlord} {--tenants} {--tenant=} {--allow-changed} {--pretend} {--force} {--json}", desc: "Run pending migrations" },
+    { name: "migrate:rollback", sig: "migrate:rollback {--step=} {--landlord} {--tenants} {--tenant=} {--pretend} {--force} {--json}", desc: "Rollback the last batch" },
+    { name: "migrate:reset",    sig: "migrate:reset {--landlord} {--tenants} {--tenant=} {--force} {--json}", desc: "Rollback all migrations" },
+    { name: "migrate:refresh",  sig: "migrate:refresh {--landlord} {--tenants} {--tenant=} {--types} {--seed} {--seeder=} {--force} {--json}", desc: "Reset and rerun all migrations" },
+    { name: "migrate:fresh",    sig: "migrate:fresh {--landlord} {--tenants} {--tenant=} {--types} {--seed} {--seeder=} {--force} {--json}", desc: "Drop all tables and rerun migrations" },
     { name: "migrate:status",   sig: "migrate:status {--landlord} {--tenants} {--tenant=} {--json}", desc: "Show migration status" },
     { name: "make:migration",   sig: "make:migration {name} {--model} {--m} {--dir=} {--models-dir=}", desc: "Create a new migration file" },
     { name: "make:model",       sig: "make:model {name} {--migration} {--m} {--dir=}",           desc: "Create a new model file" },
-    { name: "migrate:make",    sig: "migrate:make {name} {dir?}",                                desc: "Create a new migration file" },
     { name: "db:seed",          sig: "db:seed {seeder?} {--landlord} {--tenants} {--tenant=} {--force}", desc: "Run database seeders" },
     { name: "schema:dump",      sig: "schema:dump {path?}",                                       desc: "Dump current schema to SQL" },
     { name: "schema:squash",    sig: "schema:squash {path?}",                                     desc: "Dump schema and mark migrations as run" },
@@ -893,7 +892,8 @@ async function main() {
     }
 
     try {
-      await new CommandRunner().run(entry, args.slice(1));
+      const usagePrefix = CORE_COMMANDS.some((item) => item.name === command) ? "orm" : "orm run";
+      await new CommandRunner().run(entry, args.slice(1), usagePrefix);
     } catch (err) {
       console.error(`${styleText("red", "Error:", { stream: process.stderr })} ${err instanceof Error ? err.message : String(err)}`);
       console.error(`\nRun ${styleText("yellow", `orm ${command} --help`, { stream: process.stderr })} for usage.`);

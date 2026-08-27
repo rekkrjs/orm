@@ -165,12 +165,6 @@ export type PostInstance = InstanceType<typeof Post>;
 export default Post;
 ```
 
-The older one-call table shorthand is still supported:
-
-```ts
-export class Post extends Search.define<PostAttrs>("posts", { index: "posts_v2" }) {}
-```
-
 ### Alternative — `Searchable` mixin
 
 ```ts

@@ -202,7 +202,7 @@ describe("hasMany + where()", () => {
   test("toSql includes where constraint", () => {
     const user = new RwcUser();
     (user as any).$attributes = { id: 1 };
-    const sql = user.publishedPosts().getQuery().toSql();
+    const sql = user.publishedPosts().getQuery().toRawSql();
     expect(sql).toContain("status");
     expect(sql).toContain("published");
   });
@@ -228,7 +228,7 @@ describe("hasOne + where()", () => {
   test("toSql includes where constraint", () => {
     const user = new RwcUser();
     (user as any).$attributes = { id: 1 };
-    const sql = user.activeProfile().getQuery().toSql();
+    const sql = user.activeProfile().getQuery().toRawSql();
     expect(sql).toContain("active");
   });
 });
@@ -238,7 +238,7 @@ describe("hasOne + where()", () => {
 describe("belongsTo + where()", () => {
   test("toSql includes where constraint", async () => {
     const post = await RwcPost.find(1) as any;
-    const sql = post.author().getQuery().toSql();
+    const sql = post.author().getQuery().toRawSql();
     expect(sql).toContain("active");
   });
 
@@ -273,7 +273,7 @@ describe("belongsToMany + where()", () => {
   test("toSql includes where constraint", () => {
     const user = new RwcUser();
     (user as any).$attributes = { id: 1 };
-    const sql = user.adminRoles().getQuery().toSql();
+    const sql = user.adminRoles().getQuery().toRawSql();
     expect(sql).toContain("level");
   });
 });
@@ -311,7 +311,7 @@ describe("morphOne + where()", () => {
   test("toSql includes where constraint", () => {
     const user = new RwcUser();
     (user as any).$attributes = { id: 1 };
-    const sql = user.profilePicture().getQuery().toSql();
+    const sql = user.profilePicture().getQuery().toRawSql();
     expect(sql).toContain("collection");
     expect(sql).toContain("avatar");
   });
@@ -341,7 +341,7 @@ describe("morphMany + where()", () => {
   test("toSql includes where constraint", () => {
     const user = new RwcUser();
     (user as any).$attributes = { id: 1 };
-    const sql = user.publicAttachments().getQuery().toSql();
+    const sql = user.publicAttachments().getQuery().toRawSql();
     expect(sql).toContain("visibility");
     expect(sql).toContain("public");
   });

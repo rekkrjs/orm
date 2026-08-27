@@ -101,9 +101,15 @@ bunx orm db:seed --tenants                 # iterate every tenant from listTenan
 
 # Skip the production confirmation (including tenant-wide runs)
 NODE_ENV=production bunx orm db:seed --force
+
+# Rebuild the schema, then run the default or one selected seeder
+bunx orm migrate:fresh --seed
+bunx orm migrate:fresh --seed --seeder=UserSeeder
+bunx orm migrate:refresh --seed
+bunx orm migrate:refresh --seed --seeder=UserSeeder
 ```
 
-When `NODE_ENV=production`, `db:seed` asks for confirmation before resolving either landlord or tenant targets; non-interactive runs fail unless `--force` is present. When the command runs in a tenant context, `SeederRunner` automatically uses the tenant's connection. Seeder runs are wrapped in a transaction — if any seeder throws, the entire run rolls back.
+When `NODE_ENV=production`, `db:seed`, `migrate:fresh --seed`, and `migrate:refresh --seed` ask for confirmation before resolving either landlord or tenant seed targets; non-interactive runs fail unless `--force` is present. When the command runs in a tenant context, `SeederRunner` automatically uses the tenant's connection. Seeder runs are transactional per target: if a seeder throws, that target rolls back. A `--tenants` fan-out cannot be atomic across separate tenant databases.
 
 ### Programmatic — `SeederRunner`
 

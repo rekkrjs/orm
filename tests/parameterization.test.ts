@@ -132,15 +132,16 @@ describe("Parameterized Queries", () => {
     expect(calls[0].bindings).toEqual([5, "Y", 1]);
   });
 
-  test("toSql() still returns inline SQL for backward compat", () => {
+  test("toSql() returns placeholders and toRawSql() is available for diagnostics", () => {
     const connection = setupTestDb();
     const builder = new Builder(connection, "users");
     builder.where("age", ">", 18).whereIn("id", [1, 2]);
 
     const sql = builder.toSql();
-    expect(sql).toContain('"age" > 18');
-    expect(sql).toContain('"id" IN (1, 2)');
-    expect(builder.bindings).toEqual([]);
+    expect(sql).toContain('"age" > ?');
+    expect(sql).toContain('"id" IN (?, ?)');
+    expect(builder.bindings).toEqual([18, 1, 2]);
+    expect(builder.toRawSql()).toContain('"age" > 18');
   });
 
   test("handles SQL injection attempts safely via parameterization", async () => {

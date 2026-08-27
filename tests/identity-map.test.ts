@@ -65,7 +65,7 @@ describe("Identity Map", () => {
   test("created models are registered in identity map", async () => {
     await IdentityMap.run(async () => {
       const user = await User.create({ name: "Dave" });
-      const cached = IdentityMap.get("users", user.id);
+      const cached = IdentityMap.get("users", user.id, user.getConnection());
 
       expect(cached).toBe(user);
     });
@@ -75,7 +75,7 @@ describe("Identity Map", () => {
     await IdentityMap.run(async () => {
       const user = new User({ name: "Eve" });
       await user.save();
-      const cached = IdentityMap.get("users", user.id);
+      const cached = IdentityMap.get("users", user.id, user.getConnection());
 
       expect(cached).toBe(user);
     });
@@ -90,7 +90,7 @@ describe("Identity Map", () => {
     });
 
     // Outside the context, identity map is empty
-    const cached = IdentityMap.get("users", userId!);
+    const cached = IdentityMap.get("users", userId!, User.getConnection());
     expect(cached).toBeUndefined();
 
     const found = await User.find(userId!);
@@ -121,7 +121,7 @@ describe("Identity Map", () => {
       expect(users).toHaveLength(2);
 
       for (const user of users) {
-        const cached = IdentityMap.get("users", user.id);
+        const cached = IdentityMap.get("users", user.id, user.getConnection());
         expect(cached).toBe(user);
       }
     });
@@ -213,7 +213,7 @@ describe("Identity Map", () => {
 
       await SoftUser.where("id", user.id).delete();
 
-      expect(IdentityMap.get("identity_soft_users", user.id)).toBeUndefined();
+      expect(IdentityMap.get("identity_soft_users", user.id, user.getConnection())).toBeUndefined();
       const deleted = await SoftUser.withTrashed().find(user.id);
       expect(deleted).not.toBe(user);
       expect(deleted?.trashed()).toBe(true);

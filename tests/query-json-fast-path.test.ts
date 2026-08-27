@@ -32,7 +32,6 @@ class FastJsonUser extends PermissiveModel {
     encoded: "base64",
     state: JsonState,
     nullable_number: "integer",
-    passthrough: "unknown-cast",
   };
 
   constructor(attributes?: Record<string, any>) {
@@ -56,13 +55,6 @@ class VisibleFastJsonUser extends PermissiveModel {
   static override fastJson = true;
   static override visible = ["id", "name", "secret"];
   static override hidden = ["secret"];
-}
-
-class LegacyEnumFastJsonUser extends PermissiveModel {
-  static override table = "fast_json_users";
-  static override timestamps = false;
-  static override fastJson = true;
-  static override casts = { state: "enum" };
 }
 
 class HiddenEnumFastJsonUser extends PermissiveModel {
@@ -459,12 +451,9 @@ describe("Builder.json fast path", () => {
     ]);
   });
 
-  test("validates backed enums and undeclared legacy enum casts identically", async () => {
+  test("validates backed enums in hydrated and fast JSON paths", async () => {
     await expect(FastJsonUser.where("id", 3).json()).rejects.toBeInstanceOf(InvalidEnumValueError);
     await expect(FastJsonUser.where("id", 3).get()).rejects.toBeInstanceOf(InvalidEnumValueError);
-    await expect(LegacyEnumFastJsonUser.where("id", 1).json()).rejects.toThrow(
-      'The "enum" string cast has no declared values.',
-    );
   });
 
   test("validates backed enums even when visibility omits the column", async () => {

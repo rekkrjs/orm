@@ -193,21 +193,21 @@ describe("Timestamp column metadata", () => {
   });
 
   test("disabled timestamps leave invalid inactive settings alone", () => {
-    class LegacyRecord extends PermissiveModel {
-      static override table = "legacy_records";
+    class UntimestampedRecord extends PermissiveModel {
+      static override table = "untimestamped_records";
       static override timestamps = false;
       static override createdAtColumn = "";
     }
 
-    const record = new LegacyRecord({ name: "legacy" });
-    expect(record.toJSON()).toEqual({ name: "legacy" });
-    expect(LegacyRecord.hydrate({ id: 1, name: "hydrated" }).getAttribute("name")).toBe("hydrated");
-    expect(LegacyRecord.dateColumns()).toEqual([]);
-    expect(LegacyRecord.query().toSql()).toContain("legacy_records");
-    expect(LegacyRecord.schema().blueprint.columns.map((column) => column.name)).toEqual(["id"]);
+    const record = new UntimestampedRecord({ name: "plain" });
+    expect(record.toJSON()).toEqual({ name: "plain" });
+    expect(UntimestampedRecord.hydrate({ id: 1, name: "hydrated" }).getAttribute("name")).toBe("hydrated");
+    expect(UntimestampedRecord.dateColumns()).toEqual([]);
+    expect(UntimestampedRecord.query().toSql()).toContain("untimestamped_records");
+    expect(UntimestampedRecord.schema().blueprint.columns.map((column) => column.name)).toEqual(["id"]);
 
-    expect(() => LegacyRecord.getCreatedAtColumn()).toThrow();
-    expect(() => LegacyRecord.latest()).toThrow();
+    expect(() => UntimestampedRecord.getCreatedAtColumn()).toThrow();
+    expect(() => UntimestampedRecord.latest()).toThrow();
     expect(() => record.replicate()).toThrow();
   });
 

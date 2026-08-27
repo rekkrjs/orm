@@ -6,6 +6,18 @@ import { MySqlGrammar } from "../query/grammars/MySqlGrammar.js";
 import { PostgresGrammar } from "../query/grammars/PostgresGrammar.js";
 import { UniqueConstraintViolationError } from "./UniqueConstraintViolationError.js";
 import { TransactionContext } from "./TransactionContext.js";
+import { AsyncLocalStorage } from "node:async_hooks";
+
+export interface PretendStatement {
+  sql: string;
+  bindings: any[];
+}
+
+interface PretendContext {
+  statements: PretendStatement[];
+}
+
+const pretendContext = new AsyncLocalStorage<PretendContext>();
 
 function isUniqueConstraintViolation(
   driverName: "sqlite" | "mysql" | "postgres",
@@ -131,11 +143,7 @@ export class Connection {
       options.sqliteDefaultsApplied === true;
   }
 
-  /**
-   * A URL's scheme picks the driver. An unknown one is an error rather than a
-   * silent fallback: `maria://…` used to be treated as PostgreSQL and failed
-   * later, deep inside the driver, with nothing pointing at the URL.
-   */
+  /** Resolve the driver from a validated database URL scheme. */
   private static driverFromUrl(url: string): "sqlite" | "mysql" | "postgres" {
     const separator = url.indexOf(":");
     const scheme = (separator === -1 ? url : url.slice(0, separator)).toLowerCase();
@@ -168,6 +176,32 @@ export class Connection {
 
   getConfig(): ConnectionConfig {
     return this.config;
+  }
+
+  /** Captures SQL produced by the callback without executing any statement. */
+  async pretend<T>(callback: () => T | Promise<T>): Promise<{ result: T; statements: PretendStatement[] }> {
+    const active = pretendContext.getStore();
+    if (active) {
+      const start = active.statements.length;
+      const result = await callback();
+      return { result, statements: active.statements.slice(start) };
+    }
+
+    const context: PretendContext = { statements: [] };
+    const result = await pretendContext.run(context, callback);
+    return { result, statements: context.statements };
+  }
+
+  private isPretending(): boolean {
+    return pretendContext.getStore() !== undefined;
+  }
+
+  private capturePretendStatement(sql: string, bindings?: any[]): boolean {
+    const context = pretendContext.getStore();
+    if (!context) return false;
+
+    context.statements.push({ sql, bindings: [...(bindings ?? [])] });
+    return true;
   }
 
   static isSafeIdentifier(value: string): boolean {
@@ -364,9 +398,11 @@ export class Connection {
       throw new Error("runAndGetMysqlInsertId() is only supported on MySQL connections.");
     }
 
+    const normalizedBindings = this.normalizeBindings(bindings);
+    if (this.capturePretendStatement(sqlString, normalizedBindings)) return null;
+
     const execute = async (driver: SQL) => {
       const hasDate = this.carriesDate(bindings);
-      const normalizedBindings = this.normalizeBindings(bindings);
       this.log(sqlString, normalizedBindings);
       if (hasDate) await this.assertMysqlUtc(driver, this.dedicated || !!this.reservedDriver);
       await this.executeStatement(driver, sqlString, normalizedBindings);
@@ -389,12 +425,14 @@ export class Connection {
   }
 
   private async execute(sqlString: string, bindings?: any[]): Promise<any> {
+    const normalizedBindings = this.normalizeBindings(bindings);
+    if (this.capturePretendStatement(sqlString, normalizedBindings)) return [];
+
     await this.ensureSqliteDefaults();
     if (this.driverName === "mysql" && /^\s*SET\s+(?:SESSION\s+)?(?:@@session\.)?time_zone\b/i.test(sqlString)) {
       this.mysqlUtcChecked = false;
     }
     const hasDate = this.carriesDate(bindings);
-    const normalizedBindings = this.normalizeBindings(bindings);
     this.log(sqlString, normalizedBindings);
 
     const driver = this.getDriver();
@@ -511,6 +549,7 @@ export class Connection {
   }
 
   async beginTransaction(): Promise<void> {
+    if (this.isPretending()) return;
     await this.ensureSqliteDefaults();
     if (this.transactionDepth === 0 && !this.transactionActive) {
       await this.reserveRootTransaction();
@@ -567,6 +606,7 @@ export class Connection {
   }
 
   async commit(): Promise<void> {
+    if (this.isPretending()) return;
     if (this.transactionDepth <= 0) return;
     if (this.transactionDepth === 1 && this.transactionRoot) {
       try {
@@ -587,6 +627,7 @@ export class Connection {
   }
 
   async rollback(): Promise<void> {
+    if (this.isPretending()) return;
     if (this.transactionDepth <= 0) return;
     if (this.transactionDepth === 1 && this.transactionRoot) {
       try {
@@ -609,6 +650,9 @@ export class Connection {
   }
 
   async transaction<T>(callback: (connection: Connection) => T | Promise<T>): Promise<T> {
+    if (this.isPretending()) {
+      return await TransactionContext.run(this, () => callback(this));
+    }
     await this.ensureSqliteDefaults();
     if (!this.ownsDriver) {
       // A borrowed connection can be either transaction-rooted already or

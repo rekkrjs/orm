@@ -18,10 +18,10 @@ users[0];                    // index access
 JSON.stringify(users);       // serializes as a plain array
 ```
 
-If you just want a plain array, terminate with `getArray()`:
+If you need a plain array, convert the returned collection:
 
 ```ts
-const arr = await User.where("active", true).getArray(); // User[]
+const arr = (await User.where("active", true).get()).toArray(); // User[]
 ```
 
 Wrap any iterable manually with `collect()`:

@@ -30,11 +30,11 @@ export function parseBooleanOptionValue(
 }
 
 export class CommandRunner {
-  async run(entry: CommandEntry, rawArgs: string[]): Promise<void> {
-    const signature = isCommandConstructor(entry) ? entry.signature : entry.signature;
+  async run(entry: CommandEntry, rawArgs: string[], usagePrefix = "orm run"): Promise<void> {
+    const signature = entry.signature;
 
     if (rawArgs.includes("--help") || rawArgs.includes("-h")) {
-      this.printHelp(parseSignature(signature), isCommandConstructor(entry) ? entry.description : entry.description);
+      this.printHelp(parseSignature(signature), entry.description, "stdout", usagePrefix);
       return;
     }
 
@@ -46,7 +46,7 @@ export class CommandRunner {
       ({ args, options } = this.parseRawArgs(sig, rawArgs));
     } catch (err) {
       console.error(ANSI.red(`\n Error: ${err instanceof Error ? err.message : String(err)} `));
-      this.printHelp(sig, isCommandConstructor(entry) ? entry.description : entry.description, "stderr");
+      this.printHelp(sig, entry.description, "stderr", usagePrefix);
       process.exitCode = 1;
       return;
     }
@@ -63,7 +63,7 @@ export class CommandRunner {
       }
     } catch (err) {
       console.error(ANSI.red(`\n Error: ${err instanceof Error ? err.message : String(err)} `));
-      this.printHelp(sig, isCommandConstructor(entry) ? entry.description : entry.description, "stderr");
+      this.printHelp(sig, entry.description, "stderr", usagePrefix);
       process.exitCode = 1;
     }
   }
@@ -171,7 +171,12 @@ export class CommandRunner {
 
   // Usage printed because something failed goes to stderr: a command's stdout
   // may be a contract (`--json`), and help text would corrupt it.
-  private printHelp(sig: ParsedSignature, description?: string, stream: "stdout" | "stderr" = "stdout"): void {
+  private printHelp(
+    sig: ParsedSignature,
+    description?: string,
+    stream: "stdout" | "stderr" = "stdout",
+    usagePrefix = "orm run",
+  ): void {
     const out = stream === "stderr" ? console.error : console.log;
     const c = {
       dim:    (s: string) => styleText("dim", s),
@@ -187,7 +192,7 @@ export class CommandRunner {
       return ` ${c.green(`<${a.name}>`)}`;
     }).join("");
 
-    out(`\n${c.bold("Usage:")} orm run ${c.yellow(sig.name)}${usageArgs}${sig.options.length ? c.dim(" [options]") : ""}\n`);
+    out(`\n${c.bold("Usage:")} ${usagePrefix} ${c.yellow(sig.name)}${usageArgs}${sig.options.length ? c.dim(" [options]") : ""}\n`);
 
     if (description) {
       out(`  ${description}\n`);

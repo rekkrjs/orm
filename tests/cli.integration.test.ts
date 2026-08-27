@@ -119,6 +119,8 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
     const custom = await runCli(["run", "smoke:hello", "Ada", "--loud"]);
     expect(custom.exitCode).toBe(0);
     expect(custom.stdout).toContain("HELLO ADA");
+    const customHelp = await runCli(["run", "smoke:hello", "--help"]);
+    expect(customHelp.stdout).toContain("Usage: orm run smoke:hello");
 
     const migrated = await runCli(["migrate"]);
     expect(migrated.exitCode).toBe(0);

@@ -3,7 +3,7 @@
 > **Bun-only package.** Install with:
 >
 > ```bash
-> bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.7.0
+> bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.13.0
 > ```
 >
 > The repository is private, so GitHub read access and SSH authentication are
@@ -43,7 +43,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 ## Installation
 
 ```bash
-bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.7.0
+bun add git+ssh://git@github.com/rekkrjs/orm.git#v1.13.0
 ```
 
 See [Installation](./docs/installation.md) for details.
@@ -159,6 +159,23 @@ const rows = await DB.table("audit_logs")
 ```
 
 See the [Quickstart guide](./docs/quickstart.md) for the full walkthrough.
+
+Use the canonical migration commands for generation, dry runs, and seeded rebuilds:
+
+```bash
+orm make:migration create_users_table
+orm migrate --pretend
+orm migrate:rollback --step=2 --pretend
+orm migrate:refresh --seed
+orm migrate:fresh --seed
+orm migrate:fresh --seed --seeder=UserSeeder
+```
+
+`--landlord`, `--tenants`, and `--tenant` apply to both phases. In production,
+mutating migration commands require confirmation or `--force`; status and
+pretend runs never prompt, and pretend does not execute SQL. Migration locking
+is automatic, so there is no `--isolated` flag. With `--json`, stdout remains
+one document.
 
 ---
 

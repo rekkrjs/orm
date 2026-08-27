@@ -107,8 +107,7 @@ await migrator.rollback();
 new Migrator(
   connection,
   "./database/migrations",
-  "./src/types",              // typesOutDir
-  { declarations: true },     // TypeGeneratorOptions
+  { modelDirectory: "./src/models", declarations: true },
   { createIfMissing: true, lock: true },
 );
 ```

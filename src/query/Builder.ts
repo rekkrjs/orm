@@ -8,10 +8,9 @@ import { findRelationMethod, HasMany, Model as BaseModel } from "../model/Model.
 import { ObserverRegistry } from "../model/Observer.js";
 import { ModelNotFoundError } from "../model/ModelNotFoundError.js";
 import { IdentityMap } from "../model/IdentityMap.js";
-import { createFastJsonPlan, serializeJsonRow } from "../model/ModelJsonRow.js";
+import { assertSupportedStringCast, createFastJsonPlan, serializeJsonRow } from "../model/ModelJsonRow.js";
 import {
   assertBackedEnumValue,
-  assertDeclaredEnumCast,
   isBackedEnumDefinition,
 } from "../model/BackedEnum.js";
 import { Collection, type CollectionJson } from "../support/Collection.js";
@@ -671,20 +670,14 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this.addRelativeDateWhere(columns, ">=", this.today(), true);
   }
 
-  whereRaw(sql: string, boolean?: "and" | "or", scope?: string): this;
-  whereRaw(sql: string, bindings?: readonly unknown[], boolean?: "and" | "or", scope?: string): this;
   whereRaw(
     sql: string,
-    bindingsOrBoolean: readonly unknown[] | "and" | "or" = [],
-    booleanOrScope: "and" | "or" | string = "and",
+    bindings: readonly unknown[] = [],
+    boolean: "and" | "or" = "and",
     scope?: string,
   ): this {
-    const legacy = typeof bindingsOrBoolean === "string";
-    const bindings = legacy ? [] : bindingsOrBoolean;
-    const boolean = validBoolean(legacy ? bindingsOrBoolean : booleanOrScope);
-    const resolvedScope = legacy ? booleanOrScope === "and" || booleanOrScope === "or" ? scope : booleanOrScope : scope;
     this.invalidateSqlCache();
-    this.wheres.push({ type: "raw", column: sql, bindings, boolean, scope: resolvedScope });
+    this.wheres.push({ type: "raw", column: sql, bindings, boolean: validBoolean(boolean), scope });
     return this;
   }
 
@@ -708,25 +701,19 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this;
   }
 
-  whereExists(sql: string, boolean?: "and" | "or", not?: boolean): this;
-  whereExists(sql: string, bindings?: readonly unknown[], boolean?: "and" | "or", not?: boolean): this;
   whereExists(
     sql: string,
-    bindingsOrBoolean: readonly unknown[] | "and" | "or" = [],
-    booleanOrNot: "and" | "or" | boolean = "and",
+    bindings: readonly unknown[] = [],
+    boolean: "and" | "or" = "and",
     not: boolean = false,
   ): this {
-    const legacy = typeof bindingsOrBoolean === "string";
-    const bindings = legacy ? [] : bindingsOrBoolean;
-    const boolean = validBoolean(legacy ? bindingsOrBoolean : booleanOrNot);
-    const negate = legacy && typeof booleanOrNot === "boolean" ? booleanOrNot : not;
     this.invalidateSqlCache();
-    this.wheres.push({ type: "exists", column: sql, bindings, boolean, operator: negate ? "NOT EXISTS" : "EXISTS" });
+    this.wheres.push({ type: "exists", column: sql, bindings, boolean: validBoolean(boolean), operator: not ? "NOT EXISTS" : "EXISTS" });
     return this;
   }
 
   whereNotExists(sql: string): this {
-    return this.whereExists(sql, "and", true);
+    return this.whereExists(sql, [], "and", true);
   }
 
   orWhereNull(column: ModelColumn<T> | readonly ModelColumn<T>[], scope?: string): this {
@@ -785,12 +772,8 @@ export class Builder<T = Record<string, any>, TResult = T> {
       : this.whereColumn(first, operatorOrSecond!, second, "or");
   }
 
-  orWhereRaw(sql: string, bindings?: readonly unknown[], scope?: string): this;
-  orWhereRaw(sql: string, scope?: string): this;
-  orWhereRaw(sql: string, bindingsOrScope: readonly unknown[] | string = [], scope?: string): this {
-    return Array.isArray(bindingsOrScope)
-      ? this.whereRaw(sql, bindingsOrScope, "or", scope)
-      : this.whereRaw(sql, "or", bindingsOrScope as string);
+  orWhereRaw(sql: string, bindings: readonly unknown[] = [], scope?: string): this {
+    return this.whereRaw(sql, bindings, "or", scope);
   }
 
   whereJsonContains(column: ModelColumn<T>, value: any, boolean: "and" | "or" = "and", not: boolean = false): this {
@@ -812,19 +795,18 @@ export class Builder<T = Record<string, any>, TResult = T> {
   }
 
   whereJsonLength(column: ModelColumn<T>, value: number): this;
-  whereJsonLength(column: ModelColumn<T>, operator: string, value: number, boolean?: "and" | "or", not?: boolean): this;
-  whereJsonLength(column: ModelColumn<T>, value: number, noValue: undefined, boolean: "and" | "or", not?: boolean): this;
-  whereJsonLength(column: ModelColumn<T>, operatorOrValue: string | number, value?: number, boolean: "and" | "or" = "and", not: boolean = false): this {
-    return this.addJsonLengthWhere(column, operatorOrValue, value, boolean, not);
+  whereJsonLength(column: ModelColumn<T>, operator: string, value: number): this;
+  whereJsonLength(column: ModelColumn<T>, operatorOrValue: string | number, value?: number): this {
+    return this.addJsonLengthWhere(column, operatorOrValue, value, "and");
   }
 
   orWhereJsonLength(column: ModelColumn<T>, value: number): this;
   orWhereJsonLength(column: ModelColumn<T>, operator: string, value: number): this;
   orWhereJsonLength(column: ModelColumn<T>, operatorOrValue: string | number, value?: number): this {
-    return this.addJsonLengthWhere(column, operatorOrValue, value, "or", false);
+    return this.addJsonLengthWhere(column, operatorOrValue, value, "or");
   }
 
-  private addJsonLengthWhere(column: ModelColumn<T>, operatorOrValue: string | number, value: number | undefined, boolean: "and" | "or", not: boolean): this {
+  private addJsonLengthWhere(column: ModelColumn<T>, operatorOrValue: string | number, value: number | undefined, boolean: "and" | "or"): this {
     const shorthand = value === undefined;
     const expected = shorthand ? operatorOrValue : value;
     if (typeof expected !== "number" || !Number.isFinite(expected)) {
@@ -835,7 +817,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
     }
     const operator = shorthand ? "=" : validOperator(operatorOrValue as string);
     this.invalidateSqlCache();
-    this.wheres.push({ type: "json_length", column, operator, value: expected, boolean: validBoolean(boolean), scope: undefined, not });
+    this.wheres.push({ type: "json_length", column, operator, value: expected, boolean: validBoolean(boolean), scope: undefined });
     return this;
   }
 
@@ -1004,15 +986,12 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return this;
   }
 
-  havingRaw(sql: string, boolean?: "and" | "or"): this;
-  havingRaw(sql: string, bindings?: readonly unknown[], boolean?: "and" | "or"): this;
-  havingRaw(sql: string, bindingsOrBoolean: readonly unknown[] | "and" | "or" = [], boolean: "and" | "or" = "and"): this {
-    const legacy = typeof bindingsOrBoolean === "string";
+  havingRaw(sql: string, bindings: readonly unknown[] = [], boolean: "and" | "or" = "and"): this {
     this.invalidateSqlCache();
     this.havings.push({
       sql,
-      bindings: legacy ? [] : bindingsOrBoolean,
-      boolean: validBoolean(legacy ? bindingsOrBoolean : boolean),
+      bindings,
+      boolean: validBoolean(boolean),
     });
     return this;
   }
@@ -1430,7 +1409,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
       return this.whereExists(relation.getRelationExistenceSql(this, callback));
     }
     if ((operator === "<" || operator === "=") && count <= 0) {
-      return this.whereExists(relation.getRelationExistenceSql(this, callback), "and", true);
+      return this.whereExists(relation.getRelationExistenceSql(this, callback), [], "and", true);
     }
     return this.whereRaw(`(${relation.getRelationCountSql(this, callback)}) ${operator} ${this.grammar.escape(count)}`);
   }
@@ -1445,12 +1424,12 @@ export class Builder<T = Record<string, any>, TResult = T> {
     nonNegativeInteger(count, "Relation count");
     const relation = this.getModelRelation(relationName);
     if (operator === ">=" && count === 1) {
-      return this.whereExists(relation.getRelationExistenceSql(this, callback), "or");
+      return this.whereExists(relation.getRelationExistenceSql(this, callback), [], "or");
     }
     if ((operator === "<" || operator === "=") && count <= 0) {
-      return this.whereExists(relation.getRelationExistenceSql(this, callback), "or", true);
+      return this.whereExists(relation.getRelationExistenceSql(this, callback), [], "or", true);
     }
-    return this.whereRaw(`(${relation.getRelationCountSql(this, callback)}) ${operator} ${this.grammar.escape(count)}`, "or");
+    return this.whereRaw(`(${relation.getRelationCountSql(this, callback)}) ${operator} ${this.grammar.escape(count)}`, [], "or");
   }
 
   whereHas<R extends ModelRelationName<TResult>>(relationName: R, callback?: RelationConstraint<TResult, R>, operator: string = ">=", count: number = 1): this {
@@ -1524,7 +1503,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
     if (shouldNotExist) {
       // NOT EXISTS branches are ANDed together, which is already associative.
       typeList.forEach((type) => {
-        this.whereExists(relation.getRelationExistenceSqlForType(this.tableName, type, callback as any), "and", true);
+        this.whereExists(relation.getRelationExistenceSqlForType(this.tableName, type, callback as any), [], "and", true);
       });
       return this;
     }
@@ -1765,7 +1744,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
     query.bindings = this.bindings;
     query.parameterize = this.parameterize;
     try {
-      return query.toSql();
+      return query.compileSelectSql();
     } finally {
       this.bindings = query.bindings;
       query.bindings = previousBindings;
@@ -1825,8 +1804,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
         : this.grammar.compileJsonContains(column, where.value, binding);
       return `${prefix} ${sql}`;
     } else if (where.type === "json_length") {
-      let sql = this.grammar.compileJsonLength(this.grammar.wrap(where.column), validOperator(where.operator || "="), where.value, this.parameterize ? (v) => this.addBinding(v) : undefined);
-      if (where.not) sql = `NOT (${sql})`;
+      const sql = this.grammar.compileJsonLength(this.grammar.wrap(where.column), validOperator(where.operator || "="), where.value, this.parameterize ? (v) => this.addBinding(v) : undefined);
       return `${prefix} ${sql}`;
     } else if (where.type === "date") {
       const sql = this.grammar.compileDateWhere(where.dateType || "date", this.grammar.wrap(where.column), validOperator(where.operator || "="), where.value, this.parameterize ? (v) => this.addBinding(v) : undefined);
@@ -1940,7 +1918,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return query.limitValue !== undefined || query.offsetValue !== undefined || query.orders.length > 0;
   }
 
-  toSql(): string {
+  private compileSelectSql(): string {
     if (!this.parameterize && this.sqlCache) return this.sqlCache;
     const cteSql = this.compileRecursiveCtes();
     const distinct = this.distinctFlag ? "DISTINCT " : "";
@@ -1974,11 +1952,34 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return compiled;
   }
 
+  /** Compile the query with driver placeholders and expose values through `bindings`. */
+  toSql(): string {
+    this.bindings = [];
+    const previousParameterize = this.parameterize;
+    this.parameterize = true;
+    try {
+      return this.compileSelectSql();
+    } finally {
+      this.parameterize = previousParameterize;
+    }
+  }
+
+  /** Compile an interpolated SQL string for diagnostics. Never use it for execution. */
+  toRawSql(): string {
+    const previousParameterize = this.parameterize;
+    this.parameterize = false;
+    try {
+      return this.compileSelectSql();
+    } finally {
+      this.parameterize = previousParameterize;
+    }
+  }
+
   toSqlWithEagerLoads(models: Model[]): string {
-    if (!this.model || this.eagerLoads.length === 0) return this.toSql();
+    if (!this.model || this.eagerLoads.length === 0) return this.toRawSql();
     if (models.length === 0) throw new Error("toSqlWithEagerLoads requires at least one model");
 
-    const queries: string[] = [this.toSql()];
+    const queries: string[] = [this.toRawSql()];
 
     for (const eagerLoad of this.eagerLoads) {
       const relationName = eagerLoad.name;
@@ -1995,17 +1996,14 @@ export class Builder<T = Record<string, any>, TResult = T> {
         }
         continue;
       }
-      queries.push(relation.getQuery().toSql());
+      queries.push(relation.getQuery().toRawSql());
     }
 
     return queries.join(";\n");
   }
 
   async get(): Promise<Collection<TResult>> {
-    this.bindings = [];
-    this.parameterize = true;
     const sql = this.toSql();
-    this.parameterize = false;
     const bindings = [...this.bindings];
     const cacheable = this.shouldUseCache();
     const cachesEagerGraph = cacheable && Boolean(this.model) && this.eagerLoads.length > 0;
@@ -2080,11 +2078,11 @@ export class Builder<T = Record<string, any>, TResult = T> {
     return new Collection(rows as T[]) as unknown as Collection<TResult>;
   }
 
-  async getTree(childrenRelation?: string): Promise<Collection<TResult> | TResult | null> {
+  async getTree(): Promise<Collection<TResult> | TResult | null> {
     if (!this.recursiveTreeConfig) {
       throw new Error("getTree() requires recursive(parentColumn) to be called first.");
     }
-    childrenRelation ||= this.inferRecursiveChildrenRelation() || "children";
+    const childrenRelation = this.inferRecursiveChildrenRelation() || "children";
     Connection.assertSafeIdentifier(childrenRelation, "recursive children relation");
 
     const rows = await this.get();
@@ -2262,10 +2260,6 @@ export class Builder<T = Record<string, any>, TResult = T> {
       && !TransactionContext.current();
   }
 
-  async getArray(): Promise<TResult[]> {
-    return (await this.get()).all();
-  }
-
   async json(): Promise<CollectionJson<TResult>> {
     if (!this.model || this.eagerLoads.length > 0 || IdentityMap.current()) {
       return (await this.get()).toJSON();
@@ -2382,11 +2376,8 @@ export class Builder<T = Record<string, any>, TResult = T> {
     // for every later get()/count() on it.
     const query = this.clone();
     query.model = undefined as any;
-    query.bindings = [];
-    query.parameterize = true;
     const columns = key === undefined ? [column] : [column, key];
     const sql = query.select(...(columns as any)).toSql();
-    query.parameterize = false;
     const rows = await this.connection.query(sql, query.bindings);
 
     const valueField = resolveResultField((rows as any[])[0], resultFieldFor(column));
@@ -2439,8 +2430,6 @@ export class Builder<T = Record<string, any>, TResult = T> {
     query.offsetValue = undefined;
     query.eagerLoads = [];
     query.lockMode = undefined;
-    query.bindings = [];
-    query.parameterize = true;
     query.invalidateSqlCache();
     const innerSql = query.toSql();
     const rows = await this.connection.query(
@@ -2906,7 +2895,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
 
     for (const [attribute, cast] of Object.entries(model.casts ?? {})) {
       if (!Object.hasOwn(record, attribute)) continue;
-      assertDeclaredEnumCast(cast);
+      assertSupportedStringCast(cast, model.name, attribute);
       if (!isBackedEnumDefinition(cast)) continue;
       const value = (record as any)[attribute];
       if (value !== null) assertBackedEnumValue(cast, value, model.name, attribute);
@@ -2919,7 +2908,7 @@ export class Builder<T = Record<string, any>, TResult = T> {
 
     const attribute = resultFieldFor(String(column));
     const cast = model.casts?.[attribute];
-    assertDeclaredEnumCast(cast);
+    assertSupportedStringCast(cast, model.name, attribute);
     if (isBackedEnumDefinition(cast)) {
       assertBackedEnumValue(cast, amount, model.name, attribute);
     }
@@ -3289,8 +3278,6 @@ export class Builder<T = Record<string, any>, TResult = T> {
     query.offsetValue = undefined;
     query.eagerLoads = [];
     query.lockMode = undefined;
-    query.bindings = [];
-    query.parameterize = true;
     query.invalidateSqlCache();
     const innerSql = query.toSql();
     const rows = await this.connection.query(
@@ -3329,20 +3316,17 @@ export class Builder<T = Record<string, any>, TResult = T> {
   }
 
   dump(): this {
-    console.log(this.toSql());
+    console.log(this.toRawSql());
     return this;
   }
 
   dd(): never {
-    console.log(this.toSql());
+    console.log(this.toRawSql());
     throw new Error("dd() called — execution halted.");
   }
 
   async explain(): Promise<any[]> {
-    this.bindings = [];
-    this.parameterize = true;
     const sql = this.grammar.compileExplain(this.toSql());
-    this.parameterize = false;
     const results = await this.connection.query(sql, this.bindings);
     return Array.from(results);
   }

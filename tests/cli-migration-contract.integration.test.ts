@@ -49,10 +49,21 @@ async function runCli(project: string, args: string[], env: Record<string, strin
 
 function migrationSource(table: string): string {
   return `
-import { Migration, Blueprint, Schema } from ${JSON.stringify(ormEntry)};
+import { Migration, Blueprint, Builder, Schema } from ${JSON.stringify(ormEntry)};
 
 export default class extends Migration {
-  async up()   { await Schema.create(${JSON.stringify(table)}, (t: Blueprint) => { t.increments("id"); }); }
+  async up() {
+    await Schema.create(${JSON.stringify(table)}, (t: Blueprint) => {
+      t.increments("id");
+      t.string("name");
+    });
+    const connection = Schema.getConnection();
+    await connection.query(
+      "SELECT " + connection.getGrammar().placeholder(1) + " AS inspected",
+      [9007199254740993n],
+    );
+    await new Builder(connection, connection.qualifyTable(${JSON.stringify(table)})).insert({ name: "fixture" });
+  }
   async down() { await Schema.dropIfExists(${JSON.stringify(table)}); }
 }
 `;
@@ -151,6 +162,39 @@ export default {
       expect(payload.migrations.map((row: any) => row.status)).toEqual(["Pending", "Pending"]);
       expect(payload.migrations.map((row: any) => row.batch)).toEqual([null, null]);
       expect(payload.migrations[0].migration).toBe("database/migrations/20260101000000_create_widgets_table.ts");
+    });
+
+    it("pretends pending migrations with dialect SQL and bindings without mutations", async () => {
+      const emptyRollback = await runCli(project, ["migrate:rollback", "--pretend", "--json"]);
+      expect(emptyRollback.exitCode).toBe(0);
+      expect(JSON.parse(emptyRollback.stdout)).toEqual({ pretend: [] });
+
+      const result = await runCli(project, ["migrate", "--pretend", "--json"], { NODE_ENV: "production" });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim().split("\n")).toHaveLength(1);
+      const payload = JSON.parse(result.stdout);
+      expect(payload.pretend).toHaveLength(2);
+      expect(payload.pretend.map((item: any) => item.direction)).toEqual(["up", "up"]);
+
+      const statements = payload.pretend[0].statements;
+      const quote = driver === "mysql" ? "`" : '"';
+      expect(statements[0].sql).toStartWith("CREATE TABLE ");
+      expect(statements[0].sql).toContain(`${quote}cli_widgets${quote}`);
+      expect(statements[1].sql).toContain(driver === "postgres" ? "SELECT $1" : "SELECT ?");
+      expect(statements[1].bindings).toEqual(["9007199254740993"]);
+      expect(statements[2].sql).toContain(
+        driver === "postgres" ? "VALUES ($1)" : "VALUES (?)",
+      );
+      expect(statements[2].bindings).toEqual(["fixture"]);
+
+      const stillPending = JSON.parse((await runCli(project, ["migrate:status", "--json"])).stdout);
+      expect(stillPending.migrations.map((row: any) => row.status)).toEqual(["Pending", "Pending"]);
+
+      const plain = await runCli(project, ["migrate", "--pretend"]);
+      expect(plain.stdout).toContain("(up)");
+      expect(plain.stdout).toContain('Bindings: ["9007199254740993"]');
+      expect(plain.stdout).toContain("Bindings: [\"fixture\"]");
     });
 
     it("migrates, keeping progress out of the JSON on stdout", async () => {
@@ -275,16 +319,26 @@ export default {
       expect(JSON.parse(nothingLeft.stdout)).toEqual({ rolledBack: [] });
     });
 
-    it("accepts --steps= as an alias of --step=", async () => {
+    it("pretends only the rollback batches selected by --step", async () => {
       await runCli(project, ["migrate", "--json"]);
-      await writeFile(join(migrations, "20260105000000_create_extra_table.ts"), migrationSource("cli_extra"));
+      const extra = join(migrations, "20260104500000_create_pretend_batch_table.ts");
+      await writeFile(extra, migrationSource("cli_pretend_batch"));
       await runCli(project, ["migrate", "--json"]);
 
-      const rolled = await runCli(project, ["migrate:rollback", "--steps=2", "--json"]);
-      expect(rolled.exitCode).toBe(0);
-      expect(JSON.parse(rolled.stdout).rolledBack).toHaveLength(4);
+      try {
+        const result = await runCli(project, ["migrate:rollback", "--pretend", "--step=1", "--json"]);
+        expect(result.exitCode).toBe(0);
+        const payload = JSON.parse(result.stdout);
+        expect(payload.pretend).toHaveLength(1);
+        expect(payload.pretend[0].migration).toBe("database/migrations/20260104500000_create_pretend_batch_table.ts");
+        expect(payload.pretend[0].direction).toBe("down");
 
-      await rm(join(migrations, "20260105000000_create_extra_table.ts"), { force: true });
+        const status = JSON.parse((await runCli(project, ["migrate:status", "--json"])).stdout);
+        expect(status.migrations.every((row: any) => row.status === "Ran")).toBe(true);
+      } finally {
+        await runCli(project, ["migrate:rollback", "--step=1", "--json"]);
+        await rm(extra, { force: true });
+      }
     });
 
     it("takes its configuration from --config", async () => {

@@ -131,7 +131,7 @@ export class MorphTo<T extends Record<string, any> = Model> {
     query.whereColumn(`${Related.getQualifiedTable(this.parent.getConnection())}.${Related.primaryKey}`, "=", `${parentTable}.${this.idColumn}`);
     query.where(`${parentTable}.${this.typeColumn}`, type);
     if (callback) callback(query);
-    return query.toSql();
+    return query.toRawSql();
   }
 
   private async resolveAndFind(type: string, id: any): Promise<T | null> {
@@ -341,7 +341,7 @@ export class MorphOne<T extends Record<string, any> = Model, N extends string = 
   }
 
   getRelationExistenceSql(parentQuery: Builder<any>, callback?: (query: Builder<any>) => void | Builder<any>): string {
-    return this.newExistenceQuery(parentQuery.tableName, "1", callback).toSql();
+    return this.newExistenceQuery(parentQuery.tableName, "1", callback).toRawSql();
   }
 
   getRelationCountSql(parentQuery: Builder<any>, callback?: (query: Builder<any>) => void | Builder<any>): string {
@@ -349,7 +349,7 @@ export class MorphOne<T extends Record<string, any> = Model, N extends string = 
   }
 
   getRelationAggregateSql(parentQuery: Builder<any>, aggregate: string, callback?: (query: Builder<any>) => void | Builder<any>): string {
-    return this.newExistenceQuery(parentQuery.tableName, aggregate, callback).toSql();
+    return this.newExistenceQuery(parentQuery.tableName, aggregate, callback).toRawSql();
   }
 }
 
@@ -514,7 +514,7 @@ export class MorphMany<T extends Record<string, any> = Model, N extends string =
   }
 
   getRelationExistenceSql(parentQuery: Builder<any>, callback?: (query: Builder<any>) => void | Builder<any>): string {
-    return this.newExistenceQuery(parentQuery.tableName, "1", callback).toSql();
+    return this.newExistenceQuery(parentQuery.tableName, "1", callback).toRawSql();
   }
 
   getRelationCountSql(parentQuery: Builder<any>, callback?: (query: Builder<any>) => void | Builder<any>): string {
@@ -522,7 +522,7 @@ export class MorphMany<T extends Record<string, any> = Model, N extends string =
   }
 
   getRelationAggregateSql(parentQuery: Builder<any>, aggregate: string, callback?: (query: Builder<any>) => void | Builder<any>): string {
-    return this.newExistenceQuery(parentQuery.tableName, aggregate, callback).toSql();
+    return this.newExistenceQuery(parentQuery.tableName, aggregate, callback).toRawSql();
   }
 }
 
@@ -1043,7 +1043,7 @@ export class MorphToMany<
   }
 
   getRelationExistenceSql(parentQuery: Builder<any>, callback?: (query: Builder<any>) => void | Builder<any>): string {
-    return this.newExistenceQuery(parentQuery.tableName, "1", callback).toSql();
+    return this.newExistenceQuery(parentQuery.tableName, "1", callback).toRawSql();
   }
 
   getRelationCountSql(parentQuery: Builder<any>, callback?: (query: Builder<any>) => void | Builder<any>): string {
@@ -1051,6 +1051,6 @@ export class MorphToMany<
   }
 
   getRelationAggregateSql(parentQuery: Builder<any>, aggregate: string, callback?: (query: Builder<any>) => void | Builder<any>): string {
-    return this.newExistenceQuery(parentQuery.tableName, aggregate, callback).toSql();
+    return this.newExistenceQuery(parentQuery.tableName, aggregate, callback).toRawSql();
   }
 }

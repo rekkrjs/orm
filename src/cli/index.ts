@@ -5,7 +5,6 @@ import { makeMigrateResetCommand } from "./MigrateResetCommand.js";
 import { makeMigrateRefreshCommand } from "./MigrateRefreshCommand.js";
 import { makeMigrateFreshCommand } from "./MigrateFreshCommand.js";
 import { makeMigrateStatusCommand } from "./MigrateStatusCommand.js";
-import { makeMigrateMakeCommand } from "./MigrateMakeCommand.js";
 import { makeDbSeedCommand } from "./DbSeedCommand.js";
 import { makeSchemaDumpCommand } from "./SchemaDumpCommand.js";
 import { makeSchemaSquashCommand } from "./SchemaSquashCommand.js";
@@ -27,7 +26,6 @@ export function registerOrmCommands(config: OrmConfig, connection: Connection): 
   registerCommand(makeMigrateRefreshCommand(config, connection));
   registerCommand(makeMigrateFreshCommand(config, connection));
   registerCommand(makeMigrateStatusCommand(config, connection));
-  registerCommand(makeMigrateMakeCommand(config));
   registerCommand(makeDbSeedCommand(config, connection));
   registerCommand(makeSchemaDumpCommand(config, connection));
   registerCommand(makeSchemaSquashCommand(config, connection));

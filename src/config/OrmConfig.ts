@@ -45,9 +45,7 @@ export interface OrmConfig {
   };
   modelsPath?: string | string[] | ModelsPath;
   policyPath?: string | string[];
-  typesOutDir?: string;
   typeDeclarations?: Record<string, string | ModelDeclaration>;
-  typeDeclarationModelsDir?: string;
   typeDeclarationImportPrefix?: string;
   typeDeclarationSingularModels?: boolean;
   typeStubs?: boolean;
@@ -103,8 +101,11 @@ export interface ConfiguredOrm {
 }
 
 function resolveMigrationPath(config: OrmConfig, scope: "landlord" | "tenant"): string | string[] {
-  const grouped = config.migrations?.[scope];
-  if (grouped) return grouped;
+  if (config.migrations) {
+    const grouped = config.migrations[scope];
+    if (grouped) return grouped;
+    throw new Error(`No migration path configured for scope "${scope}".`);
+  }
   if (config.migrationsPath) return config.migrationsPath;
   throw new Error(`No migration path configured for scope "${scope}".`);
 }
@@ -221,7 +222,20 @@ export function configureOrm(config: OrmConfig): ConfiguredOrm {
       createIfMissing: config.migrations?.createIfMissing,
       ...overrides,
     };
-    return new Migrator(activeConn, path, config.typesOutDir, {}, options);
+    const modelPath = typeof config.modelsPath === "object" && !Array.isArray(config.modelsPath)
+      ? config.modelsPath[scope]
+      : config.modelsPath;
+    const modelDirectories = Array.isArray(modelPath) ? modelPath : modelPath ? [modelPath] : [];
+    return new Migrator(activeConn, path, {
+      declarations: !config.typeStubs,
+      stubs: config.typeStubs,
+      modelDeclarations: config.typeDeclarations,
+      modelDirectory: modelDirectories[0],
+      modelDirectories: modelDirectories.length > 1 ? modelDirectories : undefined,
+      modelImportPrefix: config.typeDeclarationImportPrefix,
+      singularModels: config.typeDeclarationSingularModels,
+      declarationDirName: "types",
+    }, options);
   };
 
   const buildSeeder = () => {

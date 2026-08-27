@@ -144,7 +144,7 @@ describe("Date handling", () => {
       ["postgres://user:pass@localhost:5432/db", "'2020-01-01T00:00:00.000Z'"],
     ] as const) {
       const connection = new Connection({ url }, { driver: driver as any, ownsDriver: false });
-      expect(new Builder(connection, "events").where("created_at", ">", instant).toSql()).toContain(expected);
+      expect(new Builder(connection, "events").where("created_at", ">", instant).toRawSql()).toContain(expected);
     }
   });
 

@@ -514,7 +514,7 @@ describe("Validator — sync rules", () => {
     const bad = await Validator.safeParse(rootSchema, "");
     expect(bad.success).toBe(false);
     if (!bad.success) {
-      expect(bad.issues.value[0]).toContain("required");
+      expect(bad.issues[0].message).toContain("required");
       expect(bad.input).toBe("");
     }
 

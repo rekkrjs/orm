@@ -1,5 +1,86 @@
 # Changelog
 
+## 1.13.0 - 2026-08-27
+
+### Added
+
+- `migrate:fresh --seed` and `migrate:refresh --seed` now run the existing
+  default `db:seed` flow after migrations succeed. `--seeder=Name` selects one
+  seeder and requires `--seed`; landlord and tenant targets apply to both phases.
+- `migrate --pretend` and `migrate:rollback --pretend --step=N` compile pending
+  or rollback SQL through the selected driver's real schema and query grammars.
+  Ordered statements and bindings are available in plain output and as one
+  `pretend` array under `--json`, without schema or migration-record writes.
+- All state-changing migration commands now confirm under `NODE_ENV=production`;
+  `--force` supports non-interactive runs. Status and pretend mode never prompt,
+  and pretend captures SQL without executing it.
+- `make:migration add_<something>_to_<table>_table` now infers the table and
+  generates `Schema.table()` skeletons for both migration directions.
+
+### Changed
+
+- `make:migration` is the sole migration generator command. The duplicate
+  `migrate:make` command and package script were removed.
+- `Builder.toSql()` now emits driver placeholders and fills `bindings`.
+  `toRawSql()` is the explicit diagnostic form for interpolated SQL.
+- `Validator.safeParse()` now returns Standard Schema issue arrays from every
+  entry point; `Validator.flatten()` converts those issues to an error bag.
+- Type generation is configured through `modelsPath` and writes beside each
+  model root. `orm types:generate <dir>` remains the explicit custom-output
+  command.
+- `Migrator.run()`, `rollback()`, `reset()`, `refresh()`, and `fresh()` now
+  return their results directly; the duplicate `*WithResult()` methods were
+  removed.
+- Migration metadata tables must use the current schema. Automatic upgrades of
+  pre-release tables and the `migrate:rollback --steps` alias were removed.
+- Grouped migration configuration must define every targeted scope; it no
+  longer falls back to a flat `migrationsPath`.
+- Automatic migration locking remains enabled for every real migration run;
+  the CLI intentionally does not expose Laravel's opt-in `--isolated` flag.
+
+### Removed
+
+- Removed pre-release query-builder signatures that placed `and`/`or` or JSON
+  negation flags where binding arrays now belong.
+- Removed `Builder.getArray()`; call `(await query.get()).toArray()` when a
+  plain array is required.
+- Removed the explicit relation-name argument from `getTree()`; recursive tree
+  relation names are inferred from model metadata.
+- Removed `Search.define("table")`; pass an existing model class to
+  `Search.define(ModelClass)`.
+- Removed unscoped `IdentityMap` access. A connection is now required for every
+  key operation.
+- Removed the undocumented nested `TenantResolution.cache` form; set `ttl` and
+  `closeOnPurge` directly on the tenant resolution.
+- Removed `typesOutDir` and `typeDeclarationModelsDir` configuration.
+- Removed special handling and diagnostics for obsolete string casts. Unknown
+  cast names now fail with the same unsupported-cast error.
+
+### Fixed
+
+- Package builds now clear `dist/` before compiling, so deleted modules cannot
+  survive as stale JavaScript and leak into a release tarball.
+- Tenant migration cleanup now removes owned connections from both the tenant
+  cache and named connection registry, so a following seeder cannot reuse a
+  closed connection.
+- Pretend mode now captures every statement without executing SQL, including
+  read-looking statements and writes made through derived connections. Bigint
+  bindings serialize as exact decimal strings instead of breaking `--json`.
+- Pretend rollback handles an empty history without emitting invalid `IN ()`
+  SQL.
+- Built-in command help now shows canonical direct usage such as `orm migrate`;
+  application command help keeps `orm run <command>`.
+
+### Verification
+
+- Built the TypeScript package and ran the complete Bun test suite: 1,600 tests
+  passed across 125 files, including live SQLite, MySQL, PostgreSQL, and Redis
+  integrations.
+- Ran 50 focused migration UX tests across SQLite, MySQL, and PostgreSQL, and
+  verified the diff with `git diff --check`.
+- `bun pm pack --dry-run` passed for version 1.13.0: 417 files, 2.74 MB
+  unpacked, with no stale `migrate:make` artifact.
+
 ## 1.12.1 - 2026-08-26
 
 ### Added

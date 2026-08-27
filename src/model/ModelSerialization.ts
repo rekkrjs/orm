@@ -1,6 +1,5 @@
 import { ModelPersistence } from "./ModelPersistence.js";
 import type { ModelJson, DotPaths, DeepPick } from "./ModelBase.js";
-import { assertDeclaredEnumCast } from "./BackedEnum.js";
 
 /**
  * Whether a stored value already equals what `ModelCore.castAttribute` would
@@ -19,7 +18,6 @@ import { assertDeclaredEnumCast } from "./BackedEnum.js";
  * would silently corrupt the snapshot.
  */
 function castValueIsReady(cast: unknown, value: unknown): boolean {
-  assertDeclaredEnumCast(cast);
   if (value === null || value === undefined) return true;
   if (typeof cast !== "string") return false;
 

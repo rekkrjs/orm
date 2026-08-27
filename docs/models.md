@@ -111,10 +111,10 @@ custom cast replaces it outright. Set `timestamps = false` to opt out of the
 columns entirely.
 
 The implicit cast has the same parsing rules as an explicit `datetime` cast.
-Legacy free-form values, MySQL's `0000-00-00 00:00:00`, and Unix timestamps
-stored as strings therefore become an invalid `Date`; numeric Unix seconds are
-treated as JavaScript milliseconds. Normalize those values before upgrading or
-declare an explicit `"string"` cast while migrating them.
+Free-form values, MySQL's `0000-00-00 00:00:00`, and Unix timestamps stored as
+strings therefore become an invalid `Date`; numeric Unix seconds are treated as
+JavaScript milliseconds. Use an explicit `"string"` cast when the column is not
+a valid database datetime.
 
 Ordinary JavaScript static inheritance applies. An ORM base model can set both
 names once, and subclasses may override either name independently:
@@ -269,10 +269,9 @@ accept any descriptor.
 
 Reads, writes, bulk model operations, and hydration reject values outside the
 descriptor with `InvalidEnumValueError`. The error exposes `model`, `attribute`,
-`value`, and the immutable `expected` value list for structured handling. The
-legacy `"enum"` string cast is not supported because it declares no allowed
-values; reads and writes throw an actionable error instead of passing the value
-through.
+`value`, and the immutable `expected` value list for structured handling.
+Unknown string cast names are rejected; use a built-in cast, a backed-enum
+descriptor, or a `CastsAttributes` implementation.
 
 `decimal:N` deliberately returns a string. Pass exact database decimals as
 strings too (`"12345678901234567890.12"`): once a value has entered a JavaScript
@@ -286,12 +285,6 @@ tracking, so changing `user.settings.theme` in place is detected by `isDirty()`
 and persisted by `save()`; assigning a whole replacement object also works.
 JSON numbers still obey JavaScript's numeric precision. Store identifiers and
 other integers beyond `Number.MAX_SAFE_INTEGER` as JSON strings.
-
-> **`encrypted` was removed in favour of `base64`.** It only Base64-encoded
-> values — anyone could decode them — so the name promised a guarantee it never
-> delivered. Models still declaring `encrypted` now throw instead of silently
-> encoding. For real secrets, write a custom cast backed by an actual cipher
-> (`node:crypto`) and keep the key outside the database.
 
 ### Custom cast classes
 
@@ -873,7 +866,7 @@ const users = await User.select("id", "name", "active").get();
 users.each((user) => user.makeHidden("internal_note"));
 const instancePayload = users.json(); // serializes these exact model instances
 
-const rows = await DB.table<UserRow>("users").getArray();
+const rows = (await DB.table<UserRow>("users").get()).toArray();
 // Raw rows: no model casts, visibility, accessors, or constructors.
 ```
 

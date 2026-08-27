@@ -72,10 +72,10 @@ describe("Benchmark: model query JSON", () => {
   });
 
   test("compares raw rows, direct JSON, hydration, fallback, and encoding", async () => {
-    const raw = () => new Builder(connection, "fast_json_bench_users")
+    const raw = async () => (await new Builder(connection, "fast_json_bench_users")
       .select("id", "name", "active")
       .orderBy("id")
-      .getArray();
+      .get()).toArray();
     const fast = () => FastJsonBenchUser.select("id", "name", "active").orderBy("id").json();
     const hydrated = async () => (await FastJsonBenchUser.select("id", "name", "active").orderBy("id").get()).toJSON();
     const fallback = () => HydratedJsonBenchUser.select("id", "name", "active").orderBy("id").json();
@@ -91,7 +91,7 @@ describe("Benchmark: model query JSON", () => {
     expect(fastValue).toBeInstanceOf(Collection);
 
     console.log(`response bytes: ${JSON.stringify(rawValue).length}`);
-    await measure("DB.table().getArray()", raw);
+    await measure("DB.table().get().toArray()", raw);
     await measure("eligible Model.json()", fast);
     await measure("Model.get().toJSON()", hydrated);
     await measure("fallback Model.json()", fallback);

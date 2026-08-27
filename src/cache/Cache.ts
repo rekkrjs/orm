@@ -29,10 +29,8 @@ export class Cache {
   }
 
   /**
-   * Stores are JSON-backed, and `JSON.stringify(undefined)` is the string
-   * "undefined" — which no store can read back and which never expires if no
-   * TTL was set, so one bad write poisons the key permanently. Refuse the write
-   * instead of corrupting the entry.
+   * Stores are JSON-backed, and `JSON.stringify` cannot represent top-level
+   * undefined, functions, or symbols. Refuse those values at the boundary.
    */
   private static assertSerializable(value: unknown): void {
     if (value === undefined || typeof value === "function" || typeof value === "symbol") {

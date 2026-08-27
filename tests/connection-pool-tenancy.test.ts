@@ -5,7 +5,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 describe("connection pool + tenant lifecycle", () => {
   afterEach(async () => {
-    ConnectionManager.defaultTenantTtl = undefined;
+    ConnectionManager.defaultTenantTtl = 300_000;
     await ConnectionManager.closeAll();
   });
 
@@ -159,7 +159,7 @@ describe("connection pool + tenant lifecycle", () => {
 
 describe("concurrent tenant resolution", () => {
   afterEach(async () => {
-    ConnectionManager.defaultTenantTtl = undefined;
+    ConnectionManager.defaultTenantTtl = 300_000;
     await ConnectionManager.closeAll();
   });
 

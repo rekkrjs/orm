@@ -28,7 +28,10 @@ function expectAssignable<T>(_v: T): void {}
 
 // ── Style 1: Search.define ──────────────────────────────────────────────────
 
-class TPost extends Search.define<{ id: number; title: string; status: string }>("t_posts", {
+class _TPost extends Model.define<{ id: number; title: string; status: string }>("t_posts") {
+  static fillable = ["title", "status"];
+}
+const TPost = Search.define(_TPost, {
   index: "t_posts_v2",
   shouldBeSearchable: (m) => {
     expectType<string>(m.getAttribute("status"));
@@ -38,9 +41,7 @@ class TPost extends Search.define<{ id: number; title: string; status: string }>
     id: m.getAttribute("id"),
     title: m.getAttribute("title"),
   }),
-}) {
-  static fillable = ["title", "status"];
-}
+});
 
 // ── Style 2: Search.register on an existing class ───────────────────────────
 
@@ -75,8 +76,7 @@ class TWidget extends Searchable(
   static fillable = ["name"];
 }
 
-type PostBase = Model<{ id: number; title: string; status: string }>
-  & { id: number; title: string; status: string };
+type PostBase = _TPost;
 
 function _typeAssertions(): void {
   if (false as boolean) {

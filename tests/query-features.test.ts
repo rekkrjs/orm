@@ -257,7 +257,7 @@ describe("Conditional Query Building", () => {
   });
 
   test("pipe returns the callback result", () => {
-    const sql = Event.pipe((query) => query.where("category", "music").toSql());
+    const sql = Event.pipe((query) => query.where("category", "music").toRawSql());
     expect(sql).toContain(`WHERE "category" = 'music'`);
   });
 });

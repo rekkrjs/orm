@@ -133,7 +133,7 @@ describe("Advanced Query Builder Features", () => {
       const sql = new Builder(db, "products")
         .where("name", "A")
         .orWhereColumn("name", "!=", "category")
-        .toSql();
+        .toRawSql();
       expect(sql).toContain("OR");
       expect(sql).toContain("!=");
     });
@@ -142,7 +142,7 @@ describe("Advanced Query Builder Features", () => {
       const sql = new Builder(db, "products")
         .where("name", "A")
         .orWhereRaw("price > 25")
-        .toSql();
+        .toRawSql();
       expect(sql).toContain("OR price > 25");
     });
   });
@@ -152,7 +152,7 @@ describe("Advanced Query Builder Features", () => {
       const sql = new Builder(db, "products")
         .whereNull(["category", "tags"])
         .orWhereNotNull(["category", "tags"])
-        .toSql();
+        .toRawSql();
 
       expect(sql).toContain('WHERE "category" IS NULL AND "tags" IS NULL');
       expect(sql).toContain('OR "category" IS NOT NULL OR "tags" IS NOT NULL');
@@ -196,7 +196,7 @@ describe("Advanced Query Builder Features", () => {
         .orWhereAny(["name", "category"], "=", "A")
         .orWhereAll(["name", "category"], "!=", "")
         .orWhereNone(["name", "category"], "=", "hidden")
-        .toSql();
+        .toRawSql();
 
       expect(sql).toContain('WHERE NOT ("name" = \'blocked\' OR "category" = \'blocked\')');
       expect(sql).toContain('OR ("name" = \'A\' OR "category" = \'A\')');
@@ -297,7 +297,7 @@ describe("Advanced Query Builder Features", () => {
         .havingNotBetween("price", [20, 30])
         .orHavingBetween("price", [10, 20])
         .orHavingNotBetween("price", [30, 40])
-        .toSql();
+        .toRawSql();
       expect(sql).toContain('HAVING "price" BETWEEN 10 AND 40');
       expect(sql).toContain('AND "price" NOT BETWEEN 20 AND 30');
       expect(sql).toContain('OR "price" BETWEEN 10 AND 20');
@@ -438,7 +438,7 @@ describe("Advanced Query Builder Features", () => {
         .orWhereJsonContains("tags", "red")
         .orWhereJsonDoesntContain("tags", "blue")
         .orWhereJsonLength("tags", ">", 1)
-        .toSql();
+        .toRawSql();
 
       expect(sql).toContain("NOT (");
       expect(sql).toContain("> 1");
@@ -456,18 +456,6 @@ describe("Advanced Query Builder Features", () => {
         .orderBy("name")
         .pluck("name");
       expect(redOrB).toEqual(["A", "B", "C"]);
-    });
-
-    test("whereJsonLength keeps its legacy boolean and not arguments", () => {
-      const sql = new Builder(db, "products")
-        .where("id", 1)
-        .whereJsonLength("tags", ">", 2, "or")
-        .whereJsonLength("tags", "<", 9, "and", true)
-        .whereJsonLength("tags", 3, undefined, "or")
-        .toSql();
-
-      expect(sql.match(/ OR /g)).toHaveLength(2);
-      expect(sql).toContain("NOT (");
     });
 
     test("JSON length requires a finite comparison value", () => {
@@ -491,22 +479,22 @@ describe("Advanced Query Builder Features", () => {
       expect(sql).toContain("LIKE");
       expect(sql).not.toContain("LOWER(");
 
-      const lower = await new Builder(db, "products").whereLike("name", "%a%").getArray();
-      const upper = await new Builder(db, "products").whereLike("name", "%A%").getArray();
+      const lower = await new Builder(db, "products").whereLike("name", "%a%").get();
+      const upper = await new Builder(db, "products").whereLike("name", "%A%").get();
       expect(lower.length).toBeGreaterThan(0);
       expect(upper.length).toBe(lower.length);
     });
 
     test("caseSensitive uses the dialect's exact operator", () => {
       // GLOB on SQLite, which has no case-sensitive LIKE.
-      const sql = new Builder(db, "products").whereLike("name", "%a%", { caseSensitive: true }).toSql();
+      const sql = new Builder(db, "products").whereLike("name", "%a%", { caseSensitive: true }).toRawSql();
       expect(sql).toContain("GLOB");
       expect(sql).toContain("*a*");
     });
 
     test("caseSensitive escapes GLOB metacharacters instead of translating them", () => {
       // A literal * ? or [ must not become a GLOB wildcard, while % and _ must.
-      const sql = new Builder(db, "products").whereLike("name", "a*b_c", { caseSensitive: true }).toSql();
+      const sql = new Builder(db, "products").whereLike("name", "a*b_c", { caseSensitive: true }).toRawSql();
       expect(sql).toContain("a[*]b?c");
     });
 
@@ -899,19 +887,6 @@ describe("Advanced Query Builder Features", () => {
         "Billing",
       ]);
       expect(tree[0].getRelation("items").map((folder: Folder) => folder.getAttribute("name"))).toEqual(["Forms"]);
-    });
-
-    test("getTree can override the inferred relation name", async () => {
-      const tree = await Folder
-        .recursive("parent_id")
-        .orderBy("depth")
-        .orderBy("name")
-        .getTree("children");
-
-      expect(tree[0].getRelation("children").map((folder: Folder) => folder.getAttribute("name"))).toEqual([
-        "Admissions",
-        "Billing",
-      ]);
     });
 
     test("getTree supports a max depth", async () => {

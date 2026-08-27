@@ -7,9 +7,7 @@ export interface TenantCachePolicy {
   closeOnPurge?: boolean;
 }
 
-type TenantResolutionOptions = TenantCachePolicy & {
-  cache?: TenantCachePolicy;
-};
+type TenantResolutionOptions = TenantCachePolicy;
 
 export type TenantResolution =
   | ({ strategy: "database"; name: string; config: ConnectionConfig } & TenantResolutionOptions)
@@ -32,10 +30,9 @@ export class ConnectionManager {
   /**
    * Default TTL (ms) applied to tenant contexts that own their own connection
    * pool (the `database` strategy). Prevents idle per-tenant pools from
-   * accumulating indefinitely. `null`/`undefined` = no default (legacy behavior).
-   * A resolution-level `ttl` always overrides this.
+   * accumulating indefinitely. A resolution-level `ttl` always overrides it.
    */
-  static defaultTenantTtl?: number;
+  static defaultTenantTtl: number | undefined = 300_000;
 
   /**
    * Start a background sweep that closes expired tenant contexts so idle
@@ -124,7 +121,6 @@ export class ConnectionManager {
     }
 
     const resolution = await this.tenantResolver(tenantId);
-    const policy = { ...resolution.cache, ttl: resolution.ttl ?? resolution.cache?.ttl, closeOnPurge: resolution.closeOnPurge ?? resolution.cache?.closeOnPurge };
     const resolvedAt = Date.now();
     const schema = resolution.strategy === "schema" ? resolution.schema : undefined;
     const schemaMode = resolution.strategy === "schema" ? resolution.mode || "qualify" : undefined;
@@ -154,7 +150,7 @@ export class ConnectionManager {
       connection = connection.withSchema(schema);
     }
 
-    const effectiveTtl = policy.ttl ?? (ownsConnection ? this.defaultTenantTtl : undefined);
+    const effectiveTtl = resolution.ttl ?? (ownsConnection ? this.defaultTenantTtl : undefined);
 
     const context: ActiveTenantContext = {
       tenantId,
@@ -163,7 +159,7 @@ export class ConnectionManager {
       strategy: resolution.strategy,
       resolvedAt,
       expiresAt: effectiveTtl ? resolvedAt + effectiveTtl : undefined,
-      closeOnPurge: policy.closeOnPurge ?? ownsConnection,
+      closeOnPurge: resolution.closeOnPurge ?? ownsConnection,
       ownsConnection,
       schema,
       schemaMode,
@@ -193,10 +189,6 @@ export class ConnectionManager {
     if (!context || !context.expiresAt || context.expiresAt > Date.now()) return context;
     this.tenantCache.delete(tenantId);
     return undefined;
-  }
-
-  static purgeTenant(tenantId: string): void {
-    this.tenantCache.delete(tenantId);
   }
 
   static async purgeExpiredTenants(options: { close?: boolean } = {}): Promise<string[]> {

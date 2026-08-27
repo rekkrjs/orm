@@ -112,8 +112,10 @@ describe("Search observer + builder", () => {
     });
     Search.reset();
 
-    const Widget = Search.define<{ id: number; name: string }>("widgets");
-    (Widget as any).fillable = ["name"];
+    class _Widget extends Model.define<{ id: number; name: string }>("widgets") {
+      static fillable = ["name"];
+    }
+    const Widget = Search.define(_Widget);
 
     const engine = new FakeEngine();
     Search.configure({ engine });

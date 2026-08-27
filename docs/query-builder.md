@@ -147,11 +147,13 @@ const user = await User.where("email", "a@b.com").first();   // first matching r
 const result = await User.where("email", "a@b.com").firstOr(() => guestUser);
 const byId = await User.findOr(1, () => guestUser);
 const users = await User.where("active", true).get();        // Collection<User>
-const arr = await User.where("active", true).getArray();     // plain User[]
+const arr = users.toArray();                                 // plain User[]
 const payload = await User.where("active", true).json();     // serialized rows
 ```
 
-`get()` returns a [Collection](./collections.md) with helpers like `map`, `filter`, `groupBy`. `getArray()` removes that Collection wrapper, but its entries are still hydrated `User` models with casts, accessors, visibility, relations, and dirty tracking.
+`get()` returns a [Collection](./collections.md) with helpers like `map`,
+`filter`, and `groupBy`. Call `.toArray()` when an API requires a plain array;
+its entries remain hydrated `User` models.
 
 `Builder.json()` normally hydrates those models and serializes them. A model can
 opt compatible direct JSON queries into static row serialization:
@@ -718,12 +720,6 @@ const roots = await Folder
 roots; // Collection<Folder>
 ```
 
-`getTree("items")` is still supported when you want to force the relation name explicitly:
-
-```ts
-await Folder.descendants(1).getTree("items");
-```
-
 ### Real-world examples
 
 Threaded comments:
@@ -1170,9 +1166,12 @@ matching primary keys, so `limit()` constrains the rows actually modified.
 ## Debugging
 
 ```ts
-User.where("name", "Alice").toSql();      // compile only, returns string
-User.where("name", "Alice").dump();       // log SQL, keep chain
-User.where("name", "Alice").dd();         // log SQL and throw
+const query = User.where("name", "Alice");
+query.toSql();                      // SQL with driver placeholders
+query.bindings;                     // ["Alice"]
+query.toRawSql();                   // interpolated SQL for diagnostics only
+query.dump();                       // log raw SQL, keep chain
+query.dd();                         // log raw SQL and throw
 await User.where("name", "Alice").explain(); // run EXPLAIN
 ```
 
@@ -1251,7 +1250,7 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `select / addSelect / selectRaw / distinct / fromSub` | Column selection |
 | `limit / offset / take / skip / forPage` | Row limits |
 | `lockForUpdate / sharedLock / skipLocked / noWait` | Locks |
-| `get / getArray / first / firstOr / find / findOr / findMany / findOrFail` | Read terminators |
+| `get / first / firstOr / find / findOr / findMany / findOrFail` | Read terminators |
 | `firstWhere / firstOrFail / sole / value / valueOrFail / pluck` | Read terminators |
 | `count / sum / avg / average / min / max / exists / doesntExist` | Aggregates |
 | `paginate / simplePaginate / cursorPaginate` | Pagination |
@@ -1274,4 +1273,4 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `when(value, fn, elseFn?) / unless(...)` | Conditional; `value` may be a closure and is passed to the callbacks |
 | `tap(fn)` | Mutate and return |
 | `clone()` | Copy builder state |
-| `toSql() / dump() / dd() / explain()` | Debugging |
+| `toSql() / toRawSql() / dump() / dd() / explain()` | SQL compilation and debugging |

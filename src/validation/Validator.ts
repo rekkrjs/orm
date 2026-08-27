@@ -360,12 +360,9 @@ async function normalizeObjectInput(value: unknown): Promise<Record<string, any>
 
 type SafeParseResult<T, TInput = unknown> =
   | { success: true; output: T }
-  | { success: false; issues: ErrorBag; input: TInput };
+  | { success: false; issues: readonly StandardSchemaIssue[]; input: TInput };
 
 type RootValue<B> = B extends RuleBuilder<infer V, any> ? V : never;
-type SchemaSafeParseResult<T, TInput = unknown> =
-  | { success: true; output: T }
-  | { success: false; issues: readonly StandardSchemaIssue[]; input: TInput };
 
 type FlatIssueMap = Record<string, string[]>;
 
@@ -374,8 +371,8 @@ export interface ValidationObjectSchema<S extends ValidationSchema> {
   readonly "~standard": StandardSchemaV1<any, InferOutput<S>>["~standard"];
   messages(overrides: MessageOverrides): this;
   parse<TInput = unknown>(data: TInput): Promise<InferOutput<S>>;
-  validate<TInput = unknown>(data: TInput): Promise<SchemaSafeParseResult<InferOutput<S>, TInput>>;
-  safeParse<TInput = unknown>(data: TInput): Promise<SchemaSafeParseResult<InferOutput<S>, TInput>>;
+  validate<TInput = unknown>(data: TInput): Promise<SafeParseResult<InferOutput<S>, TInput>>;
+  safeParse<TInput = unknown>(data: TInput): Promise<SafeParseResult<InferOutput<S>, TInput>>;
 }
 
 const IMPLICIT_RULES = new Set([
@@ -457,18 +454,15 @@ export class Validator<S extends ValidationSchema, TInput = unknown> {
     return new RuleBuilder().required();
   }
 
-  static flatten(issues: ErrorBag | readonly StandardSchemaIssue[]): FlatIssueMap {
-    if (Array.isArray(issues)) {
-      const bag: FlatIssueMap = {};
-      for (const issue of issues) {
-        const key = issue.path && issue.path.length > 0
-          ? issue.path.map((segment: { key: PropertyKey }) => String(segment.key)).join(".")
-          : "";
-        (bag[key] ??= []).push(issue.message);
-      }
-      return bag;
+  static flatten(issues: readonly StandardSchemaIssue[]): FlatIssueMap {
+    const bag: FlatIssueMap = {};
+    for (const issue of issues) {
+      const key = issue.path && issue.path.length > 0
+        ? issue.path.map((segment: { key: PropertyKey }) => String(segment.key)).join(".")
+        : "";
+      (bag[key] ??= []).push(issue.message);
     }
-    return issues as FlatIssueMap;
+    return bag;
   }
 
   static schema<S extends ValidationSchema>(schema: S): ValidationObjectSchema<S> {
@@ -478,7 +472,7 @@ export class Validator<S extends ValidationSchema, TInput = unknown> {
       return await Validator.make(data, schema).messages(customMessages).validate();
     };
 
-    const safeParse = async <TInput = unknown>(data: TInput): Promise<SchemaSafeParseResult<InferOutput<S>, TInput>> => {
+    const safeParse = async <TInput = unknown>(data: TInput): Promise<SafeParseResult<InferOutput<S>, TInput>> => {
       try {
         return { success: true, output: await validate(data) };
       } catch (error) {
@@ -563,12 +557,12 @@ export class Validator<S extends ValidationSchema, TInput = unknown> {
     schema: ValidationObjectSchema<S>,
     data: unknown,
     connection?: Connection,
-  ): Promise<SchemaSafeParseResult<InferOutput<S>, unknown>>;
+  ): Promise<SafeParseResult<InferOutput<S>, unknown>>;
   static async safeParse(
     schema: ValidationSchema | RuleBuilder<any, any> | ValidationObjectSchema<any>,
     data: unknown,
     connection?: Connection,
-  ): Promise<SafeParseResult<unknown, unknown> | SchemaSafeParseResult<unknown, unknown>> {
+  ): Promise<SafeParseResult<unknown, unknown>> {
     if (isValidationObjectSchema(schema)) {
       return await schema.safeParse(data);
     }
@@ -577,7 +571,7 @@ export class Validator<S extends ValidationSchema, TInput = unknown> {
       return { success: true, output };
     } catch (error) {
       if (error instanceof ValidationError) {
-        return { success: false, issues: error.errors, input: data };
+        return { success: false, issues: bagToIssues(error.errors), input: data };
       }
       throw error;
     }
@@ -597,12 +591,12 @@ export class Validator<S extends ValidationSchema, TInput = unknown> {
     schema: ValidationObjectSchema<S>,
     data: unknown,
     connection?: Connection,
-  ): Promise<SchemaSafeParseResult<InferOutput<S>, unknown>>;
+  ): Promise<SafeParseResult<InferOutput<S>, unknown>>;
   static async validate(
     schema: ValidationSchema | RuleBuilder<any, any> | ValidationObjectSchema<any>,
     data: unknown,
     connection?: Connection,
-  ): Promise<SafeParseResult<unknown, unknown> | SchemaSafeParseResult<unknown, unknown>> {
+  ): Promise<SafeParseResult<unknown, unknown>> {
     return await Validator.safeParse(schema as any, data as any, connection);
   }
 
@@ -748,7 +742,7 @@ export class Validator<S extends ValidationSchema, TInput = unknown> {
       return { success: true, output: await this.validate() };
     } catch (error) {
       if (error instanceof ValidationError) {
-        return { success: false, issues: error.errors, input: this.rawData };
+        return { success: false, issues: bagToIssues(error.errors), input: this.rawData };
       }
       throw error;
     }

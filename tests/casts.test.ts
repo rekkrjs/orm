@@ -274,30 +274,26 @@ describe("Attribute Casting", () => {
     expect(record.count).toBe("0");
   });
 
-  test("rejects the removed encrypted cast instead of pretending to encrypt", () => {
-    class LegacyEncryptedModel extends PermissiveModel {
-      static override table = "legacy_encrypted";
-      static override casts = { secret: "encrypted" };
+  test("rejects unsupported string casts", () => {
+    class InvalidCastModel extends PermissiveModel {
+      static override table = "invalid_casts";
+      static override casts = { secret: "unsupported" };
     }
 
-    const record = new LegacyEncryptedModel();
+    const record = new InvalidCastModel();
     expect(() => {
       record.secret = "hidden";
-    }).toThrow(/"encrypted" cast was removed/);
+    }).toThrow('Unsupported cast "unsupported" (InvalidCastModel.secret).');
 
-    // Reading rows already stored with the old cast fails just as loudly.
-    record.$attributes.secret = "aGlkZGVu";
-    expect(() => record.secret).toThrow(/base64/);
-
-    class MisreportedEncryptedModel extends LegacyEncryptedModel {
+    class MisreportedInvalidCastModel extends InvalidCastModel {
       override getModelConstructor(): typeof Model {
         return Model;
       }
     }
 
-    const misreported = new MisreportedEncryptedModel();
-    misreported.$attributes.secret = "aGlkZGVu";
-    expect(() => misreported.secret).toThrow("(MisreportedEncryptedModel.secret)");
+    const misreported = new MisreportedInvalidCastModel();
+    misreported.$attributes.secret = "value";
+    expect(() => misreported.secret).toThrow("(MisreportedInvalidCastModel.secret)");
   });
 
   test("caches casted values until the attribute or casts change", () => {

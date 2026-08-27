@@ -1,7 +1,6 @@
 import { formatDecimal } from "../utils.js";
 import {
   assertBackedEnumValue,
-  assertDeclaredEnumCast,
   isBackedEnumDefinition,
 } from "./BackedEnum.js";
 import type { CastDefinition, ModelConstructor } from "./ModelTypes.js";
@@ -90,11 +89,18 @@ export function normalizeHydratedCastValue(cast: unknown, value: unknown): unkno
     : value;
 }
 
-export function removedEncryptedCastError(modelName: string, attribute: string): Error {
-  return new Error(
-    `The "encrypted" cast was removed (${modelName}.${attribute}): it only Base64-encoded values, it never encrypted them. ` +
-      `Use the "base64" cast for encoding, or a custom CastsAttributes class backed by a real cipher for secrets.`,
-  );
+const builtInCasts = new Set([
+  "boolean", "bool", "number", "integer", "int", "float", "double",
+  "decimal", "string", "date", "datetime", "timestamp", "json", "array",
+  "object", "base64",
+]);
+
+export function assertSupportedStringCast(cast: unknown, modelName: string, attribute: string): void {
+  if (typeof cast !== "string") return;
+  const type = cast.split(":", 1)[0];
+  if (!builtInCasts.has(type)) {
+    throw new Error(`Unsupported cast "${type}" (${modelName}.${attribute}).`);
+  }
 }
 
 export function castBuiltInAttribute(
@@ -102,7 +108,7 @@ export function castBuiltInAttribute(
   value: unknown,
   context: CastContext,
 ): unknown {
-  assertDeclaredEnumCast(cast);
+  assertSupportedStringCast(cast, context.modelName, context.attribute);
   if (value === null) return value;
   if (isBackedEnumDefinition(cast)) {
     assertBackedEnumValue(cast, value, context.modelName, context.attribute);
@@ -154,10 +160,8 @@ export function castBuiltInAttribute(
       return typeof value === "string" ? JSON.parse(value) : value;
     case "base64":
       return typeof value === "string" ? Buffer.from(value, "base64").toString("utf8") : value;
-    case "encrypted":
-      throw removedEncryptedCastError(context.modelName, context.attribute);
     default:
-      return value;
+      throw new Error(`Unsupported cast "${type}" (${context.modelName}.${context.attribute}).`);
   }
 }
 

@@ -39,7 +39,7 @@ export default class CreateWidgets extends Migration {
     const connection = setupTestDb();
 
     const migrators = [0, 1].map(
-      () => new Migrator(connection, DIR, undefined, {}, { lockTimeoutMs: 5_000 })
+      () => new Migrator(connection, DIR, {}, { lockTimeoutMs: 5_000 })
     );
 
     // Neither the migrations table, the lock table, nor the migration itself
@@ -63,7 +63,7 @@ export default class CreateWidgets extends Migration {
     Schema.setConnection(second);
 
     const migrators = [first, second].map(
-      (connection) => new Migrator(connection, DIR, undefined, {}, { lockTimeoutMs: 5_000 })
+      (connection) => new Migrator(connection, DIR, {}, { lockTimeoutMs: 5_000 })
     );
 
     let arrivals = 0;
@@ -107,7 +107,7 @@ export default class CreateWidgets extends Migration {
       // lock keeps them from both creating "migrations" and its index.
       await Promise.all(
         ["alpha", "beta"].map((tenantId) =>
-          new Migrator(connection, empty, undefined, {}, { tenantId, lockTimeoutMs: 5_000 }).run()
+          new Migrator(connection, empty, {}, { tenantId, lockTimeoutMs: 5_000 }).run()
         )
       );
 
@@ -122,10 +122,10 @@ export default class CreateWidgets extends Migration {
 
   test("a third migrator over a prepared database still finds nothing to do", async () => {
     const connection = setupTestDb();
-    await new Migrator(connection, DIR, undefined, {}, { lockTimeoutMs: 5_000 }).run();
+    await new Migrator(connection, DIR, {}, { lockTimeoutMs: 5_000 }).run();
 
     const later = [0, 1].map(
-      () => new Migrator(connection, DIR, undefined, {}, { lockTimeoutMs: 5_000 })
+      () => new Migrator(connection, DIR, {}, { lockTimeoutMs: 5_000 })
     );
     await Promise.all(later.map((migrator) => migrator.run()));
 

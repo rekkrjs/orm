@@ -461,7 +461,7 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
   }
 
   getRelationExistenceSql(parentQuery: Builder<any>, callback?: (query: Builder<any>) => void | Builder<any>): string {
-    return this.newExistenceQuery(parentQuery.tableName, "1", callback).toSql();
+    return this.newExistenceQuery(parentQuery.tableName, "1", callback).toRawSql();
   }
 
   getRelationCountSql(parentQuery: Builder<any>, callback?: (query: Builder<any>) => void | Builder<any>): string {
@@ -469,7 +469,7 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
   }
 
   getRelationAggregateSql(parentQuery: Builder<any>, aggregate: string, callback?: (query: Builder<any>) => void | Builder<any>): string {
-    return this.newExistenceQuery(parentQuery.tableName, aggregate, callback).toSql();
+    return this.newExistenceQuery(parentQuery.tableName, aggregate, callback).toRawSql();
   }
 
   async attach(ids: any | any[], attributes?: Record<string, any>): Promise<any> {

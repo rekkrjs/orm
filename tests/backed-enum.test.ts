@@ -51,16 +51,6 @@ class GuardedEnumRecord extends Model {
   static override casts = { state: PublicationState };
 }
 
-class LegacyEnumRecord extends PermissiveModel {
-  static override timestamps = false;
-  static override casts = { state: "enum" };
-}
-
-class ParameterizedLegacyEnumRecord extends PermissiveModel {
-  static override timestamps = false;
-  static override casts = { state: "enum:anything" };
-}
-
 class MutatedEnumRecord extends PermissiveModel {
   static override timestamps = false;
   static override casts = { state: PublicationState };
@@ -341,27 +331,4 @@ describe("backed enum model casts", () => {
     expect(() => accessor.getAttribute("state")).toThrow(InvalidEnumValueError);
   });
 
-  test("rejects the enum string cast instead of passing values through", async () => {
-    const message =
-      'The "enum" string cast has no declared values. ' +
-      "Use a backedEnum({...}) descriptor directly in static casts.";
-    const record = new LegacyEnumRecord();
-
-    expect(() => record.setAttribute("state", "unrestricted")).toThrow(message);
-    expect(() => record.setAttribute("state", { value: "historical" })).toThrow(message);
-    expect(record.$attributes.state).toBeUndefined();
-
-    const hydrated = LegacyEnumRecord.hydrate({ state: "unrestricted" });
-    expect(() => hydrated.getAttribute("state")).toThrow(message);
-    expect(() => hydrated.toJSON()).toThrow(message);
-    expect(() => LegacyEnumRecord.hydrate({ state: null }).toJSON()).toThrow(message);
-
-    await expect(LegacyEnumRecord.query().insert({ state: "unrestricted" } as any))
-      .rejects.toThrow(message);
-
-    const parameterized = new ParameterizedLegacyEnumRecord();
-    expect(() => parameterized.setAttribute("state", "unrestricted")).toThrow(message);
-    expect(() => ParameterizedLegacyEnumRecord.hydrate({ state: "unrestricted" }).getAttribute("state"))
-      .toThrow(message);
-  });
 });

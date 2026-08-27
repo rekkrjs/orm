@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "fs";
 import { mkdir, readdir, readFile, writeFile } from "fs/promises";
 import { basename, join, relative, resolve } from "path";
-import { Connection } from "../connection/Connection.js";
+import { Connection, type PretendStatement } from "../connection/Connection.js";
 import { TenantContext } from "../connection/TenantContext.js";
 import { TransactionContext } from "../connection/TransactionContext.js";
 import { Schema } from "../schema/Schema.js";
@@ -20,8 +20,8 @@ interface MigrationRecord {
   id: number;
   migration: string;
   batch: number;
-  tenant?: string | null;
-  checksum?: string | null;
+  tenant: string | null;
+  checksum: string | null;
 }
 
 export interface MigrationStatusRow {
@@ -29,9 +29,16 @@ export interface MigrationStatusRow {
   status: string;
   tenant: string | null;
   /** Batch the migration was applied in, or null while it is still pending. */
-  batch?: number | null;
-  checksum?: string;
-  storedChecksum?: string | null;
+  batch: number | null;
+  checksum: string;
+  storedChecksum: string | null;
+}
+
+export interface PretendMigrationResult {
+  migration: string;
+  direction: "up" | "down";
+  tenant: string | null;
+  statements: PretendStatement[];
 }
 
 export interface MigratorOptions {
@@ -80,7 +87,6 @@ export class Migrator {
   constructor(
     private connection: Connection,
     private path: string | string[],
-    private typesOutDir?: string,
     private typeGeneratorOptions: Omit<TypeGeneratorOptions, "outDir"> = {},
     private options: MigratorOptions = {}
   ) {}
@@ -122,28 +128,14 @@ export class Migrator {
   }
 
   private async prepareMigrationsTable(): Promise<void> {
-    const exists = await Schema.hasTable("migrations", this.connection);
-    if (!exists) {
-      await Schema.createIfNotExists("migrations", (table: Blueprint) => {
-        table.increments("id");
-        table.string("migration");
-        table.string("tenant").nullable().index();
-        table.string("checksum").nullable();
-        table.integer("batch");
-      }, this.connection);
-      return;
-    }
-
-    if (!(await Schema.hasColumn("migrations", "tenant", this.connection))) {
-      await Schema.table("migrations", (table: Blueprint) => {
-        table.string("tenant").nullable().index();
-      }, this.connection);
-    }
-    if (!(await Schema.hasColumn("migrations", "checksum", this.connection))) {
-      await Schema.table("migrations", (table: Blueprint) => {
-        table.string("checksum").nullable();
-      }, this.connection);
-    }
+    if (await Schema.hasTable("migrations", this.connection)) return;
+    await Schema.createIfNotExists("migrations", (table: Blueprint) => {
+      table.increments("id");
+      table.string("migration");
+      table.string("tenant").nullable().index();
+      table.string("checksum").nullable();
+      table.integer("batch");
+    }, this.connection);
   }
 
   private getTenantId(): string | null {
@@ -337,14 +329,27 @@ export class Migrator {
     });
   }
 
-  /** Applies every pending migration. Kept void-compatible with the original API. */
-  async run(): Promise<void> {
-    await this.runWithResult();
+  /** Applies every pending migration and returns their ids, in the order applied. */
+  async run(): Promise<string[]> {
+    return this.withoutSqlLogging(() => this.runWithoutSqlLogging());
   }
 
-  /** Applies every pending migration and returns their ids, in the order applied. */
-  async runWithResult(): Promise<string[]> {
-    return this.withoutSqlLogging(() => this.runWithoutSqlLogging());
+  /** Compiles every pending migration through the active driver's real grammar without writing. */
+  async pretendRun(): Promise<PretendMigrationResult[]> {
+    return this.withoutSqlLogging(async () => {
+      const ran = await this.getRanRecordsReadOnly();
+      const files = await this.getMigrationFiles();
+      const pending = files.filter((file) => !ran.has(file.id) && !ran.has(file.fileName));
+      this.reportChangedMigrations(files, ran);
+      if (pending.length === 0) {
+        this.write("Nothing to migrate.");
+        return [];
+      }
+
+      const results: PretendMigrationResult[] = [];
+      for (const file of pending) results.push(await this.pretendMigration(file.id, "up"));
+      return results;
+    });
   }
 
   private async runWithoutSqlLogging(): Promise<string[]> {
@@ -422,14 +427,37 @@ export class Migrator {
     this.warn(`Warning: ${changed.length} changed migration(s) left untouched: ${changed.join(", ")}`);
   }
 
-  /** Rolls back `steps` batches. Kept void-compatible with the original API. */
-  async rollback(steps: number = 1): Promise<void> {
-    await this.rollbackWithResult(steps);
+  /** Rolls back `steps` batches and returns the ids it undid, in the order undone. */
+  async rollback(steps: number = 1): Promise<string[]> {
+    return this.withoutSqlLogging(() => this.rollbackWithoutSqlLogging(steps));
   }
 
-  /** Rolls back `steps` batches and returns the ids it undid, in the order undone. */
-  async rollbackWithResult(steps: number = 1): Promise<string[]> {
-    return this.withoutSqlLogging(() => this.rollbackWithoutSqlLogging(steps));
+  /** Compiles the selected rollback batches without changing schema or migration records. */
+  async pretendRollback(steps: number = 1): Promise<PretendMigrationResult[]> {
+    return this.withoutSqlLogging(async () => {
+      if (!(await Schema.hasTable("migrations", this.connection))) {
+        this.write("Nothing to rollback.");
+        return [];
+      }
+
+      const batches = await this.readRollbackBatches(steps);
+      if (batches.length === 0) {
+        this.write("Nothing to rollback.");
+        return [];
+      }
+      const records = (await this.scopedMigrations()
+        .whereIn("batch", batches)
+        .orderBy("id", "desc")
+        .get()) as MigrationRecord[];
+      if (records.length === 0) {
+        this.write("Nothing to rollback.");
+        return [];
+      }
+
+      const results: PretendMigrationResult[] = [];
+      for (const record of records) results.push(await this.pretendMigration(record.migration, "down"));
+      return results;
+    });
   }
 
   private async rollbackWithoutSqlLogging(steps: number = 1): Promise<string[]> {
@@ -479,6 +507,10 @@ export class Migrator {
 
   private async getRollbackBatches(steps: number): Promise<number[]> {
     await this.ensureMigrationsTable();
+    return await this.readRollbackBatches(steps);
+  }
+
+  private async readRollbackBatches(steps: number): Promise<number[]> {
     const rows = await this.scopedMigrations()
       .select("batch")
       .orderBy("batch", "desc")
@@ -493,13 +525,8 @@ export class Migrator {
     return batches;
   }
 
-  /** Rolls every batch back. Kept void-compatible with the original API. */
-  async reset(): Promise<void> {
-    await this.resetWithResult();
-  }
-
   /** Rolls every batch back and returns the ids it undid. */
-  async resetWithResult(): Promise<string[]> {
+  async reset(): Promise<string[]> {
     return this.withoutSqlLogging(async () => {
       await this.ensureCreateIfMissing();
       const rolledBack: string[] = [];
@@ -510,13 +537,8 @@ export class Migrator {
     });
   }
 
-  /** Rolls everything back and re-applies it. Kept compatible with the original API. */
-  async refresh(): Promise<void> {
-    await this.refreshWithResult();
-  }
-
   /** Rolls everything back and re-applies it, returning both halves. */
-  async refreshWithResult(): Promise<{ rolledBack: string[]; applied: string[] }> {
+  async refresh(): Promise<{ rolledBack: string[]; applied: string[] }> {
     return this.withoutSqlLogging(async () => {
       await this.ensureCreateIfMissing();
       const rolledBack: string[] = [];
@@ -527,13 +549,8 @@ export class Migrator {
     });
   }
 
-  /** Drops every table and re-applies all migrations. Kept compatible with the original API. */
-  async fresh(): Promise<void> {
-    await this.freshWithResult();
-  }
-
   /** Drops every table and re-applies all migrations, returning what it applied. */
-  async freshWithResult(): Promise<string[]> {
+  async fresh(): Promise<string[]> {
     return this.withoutSqlLogging(async () => {
       await this.ensureCreateIfMissing();
       await this.dropAllTables();
@@ -543,9 +560,9 @@ export class Migrator {
 
   private async generateTypesIfNeeded(): Promise<void> {
     const modelDirectories = normalizePathList(this.typeGeneratorOptions.modelDirectories || this.typeGeneratorOptions.modelDirectory);
-    if (!this.typesOutDir && modelDirectories.length === 0) return;
+    if (modelDirectories.length === 0) return;
 
-    const outDir = this.typesOutDir || join(modelDirectories[0], this.typeGeneratorOptions.declarationDirName || "types");
+    const outDir = join(modelDirectories[0], this.typeGeneratorOptions.declarationDirName || "types");
     const allowedTables = modelDirectories.length > 0 ? await discoverModelTables(modelDirectories) : undefined;
     const generator = new TypeGenerator(this.connection, {
       declarations: true,
@@ -554,7 +571,7 @@ export class Migrator {
       allowedTables,
     });
     await generator.generate();
-    const label = this.typesOutDir || modelDirectories.map((dir) => join(dir, this.typeGeneratorOptions.declarationDirName || "types")).join(", ");
+    const label = modelDirectories.map((dir) => join(dir, this.typeGeneratorOptions.declarationDirName || "types")).join(", ");
     this.write(`Regenerated types in ${label}`);
   }
 
@@ -773,8 +790,27 @@ export class Migrator {
     return new MigrationClass();
   }
 
+  private async pretendMigration(file: string, direction: "up" | "down"): Promise<PretendMigrationResult> {
+    const migration = await this.resolve(file);
+    const { statements } = await this.connection.pretend(() =>
+      this.withRuntimeConnection(this.connection, () =>
+        direction === "up" ? migration.up() : migration.down()
+      )
+    );
+    return { migration: file, direction, tenant: this.getTenantId(), statements };
+  }
+
   private async getRanRecords(): Promise<Map<string, MigrationRecord>> {
     await this.ensureMigrationsTable();
+    return await this.readRanRecords();
+  }
+
+  private async getRanRecordsReadOnly(): Promise<Map<string, MigrationRecord>> {
+    if (!(await Schema.hasTable("migrations", this.connection))) return new Map();
+    return await this.readRanRecords();
+  }
+
+  private async readRanRecords(): Promise<Map<string, MigrationRecord>> {
     const results = await this.scopedMigrations()
       .orderBy("id", "asc")
       .get();

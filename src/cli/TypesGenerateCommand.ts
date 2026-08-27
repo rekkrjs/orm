@@ -33,8 +33,8 @@ export function makeTypesGenerateCommand(config: OrmConfig, connection: Connecti
       // ── Landlord ──────────────────────────────────────────────────────────
       if ((target.scope === "default" || target.scope === "landlord") && landlordModels) {
         const modelRoots          = normalizePathList(landlordModels);
-        const useModelTypesFolder = !explicitOutDir && !config.typesOutDir && modelRoots.length > 0;
-        const outDir              = explicitOutDir ?? config.typesOutDir ?? (useModelTypesFolder ? join(modelRoots[0], "types") : "./generated/models");
+        const useModelTypesFolder = !explicitOutDir;
+        const outDir              = explicitOutDir ?? join(modelRoots[0], "types");
         const landlordExcludes    = getScopeExclusions(landlordModels, tenantModels);
         const allowedTables       = modelRoots.length > 0 ? await discoverModelTables(modelRoots, landlordExcludes) : undefined;
 
@@ -86,8 +86,8 @@ export function makeTypesGenerateCommand(config: OrmConfig, connection: Connecti
         await TenantContext.run(tenantId, async () => {
           const context         = TenantContext.current()!;
           const modelRoots      = normalizePathList(tenantModels);
-          const useModelTypesFolder = !explicitOutDir && !config.typesOutDir && modelRoots.length > 0;
-          const outDir          = explicitOutDir ?? config.typesOutDir ?? (useModelTypesFolder ? join(modelRoots[0], "types") : "./generated/models");
+          const useModelTypesFolder = !explicitOutDir;
+          const outDir          = explicitOutDir ?? join(modelRoots[0], "types");
           const tenantExcludes  = getScopeExclusions(tenantModels, landlordModels);
           const allowedTables   = modelRoots.length > 0 ? await discoverModelTables(modelRoots, tenantExcludes) : undefined;
 
