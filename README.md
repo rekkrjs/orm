@@ -3,11 +3,11 @@
 > **Bun-only package.** Install with:
 >
 > ```bash
-> bun add git+ssh://git@github.com/rekkrjs/orm.git#v2.3.0
+> bun add github:rekkrjs/orm#v2.3.0
 > ```
 >
-> The repository is private, so GitHub read access and SSH authentication are
-> required. npm, yarn, pnpm, and Node.js runtime usage are not supported.
+> The package is installed directly from its public GitHub repository. npm,
+> yarn, pnpm, and Node.js runtime usage are not supported.
 
 An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s native `bun:sql` client. It ships with **zero runtime dependencies** and supports **SQLite**, **MySQL**, and **PostgreSQL** with full TypeScript typing, a chainable query builder, schema migrations, model observers, polymorphic relations, and an interactive REPL.
 
@@ -43,7 +43,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 ## Installation
 
 ```bash
-bun add git+ssh://git@github.com/rekkrjs/orm.git#v2.3.0
+bun add github:rekkrjs/orm#v2.3.0
 ```
 
 See [Installation](./docs/installation.md) for details.
@@ -82,6 +82,7 @@ import { Model, Schema } from "@rekkr/orm";
 
 class CamelUser extends Model {
   static override fillable = ["accountId", "name", "email", "role", "locale"];
+  // Override the default created_at / updated_at / deleted_at names for this camelCase schema.
   static override createdAtColumn = "createdAt";
   static override updatedAtColumn = "updatedAt";
   static override softDeletes = true;

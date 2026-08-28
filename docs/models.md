@@ -18,18 +18,22 @@ Pass an attribute interface and the table name. The returned base class has ever
 import { Model } from "@rekkr/orm";
 
 interface ProductAttributes {
-  id: number;
   sku: string;
   name: string;
   price: string;
   active: boolean;
+  status: string;
   metadata: Record<string, any> | null;
+  deleted_at: Date | null;
 }
 
 class Product extends Model.define<ProductAttributes>("products") {
   static primaryKey = "sku";
+  static keyType = "string" as const;
+  static incrementing = false;
   static timestamps = false;
   static softDeletes = true;
+  static fillable = ["sku", "name", "price", "active", "status", "metadata"];
 
   static attributes = {
     active: true,
@@ -83,7 +87,9 @@ This is mostly useful when you're combining the ORM with generated `.d.ts` files
 - **Key type** — defaults to `int`. Set `static keyType = "uuid"` or `"string"` for non-numeric keys; set `static incrementing = false` if the database doesn't auto-increment.
 - **Generated keys** — with a textual primary key the ORM fills the value with a UUID before inserting, but not when the column has a database default (the database already decides it) or is too short to hold one — a `CHAR(26)` holding ULIDs stays yours to fill. `static keyType = "uuid"` opts in regardless of the column. MySQL cannot return a primary key assigned by an expression or trigger, so those models must provide the key explicitly (or use `AUTO_INCREMENT` or a literal default).
 - **Timestamps** — `created_at` and `updated_at` are managed automatically. Disable with `static timestamps = false`.
-- **Connection** — uses the default connection. Override per model with `static connection = "..."` plus `ConnectionManager.add(...)`.
+- **Connection** — uses the default connection. Assign a `Connection` instance
+  to `static connection`, or route one query through a registered name with
+  `User.on("analytics")`.
 
 ## Timestamps
 
@@ -967,6 +973,18 @@ await User.onlyTrashed().restore();     // restore everything trashed
 
 await User.where("inactive", true).delete();          // bulk soft delete
 await User.onlyTrashed().where("inactive", true).forceDelete(); // bulk permanent delete
+```
+
+Override `deletedAtColumn` when the schema uses another name, and pass the same
+name to the migration helper:
+
+```ts
+class User extends Model {
+  static override softDeletes = true;
+  static override deletedAtColumn = "deletedAt";
+}
+
+table.softDeletes("deletedAt");
 ```
 
 ## Scopes

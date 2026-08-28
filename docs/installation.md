@@ -16,7 +16,7 @@ bun --version
 ## Add the package
 
 ```bash
-bun add git+ssh://git@github.com/rekkrjs/orm.git#v2.3.0
+bun add github:rekkrjs/orm#v2.3.0
 ```
 
 Rekkr ORM is currently distributed from GitHub. The package name and every
@@ -25,19 +25,18 @@ where to install it from. The package ships with **zero runtime dependencies**
 — no `pg`, no `mysql2`, no driver layer to wire up. Connections go through
 `bun:sql`, which Bun provides natively.
 
-The repository is private, so the developer or CI runner must have read access
-and a working GitHub SSH key (a read-only deploy key is sufficient in CI). Do
-not use `bun add @rekkr/orm` yet: the registry package is not the `v2.3.0`
-release from this repository.
+The repository is public, so installation needs no GitHub credentials or SSH
+configuration. Do not use `bun add @rekkr/orm` yet: the registry package is not
+the `v2.3.0` release from this repository.
 
 ### Other Git revisions
 
 A branch, tag, or commit works the same way — no build step, no `trustedDependencies` entry:
 
 ```bash
-bun add git+ssh://git@github.com/rekkrjs/orm.git                # default branch
-bun add git+ssh://git@github.com/rekkrjs/orm.git#<tag>          # e.g. v2.3.0
-bun add git+ssh://git@github.com/rekkrjs/orm.git#<commit-sha>   # exact commit
+bun add github:rekkrjs/orm                # default branch
+bun add github:rekkrjs/orm#<tag>          # e.g. v2.3.0
+bun add github:rekkrjs/orm#<commit-sha>   # exact commit
 ```
 
 The package resolves through the `bun` export condition straight to its TypeScript
@@ -128,12 +127,11 @@ Then `bun run orm migrate` instead of `bunx orm migrate`.
 
 **`Cannot find module 'bun:sql'`** — you are running under Node.js. Switch to `bun run …` instead of `node …` or `npm run …`.
 
-**`bun add` cannot resolve the package** — verify the GitHub repository and tag,
-then confirm that SSH authentication works:
+**`bun add` cannot resolve the package** — verify that the public GitHub
+repository and tag are reachable:
 
 ```bash
-ssh -T git@github.com
-git ls-remote git@github.com:rekkrjs/orm.git refs/tags/v2.3.0
+git ls-remote https://github.com/rekkrjs/orm.git refs/tags/v2.3.0
 ```
 
 **TypeScript complains about `Bun.SQL`** — install or upgrade `bun-types` (`bun add -d bun-types`) and ensure it is listed in `compilerOptions.types`.

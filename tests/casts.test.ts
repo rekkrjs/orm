@@ -1,5 +1,6 @@
 import { expect, test, describe, beforeAll } from "bun:test";
 import { Model, Schema, type CastsAttributes } from "../src/index.js";
+import { getModelTarget } from "../src/model/ModelBase.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 class UppercaseCast implements CastsAttributes {
@@ -105,6 +106,25 @@ describe("Attribute Casting", () => {
     expect(json.count).toBe(5);
     expect(json.score).toBe(3.14);
     expect(json.tags).toEqual(["a", "b"]);
+  });
+
+  test("internal cast hooks run on the raw target", () => {
+    class TargetCastModel extends PermissiveModel {
+      static timestamps = false;
+      static casts = { title: "string" };
+      static observedThis: TargetCastModel | undefined;
+
+      protected override getCastDefinition(key: string) {
+        TargetCastModel.observedThis = this;
+        return super.getCastDefinition(key);
+      }
+    }
+
+    const record = TargetCastModel.hydrate({ title: 123 });
+    expect(record.toJSON()).toEqual({ title: "123" });
+    expect(TargetCastModel.observedThis).toBe(getModelTarget(record));
+    expect(TargetCastModel.observedThis).not.toBe(record);
+    expect((TargetCastModel.observedThis as any).title).toBeUndefined();
   });
 
   test("find applies casts on retrieval", async () => {

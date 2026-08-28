@@ -7,7 +7,9 @@ Observers let you hook into a model's lifecycle without scattering side-effects 
 - Maintaining derived columns (`updated_at` on a parent, `last_post_at` on an author).
 - Invalidating an external cache when a record is deleted.
 
-Observers fire automatically whenever a model is saved, updated, or deleted through a model instance (`user.save()`, `user.delete()`, `User.create(...)`). They do **not** fire on raw builder operations (`User.where(...).update(...)`).
+Instance writes (`user.save()`, `user.delete()`, `User.create(...)`) run the full
+observer lifecycle. Model-backed builder `update()` and `delete()` dispatch only
+their after-hooks; builder `insert()` and `upsert()` skip observers.
 
 Inside a shared observer, `model.isInstanceOf(User)` is the easiest way to branch on the concrete model class.
 For IntelliSense to narrow correctly, type the hook parameter as `Model` or a union of model types, not `any`:

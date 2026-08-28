@@ -8,7 +8,7 @@ Estimated time: ten minutes.
 
 ```bash
 bun init -y
-bun add git+ssh://git@github.com/rekkrjs/orm.git#v2.3.0
+bun add github:rekkrjs/orm#v2.3.0
 ```
 
 If you are using TypeScript, make sure `tsconfig.json` has `"target": "ESNext"`, `"module": "ESNext"`, and `"moduleResolution": "bundler"`. See [Installation](./installation.md) for the full setup.
@@ -107,6 +107,8 @@ interface UserAttributes {
 }
 
 export default class User extends Model.define<UserAttributes>("users") {
+  static override fillable = ["name", "email"];
+
   posts() {
     return this.hasMany(Post);
   }
@@ -128,6 +130,8 @@ interface PostAttributes {
 }
 
 export default class Post extends Model.define<PostAttributes>("posts") {
+  static override fillable = ["user_id", "title", "body"];
+
   author() {
     return this.belongsTo(User);
   }

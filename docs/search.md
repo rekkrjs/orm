@@ -412,6 +412,7 @@ When `search` is configured, these commands register automatically:
 | `orm search:create-index <Model>` | Create the model's index. Auto-applies `Model.searchFtsConfig` via `engine.configureIndex()` when the engine supports it (SQLite FTS5 and PostgreSQL FTS). |
 | `orm search:delete-index <Model> --force` | Delete the model's index. `--force` required. |
 | `orm search:reimport <Model> [--chunk=N]` | Flush + bulk-import in one step. |
+| `orm search:reindex <Model> [--chunk=N] [--suffix=_next]` | Build, swap, and drop a temporary index without downtime; requires an engine with `swapIndexes()` support. |
 | `orm search:import <Model> [--chunk=N] [--dry-run]` | `--dry-run` counts rows without pushing. |
 | `orm search:fts:optimize <Model>` | FTS5-only. Merges b-tree levels, reduces fragmentation. |
 | `orm search:fts:rebuild <Model>` | FTS engines with `rebuild()`. Repopulates the index from the source content table. |
@@ -427,6 +428,7 @@ orm search:create-index Post --tenant=42
 orm search:import Post --tenant=42 --chunk=1000
 orm search:flush Post --tenant=42
 orm search:reimport Post --tenant=42
+orm search:reindex Post --tenant=42
 orm search:delete-index Post --tenant=42 --force
 orm search:sync-index-settings Post --tenant=42
 orm search:fts:optimize Post --tenant=42
@@ -911,8 +913,8 @@ await fts.createIndex("posts_fts");
 - **Enable WAL.** `PRAGMA journal_mode=WAL` for concurrent readers.
 - **Migrations.** When using `useTriggers`, treat the FTS table + triggers as part of your migrations so they survive `migrate:fresh`.
 
-## Not yet in v1
+## Not yet implemented
 
 - Other engines (Algolia, Typesense, FlexSearch, MySQL `MATCH AGAINST`) — interface is ready, implementations are not.
-- Task completion polling (Meilisearch async operations return task UIDs; v1 does not wait).
+- Task completion polling (Meilisearch async operations return task UIDs; the current implementation does not wait).
 - Native tokenizer-backed matches-position passthrough for PostgreSQL and SQLite FTS. Current implementation computes best-effort character offsets from returned field text.

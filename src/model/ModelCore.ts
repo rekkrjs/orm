@@ -483,6 +483,9 @@ export class ModelCore<T extends Record<string, any> = any> {
   }
 
   protected getAttributeFromTarget(receiver: this, key: string | keyof T): any {
+    // `this` is the raw target and `receiver` is its public Proxy. Protected
+    // hooks run on the target; code needing virtual attribute lookup must use
+    // or receive `receiver` explicitly.
     const cast = this.getCastDefinition(key as string);
     const value = (this.$attributes as any)[key];
     const backedEnum = isBackedEnumDefinition(cast);
@@ -531,6 +534,8 @@ export class ModelCore<T extends Record<string, any> = any> {
   }
 
   protected castAttributeFromTarget(receiver: this, key: string, value: any): any {
+    // Keep the target/receiver split above: hooks run on the raw target, while
+    // custom casts receive the Proxy when they need public attribute behavior.
     const cast = this.getCastDefinition(key);
     if (!cast) return value;
     if (value === null) return value;

@@ -26,6 +26,8 @@ interface UserAttributes {
 }
 
 class User extends Model.define<UserAttributes>("users") {
+  static override fillable = ["name", "email", "active"];
+
   posts() {
     return this.hasMany(Post);
   }
@@ -225,18 +227,22 @@ The string name in `scope("active")` autocompletes from the available `scope*` m
 
 ## Plain object writes
 
-`create`, `update`, `fill`, and `forceFill` accept partial attribute objects. With `Model.define<T>()`, fields autocomplete and unknown fields are errors:
+`create`, `update`, and `fill` accept partial attribute objects, while
+`forceFill` bypasses mass-assignment protection. `Model.define<T>()` provides
+autocomplete for known fields, but its standalone-compatible input type still
+accepts unknown keys. Declare `fillable` or `guarded` for runtime protection:
 
 ```ts
 await User.create({ name: "Alice", email: "a@b.com" });           // ✓
-await User.create({ name: "Alice", nonexistent: true });          // ✗
+await User.create({ name: "Alice", nonexistent: true });          // discarded by fillable
 await User.query().forceCreate({ is_admin: true });                // ✓ trusted input
 
 await user.update({ active: false });                              // ✓
 user.fill({ name: "Bob" });
 ```
 
-Code generators can narrow protected writes by merging the type-only
+Code generators, or hand-written declarations, can reject unknown or protected
+writes by merging the type-only
 `ModelMassAssignable<T>` marker into the model instance:
 
 ```ts

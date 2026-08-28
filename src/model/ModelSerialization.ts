@@ -120,12 +120,14 @@ export class ModelSerialization<T extends Record<string, any> = any> extends Mod
 
   getAppends(): string[] {
     const target = getModelTarget(this);
+    // The raw hot path deliberately bypasses getModelConstructor() overrides.
     const constructor = target.constructor as typeof ModelPersistence;
     return [...new Set([...(constructor.appends || []), ...target.$appends])];
   }
 
   private serialize(includeRelations: boolean = true, receiver: this = this): Record<string, any> {
     const target = getModelTarget(this);
+    // The raw hot path deliberately bypasses getModelConstructor() overrides.
     const constructor = target.constructor as typeof ModelPersistence;
     const staticVisible = constructor.visible || [];
     const staticHidden = constructor.hidden || [];
@@ -147,6 +149,8 @@ export class ModelSerialization<T extends Record<string, any> = any> extends Mod
       result[key] = needsCastPath ? target.getAttributeFromTarget(receiver, key) : value;
     }
     if ((constructor.appends?.length || 0) > 0 || target.$appends.length > 0) {
+      // Bind the Proxy intentionally so getAppends() overrides keep public
+      // attribute lookup semantics.
       for (const key of target.getAppends.call(this)) {
         if ((visible && !visible.has(key)) || hidden.has(key)) continue;
         const nativeGetter = accessors[key]?.get ? undefined : findNativeGetter(receiver, key);
