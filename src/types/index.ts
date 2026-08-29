@@ -1,3 +1,5 @@
+import type { FullTextOptions, PostgresFullTextLanguage } from "../fulltext.js";
+
 export type ColumnType =
   | "string"
   | "char"
@@ -51,6 +53,8 @@ export interface IndexDefinition {
   name: string;
   columns: string[];
   unique: boolean;
+  type?: "index" | "unique" | "fulltext";
+  language?: PostgresFullTextLanguage;
 }
 
 export type ReferentialAction = "cascade" | "restrict" | "set null" | "no action" | "set default";
@@ -75,6 +79,8 @@ export interface WhereClause {
   not?: boolean;
   /** "like" clauses only: compile the exact-comparison form for the dialect. */
   caseSensitive?: boolean;
+  /** "fulltext" clauses only: a validated, immutable options snapshot. */
+  fullTextOptions?: Readonly<FullTextOptions>;
   dateType?: string;
   query?: WhereClause[];
   bindings?: readonly unknown[];

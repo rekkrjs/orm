@@ -144,6 +144,13 @@ export class MySqlGrammar extends Grammar {
     return `ALTER TABLE ${this.wrap(table)} ADD ${type} ${this.wrap(index.name)} (${this.wrapArray(index.columns).join(", ")})`;
   }
 
+  protected compileFullTextIndex(table: string, index: import("../../types/index.js").IndexDefinition): string {
+    if (index.language !== undefined) {
+      throw new Error("MySQL full-text indexes do not support language().");
+    }
+    return `ALTER TABLE ${this.wrap(table)} ADD FULLTEXT INDEX ${this.wrap(index.name)} (${this.wrapArray(index.columns).join(", ")})`;
+  }
+
   // MySQL always calls the primary key "PRIMARY": a given name is accepted and ignored.
   compileCreate(blueprint: any, table: string): string {
     const columns = this.getTableDefinitions(blueprint).map((col) => `    ${col}`).join(",\n");

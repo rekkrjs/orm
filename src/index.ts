@@ -8,6 +8,7 @@ export type { ActiveTenantContext } from "./connection/TenantContext.js";
 export { configureOrm } from "./config/OrmConfig.js";
 export type { OrmConfig, ConfiguredOrm } from "./config/OrmConfig.js";
 export type { ConnectionConfig } from "./types/index.js";
+export type { FullTextOptions, PostgresFullTextLanguage } from "./fulltext.js";
 
 export { Schema } from "./schema/Schema.js";
 export { SchemaRawExpression } from "./schema/RawExpression.js";

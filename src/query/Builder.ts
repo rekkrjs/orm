@@ -15,6 +15,7 @@ import {
   isBackedEnumDefinition,
 } from "../model/BackedEnum.js";
 import { Collection, type CollectionJson } from "../support/Collection.js";
+import { normalizeFullTextOptions, type FullTextOptions } from "../fulltext.js";
 
 /**
  * The field a driver returns a selected column under: "users.email" comes back
@@ -888,16 +889,58 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return this;
   }
 
-  whereFullText(columns: ModelColumn<T> | readonly ModelColumn<T>[], value: string, boolean: "and" | "or" = "and", not: boolean = false): this {
-    const cols = Array.isArray(columns) ? columns : [columns];
-    if (cols.length === 0) throw new Error("whereFullText() requires at least one column.");
-    this.invalidateSqlCache();
-    this.wheres.push({ type: "fulltext", column: "", columns: cols as string[], value, boolean, scope: undefined, not });
-    return this;
+  whereFullText(columns: ModelColumn<T> | readonly ModelColumn<T>[], value: string, options?: FullTextOptions): this;
+  /** @deprecated Use the FullTextOptions overload. */
+  whereFullText(columns: ModelColumn<T> | readonly ModelColumn<T>[], value: string, boolean?: "and" | "or", not?: boolean): this;
+  whereFullText(
+    columns: ModelColumn<T> | readonly ModelColumn<T>[],
+    value: string,
+    optionsOrBoolean: FullTextOptions | "and" | "or" = {},
+    not: boolean = false,
+  ): this {
+    const legacy = typeof optionsOrBoolean === "string";
+    if (legacy && typeof not !== "boolean") throw new Error("whereFullText() not must be a boolean.");
+    return this.addFullText(columns, value, {
+      boolean: legacy ? validBoolean(optionsOrBoolean) : "and",
+      not: legacy ? not : false,
+      options: normalizeFullTextOptions(legacy ? undefined : optionsOrBoolean),
+    });
   }
 
-  orWhereFullText(columns: ModelColumn<T> | readonly ModelColumn<T>[], value: string): this {
-    return this.whereFullText(columns, value, "or");
+  orWhereFullText(columns: ModelColumn<T> | readonly ModelColumn<T>[], value: string, options?: FullTextOptions): this {
+    return this.addFullText(columns, value, {
+      boolean: "or",
+      not: false,
+      options: normalizeFullTextOptions(options),
+    });
+  }
+
+  private addFullText(
+    columns: ModelColumn<T> | readonly ModelColumn<T>[],
+    value: string,
+    config: { boolean: "and" | "or"; not: boolean; options: Readonly<FullTextOptions> },
+  ): this {
+    const cols = typeof columns === "string" ? [columns] : [...columns];
+    if (cols.length === 0) throw new Error("whereFullText() requires at least one column.");
+    if (cols.some((column) => typeof column !== "string" || column.trim() === "")) {
+      throw new Error("whereFullText() columns must be non-empty strings.");
+    }
+    for (const column of cols) Connection.assertSafeQualifiedIdentifier(column, "full-text column");
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new Error("whereFullText() search term must be a non-empty string.");
+    }
+    this.invalidateSqlCache();
+    this.wheres.push({
+      type: "fulltext",
+      column: "",
+      columns: cols as string[],
+      value,
+      boolean: config.boolean,
+      scope: undefined,
+      not: config.not,
+      fullTextOptions: config.options,
+    });
+    return this;
   }
 
   whereAll(columns: ModelColumn<T>[], operator: string, value: any, boolean: "and" | "or" = "and"): this {
@@ -1867,7 +1910,12 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       return `${prefix} ${sql}`;
     } else if (where.type === "fulltext") {
       const cols = (where.columns || []).map((c) => this.grammar.wrap(c));
-      let sql = this.grammar.compileFullText(cols, where.value as string, this.parameterize ? (v) => this.addBinding(v) : undefined);
+      let sql = this.grammar.compileFullText(
+        cols,
+        where.value as string,
+        where.fullTextOptions || {},
+        this.parameterize ? (v) => this.addBinding(v) : undefined,
+      );
       if (where.not) sql = `NOT (${sql})`;
       return `${prefix} ${sql}`;
     } else if (where.type === "json_contains") {

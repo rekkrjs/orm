@@ -3,7 +3,7 @@
 > **Bun-only package.** Install with:
 >
 > ```bash
-> bun add github:rekkrjs/orm#v2.4.0
+> bun add github:rekkrjs/orm#v2.5.0
 > ```
 >
 > The package is installed directly from its public GitHub repository. npm,
@@ -43,7 +43,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 ## Installation
 
 ```bash
-bun add github:rekkrjs/orm#v2.4.0
+bun add github:rekkrjs/orm#v2.5.0
 ```
 
 See [Installation](./docs/installation.md) for details.

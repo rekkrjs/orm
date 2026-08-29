@@ -96,8 +96,19 @@ export class MySqlGrammar extends Grammar {
     return `${column} ${op} ${binding ? binding(value) : this.escape(value)}`;
   }
 
-  compileFullText(columns: string[], value: string, binding?: (value: any) => string): string {
-    return `MATCH (${columns.join(", ")}) AGAINST (${binding ? binding(value) : this.escape(value)})`;
+  compileFullText(columns: string[], value: string, options: import("../../fulltext.js").FullTextOptions, binding?: (value: any) => string): string {
+    if (options.language !== undefined || options.vector !== undefined) {
+      throw new Error("MySQL full-text search does not support language or vector options.");
+    }
+    if (options.mode !== undefined && options.mode !== "boolean") {
+      throw new Error(`MySQL full-text search does not support ${options.mode} mode.`);
+    }
+    if (options.mode === "boolean" && options.expanded) {
+      throw new Error("MySQL full-text search cannot combine boolean mode with query expansion.");
+    }
+    const mode = options.mode === "boolean" ? "IN BOOLEAN MODE" : "IN NATURAL LANGUAGE MODE";
+    const expanded = options.expanded ? " WITH QUERY EXPANSION" : "";
+    return `MATCH (${columns.join(", ")}) AGAINST (${binding ? binding(value) : this.escape(value)} ${mode}${expanded})`;
   }
 
   compileExplain(sql: string): string {

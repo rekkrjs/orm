@@ -349,12 +349,54 @@ table.uniqueIndex(["slug"]);                             // auto-named
 table.uniqueIndex(["org_id", "key"], "settings_unique"); // explicit
 ```
 
+### Full-text
+
+MySQL/MariaDB and PostgreSQL can create a native full-text index from the same
+portable blueprint API:
+
+```ts
+await Schema.create("articles", (table) => {
+  table.id();
+  table.string("title");
+  table.text("body").nullable();
+
+  table.fullText(["title", "body"]); // articles_title_body_fulltext
+});
+```
+
+PostgreSQL defaults to `english`. Set another built-in text-search
+configuration on the fluent index and pass the same language when querying:
+
+```ts
+table.fullText(["title", "body"], "articles_search_fulltext").language("spanish");
+
+await Article.whereFullText(["title", "body"], term, {
+  language: "spanish",
+}).get();
+```
+
+MySQL emits a native `FULLTEXT INDEX`; PostgreSQL emits a null-safe expression
+index using GIN. Query and Schema share that PostgreSQL expression, so matching
+options can use the index. MySQL rejects `.language()` because it cannot
+represent that setting in this API.
+
+SQLite rejects `table.fullText()` before executing any part of the migration.
+Use [`SqliteFTS5Engine`](./search.md#engine-sqlitefts5engine) when SQLite needs a
+real full-text index; `whereFullText()` on an ordinary SQLite table is only a
+portable scan fallback.
+
+Automatic names follow `<table>_<columns>_fulltext`. Names longer than the
+portable 63-byte limit are shortened deterministically, so dropping by columns
+still resolves the same name. Explicit names must be safe identifiers no longer
+than 63 bytes.
+
 ### Dropping (inside `Schema.table`)
 
 ```ts
 await Schema.table("posts", (table) => {
   table.dropIndex("posts_slug_index");
   table.dropUnique("posts_email_unique");
+  table.dropFullText(["title", "body"]); // or the explicit index name
   table.dropForeign("posts_user_id_foreign");
   table.dropTimestamps();
   table.dropSoftDeletes();
@@ -369,8 +411,10 @@ await Schema.table("posts", (table) => {
 | `.index(cols)` / `.index(cols, name)` | Composite index |
 | `.unique()` | Single-column unique constraint |
 | `.uniqueIndex(cols, name?)` | Explicit single-column or composite unique index |
+| `.fullText(cols, name?)` | Native MySQL/PostgreSQL full-text index |
 | `.dropIndex(name)` | Drop a named index |
 | `.dropUnique(name)` | Drop a unique constraint |
+| `.dropFullText(nameOrColumns)` | Drop a full-text index by name or derived columns |
 | `.dropForeign(name)` | Drop a foreign key constraint |
 | `.dropTimestamps()` / `.dropTimestampsTz()` | Drop `created_at` and `updated_at` |
 | `.dropSoftDeletes(name?)` / `.dropSoftDeletesTz(name?)` | Drop the soft-delete column |
@@ -543,6 +587,16 @@ const indexes = await Schema.getIndexes("posts");
 const foreignKeys = await Schema.getForeignKeys("posts");
 const exists = await Schema.hasIndex("posts", ["user_id", "created_at"]);
 ```
+
+Each introspected index has a `type` of `"index"`, `"unique"`, or
+`"fulltext"`. PostgreSQL full-text indexes are expression indexes, so
+`Schema.hasIndex(table, columns)` cannot reliably identify them; check their
+stable name instead.
+
+Creating a full-text index maintains extra data on every insert/update and can
+block writes while an existing large table is indexed. Online/concurrent index
+creation is intentionally not hidden behind this portable API; schedule large
+production migrations according to the target database.
 
 These are useful for idempotent setup scripts and for one-shot maintenance work where you don't want to write a full migration.
 

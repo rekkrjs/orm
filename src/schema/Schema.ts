@@ -55,6 +55,7 @@ export interface SchemaIndex {
   columns: string[];
   unique: boolean;
   primary?: boolean;
+  type: "index" | "unique" | "fulltext";
 }
 
 export interface SchemaForeignKey {
@@ -143,18 +144,13 @@ export class Schema {
     this.assertNoAlterCommands(blueprint);
     const connection = conn ?? this.getConnection();
     const grammar = this.getGrammar(connection);
-    const sql = grammar.compileCreate(blueprint, connection.qualifyTable(table));
-    await connection.run(sql);
-
-    const indexes = grammar.compileIndexes(blueprint, connection.qualifyTable(table));
-    for (const indexSql of indexes) {
-      await connection.run(indexSql);
-    }
-
-    const fks = grammar.compileForeignKeys(blueprint, connection.qualifyTable(table));
-    for (const fkSql of fks) {
-      await connection.run(fkSql);
-    }
+    const qualifiedTable = connection.qualifyTable(table);
+    const statements = [
+      grammar.compileCreate(blueprint, qualifiedTable),
+      ...grammar.compileIndexes(blueprint, qualifiedTable),
+      ...grammar.compileForeignKeys(blueprint, qualifiedTable),
+    ];
+    for (const statement of statements) await connection.run(statement);
   }
 
   static async createIfNotExists(table: string, callback: (blueprint: Blueprint) => void, conn?: Connection): Promise<void> {
@@ -163,18 +159,13 @@ export class Schema {
     this.assertNoAlterCommands(blueprint);
     const connection = conn ?? this.getConnection();
     const grammar = this.getGrammar(connection);
-    const sql = grammar.compileCreateIfNotExists(blueprint, connection.qualifyTable(table));
-    await connection.run(sql);
-
-    const indexes = grammar.compileIndexes(blueprint, connection.qualifyTable(table));
-    for (const indexSql of indexes) {
-      await connection.run(indexSql);
-    }
-
-    const fks = grammar.compileForeignKeys(blueprint, connection.qualifyTable(table));
-    for (const fkSql of fks) {
-      await connection.run(fkSql);
-    }
+    const qualifiedTable = connection.qualifyTable(table);
+    const statements = [
+      grammar.compileCreateIfNotExists(blueprint, qualifiedTable),
+      ...grammar.compileIndexes(blueprint, qualifiedTable),
+      ...grammar.compileForeignKeys(blueprint, qualifiedTable),
+    ];
+    for (const statement of statements) await connection.run(statement);
   }
 
   static async createSchema(schema: string, conn?: Connection): Promise<void> {
@@ -224,13 +215,17 @@ export class Schema {
         push(grammar.compileDropColumn(qualifiedTable, command.parameters!.column));
       } else if (command.name === "renameColumn") {
         push(grammar.compileColumnRename(qualifiedTable, command.parameters!.from, command.parameters!.to));
-      } else if (command.name === "dropIndex" || command.name === "dropUnique") {
+      } else if (command.name === "dropIndex" || command.name === "dropUnique" || command.name === "dropFullText") {
         const indexName = command.parameters!.name as string;
         const driver = connection.getDriverName();
+        if (command.name === "dropFullText" && driver === "sqlite") {
+          throw new Error("Full-text indexes are not supported by SQLite. Use the SqliteFTS5Engine.");
+        }
         if (driver === "mysql") {
           push(`DROP INDEX ${grammar.wrap(indexName)} ON ${grammar.wrap(qualifiedTable)}`);
         } else if (driver === "postgres") {
-          push(`DROP INDEX IF EXISTS ${grammar.wrap(connection.qualifyTable(indexName))}`);
+          const schema = qualifiedTable.includes(".") ? qualifiedTable.split(".")[0] : undefined;
+          push(`DROP INDEX IF EXISTS ${grammar.wrap(schema ? `${schema}.${indexName}` : indexName)}`);
         } else {
           push(`DROP INDEX ${grammar.wrap(indexName)}`);
         }
@@ -348,6 +343,7 @@ export class Schema {
           columns: columns.map((row: any) => String(row.name)),
           unique: Number(index.unique) === 1,
           primary: String(index.origin || "") === "pk",
+          type: Number(index.unique) === 1 ? "unique" : "index",
         });
       }
       return results;
@@ -355,7 +351,7 @@ export class Schema {
 
     if (driver === "mysql") {
       const rows = await connection.query(
-        `SELECT index_name AS \`index_name\`, column_name AS \`column_name\`, non_unique AS \`non_unique\`
+        `SELECT index_name AS \`index_name\`, column_name AS \`column_name\`, non_unique AS \`non_unique\`, index_type AS \`index_type\`
          FROM information_schema.statistics
          WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ?
          ORDER BY index_name, seq_in_index`,
@@ -367,6 +363,9 @@ export class Schema {
         "column_name",
         (row) => Number(row.non_unique) === 0,
         (row) => row.index_name === "PRIMARY",
+        (row) => String(row.index_type).toUpperCase() === "FULLTEXT"
+          ? "fulltext"
+          : Number(row.non_unique) === 0 ? "unique" : "index",
       );
     }
 
@@ -374,6 +373,9 @@ export class Schema {
       `SELECT
          i.relname AS index_name,
          a.attname AS column_name,
+         pg_get_indexdef(ix.indexrelid, k.ordinality::int, true) AS column_expression,
+         pg_get_indexdef(ix.indexrelid) AS index_definition,
+         am.amname AS access_method,
          ix.indisunique AS is_unique,
          ix.indisprimary AS is_primary,
          k.ordinality
@@ -381,13 +383,23 @@ export class Schema {
        JOIN pg_namespace n ON n.oid = t.relnamespace
        JOIN pg_index ix ON t.oid = ix.indrelid
        JOIN pg_class i ON i.oid = ix.indexrelid
+       JOIN pg_am am ON am.oid = i.relam
        JOIN unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ordinality) ON true
-       JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+       LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
        WHERE n.nspname = $1 AND t.relname = $2
        ORDER BY i.relname, k.ordinality`,
       [schema, tableName]
     );
-    return this.groupIndexRows(rows as any[], "index_name", "column_name", (row) => !!row.is_unique, (row) => !!row.is_primary);
+    return this.groupIndexRows(
+      (rows as any[]).map((row) => ({ ...row, column_name: row.column_name ?? row.column_expression })),
+      "index_name",
+      "column_name",
+      (row) => !!row.is_unique,
+      (row) => !!row.is_primary,
+      (row) => String(row.access_method) === "gin" && String(row.index_definition).includes("to_tsvector")
+        ? "fulltext"
+        : row.is_unique ? "unique" : "index",
+    );
   }
 
   static async hasIndex(table: string, indexOrColumns: string | string[]): Promise<boolean> {
@@ -498,15 +510,17 @@ export class Schema {
     nameKey: string,
     columnKey: string,
     unique: (row: any) => boolean,
-    primary: (row: any) => boolean = () => false
+    primary: (row: any) => boolean = () => false,
+    type: (row: any) => SchemaIndex["type"] = (row) => unique(row) ? "unique" : "index",
   ): SchemaIndex[] {
     const grouped = new Map<string, SchemaIndex>();
     for (const row of rows) {
       const name = String(row[nameKey]);
-      const index = grouped.get(name) || { name, columns: [], unique: unique(row), primary: primary(row) };
-      index.columns.push(String(row[columnKey]));
+      const index = grouped.get(name) || { name, columns: [], unique: unique(row), primary: primary(row), type: type(row) };
+      if (row[columnKey] != null) index.columns.push(String(row[columnKey]));
       index.unique = index.unique || unique(row);
       index.primary = index.primary || primary(row);
+      if (type(row) === "fulltext") index.type = "fulltext";
       grouped.set(name, index);
     }
     return [...grouped.values()];

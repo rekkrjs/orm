@@ -8,6 +8,35 @@ import type {
 } from "../types/index.js";
 import { snakeCase } from "../utils.js";
 import { SchemaRawExpression } from "./RawExpression.js";
+import { Connection } from "../connection/Connection.js";
+import { assertPostgresFullTextLanguage, type PostgresFullTextLanguage } from "../fulltext.js";
+
+const PORTABLE_INDEX_NAME_BYTES = 63;
+
+function shortHash(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function fullTextIndexName(table: string, columns: readonly string[]): string {
+  const tableName = table.split(".").pop()!;
+  const candidate = `${tableName}_${columns.join("_")}_fulltext`;
+  if (Buffer.byteLength(candidate) <= PORTABLE_INDEX_NAME_BYTES) return candidate;
+  const suffix = `_${shortHash(candidate)}_fulltext`;
+  return `${candidate.slice(0, PORTABLE_INDEX_NAME_BYTES - suffix.length)}${suffix}`;
+}
+
+function validateFullTextColumns(columns: string | readonly string[]): string[] {
+  const values = typeof columns === "string" ? [columns] : [...columns];
+  if (values.length === 0) throw new Error("fullText() requires at least one column.");
+  for (const column of values) Connection.assertSafeIdentifier(column, "full-text column");
+  if (new Set(values).size !== values.length) throw new Error("fullText() columns must not contain duplicates.");
+  return values;
+}
 
 const REFERENTIAL_ACTIONS = new Set<ReferentialAction>([
   "cascade",
@@ -109,6 +138,16 @@ export class ForeignKeyBuilder {
 
   noActionOnDelete(): this {
     return this.onDelete("no action");
+  }
+}
+
+export class FullTextIndexBuilder {
+  constructor(private readonly definition: IndexDefinition) {}
+
+  language(language: PostgresFullTextLanguage): this {
+    assertPostgresFullTextLanguage(language);
+    this.definition.language = language;
+    return this;
   }
 }
 
@@ -401,6 +440,23 @@ export class Blueprint {
       unique: false,
     });
     return this;
+  }
+
+  fullText(columns: string | readonly string[], name?: string): FullTextIndexBuilder {
+    const values = validateFullTextColumns(columns);
+    const indexName = name ?? fullTextIndexName(this.table, values);
+    Connection.assertSafeIdentifier(indexName, "full-text index name");
+    if (Buffer.byteLength(indexName) > PORTABLE_INDEX_NAME_BYTES) {
+      throw new Error(`Full-text index name must not exceed ${PORTABLE_INDEX_NAME_BYTES} bytes.`);
+    }
+    const definition: IndexDefinition = {
+      name: indexName,
+      columns: values,
+      unique: false,
+      type: "fulltext",
+    };
+    this.indexes.push(definition);
+    return new FullTextIndexBuilder(definition);
   }
 
   primary(): this;
@@ -697,6 +753,17 @@ export class Blueprint {
 
   dropUnique(name: string): void {
     this.commands.push({ name: "dropUnique", parameters: { name } });
+  }
+
+  dropFullText(indexOrColumns: string | readonly string[]): void {
+    const name = typeof indexOrColumns === "string"
+      ? indexOrColumns
+      : fullTextIndexName(this.table, validateFullTextColumns(indexOrColumns));
+    Connection.assertSafeIdentifier(name, "full-text index name");
+    if (Buffer.byteLength(name) > PORTABLE_INDEX_NAME_BYTES) {
+      throw new Error(`Full-text index name must not exceed ${PORTABLE_INDEX_NAME_BYTES} bytes.`);
+    }
+    this.commands.push({ name: "dropFullText", parameters: { name } });
   }
 
   dropForeign(name: string): void {

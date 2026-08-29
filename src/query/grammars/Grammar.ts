@@ -1,3 +1,5 @@
+import type { FullTextOptions } from "../../fulltext.js";
+
 export abstract class Grammar {
   abstract wrap(value: string): string;
 
@@ -114,7 +116,8 @@ export abstract class Grammar {
 
   abstract compileRegexp(column: string, value: string, not: boolean, binding?: (value: any) => string): string;
 
-  abstract compileFullText(columns: string[], value: string, binding?: (value: any) => string): string;
+  /** `columns` contains identifiers already wrapped by Builder. */
+  abstract compileFullText(columns: string[], value: string, options: Readonly<FullTextOptions>, binding?: (value: any) => string): string;
 
   abstract compileExplain(sql: string): string;
 }

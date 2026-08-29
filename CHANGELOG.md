@@ -1,5 +1,42 @@
 # Changelog
 
+## 2.5.0 - 2026-08-29
+
+### Added
+
+- Added reversible `table.fullText()` / `table.dropFullText()` migrations for
+  native MySQL/MariaDB FULLTEXT and PostgreSQL GIN expression indexes.
+- Added Laravel 13-style full-text query options for MySQL boolean/query
+  expansion modes and PostgreSQL language, phrase, web-search, raw, and
+  precomputed-vector modes.
+- Full-text index introspection now reports `type: "fulltext"` while preserving
+  ordinary and unique indexes.
+
+### Fixed
+
+- PostgreSQL query and Schema compilation now share the same null-safe,
+  indexable `to_tsvector` expression. Expression indexes no longer disappear
+  from introspection, and qualified-table drops target the table's schema.
+- SQLite's fallback now treats `%`, `_`, and backslashes as literal search text.
+  Unsupported native indexes fail before a create/alter migration writes
+  anything.
+
+### Compatibility and performance
+
+- The former internal connector/negation overload remains available for minor
+  compatibility. Invalid driver-specific option combinations now fail early
+  instead of being ignored.
+- Query compilation adds only constant-time option validation. Native full-text
+  indexes are opt-in: they speed indexed reads but add disk usage and maintenance
+  work to inserts/updates; SQLite's ordinary-table fallback remains an O(n)
+  scan.
+
+### Verification
+
+- TypeScript build and the complete non-benchmark suite passed with 1,644 tests,
+  5,356 expectations, 126 files, and no failures, including live SQLite, MySQL,
+  and PostgreSQL full-text contracts. All 46 benchmark tests passed separately.
+
 ## 2.4.0 - 2026-08-29
 
 ### Added

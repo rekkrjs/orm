@@ -330,6 +330,11 @@ User.where("active", true).orWhereNotLike("name", "bot%");
 User.whereRegexp("email", "^alice");
 User.whereFullText(["bio", "summary"], "laravel orm");
 User.where("featured", true).orWhereFullText("bio", "bun orm");
+User.whereFullText(["bio", "summary"], "+bun -legacy", { mode: "boolean" }); // MySQL
+User.whereFullText(["bio", "summary"], 'bun orm -legacy', {                 // PostgreSQL
+  mode: "websearch",
+  language: "english",
+});
 ```
 
 `whereLike` is **case-insensitive by default**, and each driver gets the operator
@@ -362,10 +367,36 @@ options object.
 SQLite's `GLOB`. The operator list is an injection allowlist, not a portability
 guarantee: it is the caller's business whether the target accepts what it emits.
 
-`whereFullText` uses Postgres `tsvector` and MySQL `MATCH … AGAINST`. SQLite
-falls back to grouped `LIKE` predicates for portability; use the
-[SQLite FTS5 search engine](./search.md#engine-sqlitefts5engine) when an indexed
-full-text search is required.
+`whereFullText` and `orWhereFullText` always bind the search term and accept a
+third options argument. Support follows the native dialect:
+
+| Option | MySQL / MariaDB | PostgreSQL | SQLite fallback |
+|---|---|---|---|
+| default | natural-language mode | `plainto_tsquery` | literal, grouped `LIKE` |
+| `mode: "boolean"` | yes | no | no |
+| `expanded: true` | query expansion | no | no |
+| `mode: "phrase"` | no | `phraseto_tsquery` | no |
+| `mode: "websearch"` | no | `websearch_to_tsquery` | no |
+| `mode: "raw"` | no | `to_tsquery` | no |
+| `language` | no | built-in PostgreSQL configurations | no |
+| `vector: true` | no | column is already a `tsvector` | no |
+
+Invalid or driver-incompatible combinations throw instead of being silently
+ignored. In particular, MySQL boolean mode cannot be combined with query
+expansion. Empty terms and empty column lists are rejected because they have no
+portable full-text meaning.
+
+PostgreSQL combines nullable columns with `coalesce` so a `NULL` body does not
+hide a matching title. The expression is the same one emitted by
+`table.fullText()`, allowing its GIN index to be reused. MySQL uses
+`MATCH … AGAINST`, whose column list must match a native FULLTEXT index.
+
+SQLite has no native equivalent on an ordinary table, so this helper keeps the
+portable O(n) fallback. `%`, `_`, and `\` in user input are escaped and treated
+literally, not as `LIKE` wildcards. Use the
+[SQLite FTS5 search engine](./search.md#engine-sqlitefts5engine) for indexed
+search, ranking, highlights, or large tables. Full-text result ordering is not
+portable; add an explicit deterministic order before paginating.
 
 ### Multi-column
 

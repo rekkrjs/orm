@@ -162,7 +162,7 @@ function blueprintFromColumns(
         continue;
       }
     }
-    bp.indexes.push({ name: index.name, columns: [...index.columns], unique: index.unique });
+    bp.indexes.push({ name: index.name, columns: [...index.columns], unique: index.unique, type: index.type });
   }
   bp.foreignKeys.push(...foreignKeys.map((foreignKey) => ({
     ...foreignKey,

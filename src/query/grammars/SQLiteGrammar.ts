@@ -125,8 +125,12 @@ export class SQLiteGrammar extends Grammar {
     return `${column} ${op} ${binding ? binding(value) : this.escape(value)}`;
   }
 
-  compileFullText(columns: string[], value: string, binding?: (value: any) => string): string {
-    const clauses = columns.map((c) => `${this.wrap(c)} LIKE ${binding ? binding(`%${value}%`) : this.escape(`%${value}%`)}`);
+  compileFullText(columns: string[], value: string, options: import("../../fulltext.js").FullTextOptions, binding?: (value: any) => string): string {
+    if (Object.keys(options).length > 0) {
+      throw new Error("SQLite full-text fallback does not support full-text options. Use the SqliteFTS5Engine.");
+    }
+    const escaped = value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+    const clauses = columns.map((column) => `${column} LIKE ${binding ? binding(`%${escaped}%`) : this.escape(`%${escaped}%`)} ESCAPE '\\'`);
     return clauses.length === 1 ? clauses[0] : `(${clauses.join(" OR ")})`;
   }
 

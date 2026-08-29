@@ -2,6 +2,11 @@
 
 `@rekkr/orm/search` — Laravel Scout-inspired full-text search. Ships Meilisearch, PostgreSQL FTS, and SQLite FTS5 engines. The `SearchEngine` interface stays driver-agnostic so custom engines can drop in.
 
+For a native filter on an existing MySQL/PostgreSQL table, the main ORM also
+provides `table.fullText(...)` plus `Model.whereFullText(...)`. Use this Search
+module when you need a dedicated index lifecycle, SQLite FTS5, relevance,
+highlights, facets, typo tolerance, or synchronization across a search service.
+
 ## Install
 
 Meilisearch requires a reachable HTTP service. Local dev:

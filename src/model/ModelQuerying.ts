@@ -1,4 +1,5 @@
 import { Builder, type LikeOptions } from "../query/Builder.js";
+import type { FullTextOptions } from "../fulltext.js";
 import { Collection } from "../support/Collection.js";
 import type {
   ModelConstructor,
@@ -455,12 +456,12 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().whereRegexp(column, value);
   }
 
-  static whereFullText<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[], value: string): Builder<InstanceType<M>> {
-    return (this as any).query().whereFullText(columns, value);
+  static whereFullText<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[], value: string, options?: FullTextOptions): Builder<InstanceType<M>> {
+    return (this as any).query().whereFullText(columns, value, options);
   }
 
-  static orWhereFullText<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[], value: string): Builder<InstanceType<M>> {
-    return (this as any).query().orWhereFullText(columns, value);
+  static orWhereFullText<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[], value: string, options?: FullTextOptions): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereFullText(columns, value, options);
   }
 
   static whereAll<M extends ModelConstructor>(this: M, columns: any[], operator: string, value: any): Builder<InstanceType<M>> {

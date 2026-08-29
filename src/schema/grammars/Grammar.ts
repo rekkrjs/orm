@@ -167,9 +167,15 @@ export abstract class Grammar {
       }));
     }
     for (const index of blueprint.indexes) {
-      statements.push(this.compileIndex(table, index));
+      statements.push(index.type === "fulltext"
+        ? this.compileFullTextIndex(table, index)
+        : this.compileIndex(table, index));
     }
     return statements;
+  }
+
+  protected compileFullTextIndex(_table: string, _index: IndexDefinition): string {
+    throw new Error("Full-text indexes are not supported by SQLite. Use the SqliteFTS5Engine.");
   }
 
   protected compileIndex(table: string, index: IndexDefinition): string {

@@ -1,4 +1,5 @@
 import { Grammar } from "./Grammar.js";
+import { compilePostgresFullTextVector, type FullTextOptions } from "../../fulltext.js";
 
 export class PostgresGrammar extends Grammar {
   wrap(value: string): string {
@@ -101,11 +102,20 @@ export class PostgresGrammar extends Grammar {
     return `${column} ${op} ${binding ? binding(value) : this.escape(value)}`;
   }
 
-  compileFullText(columns: string[], value: string, binding?: (value: any) => string): string {
-    const cols = columns.length > 1
-      ? `concat_ws(' ', ${columns.join(", ")})`
-      : columns[0];
-    return `to_tsvector('english', ${cols}) @@ plainto_tsquery('english', ${binding ? binding(value) : this.escape(value)})`;
+  compileFullText(columns: string[], value: string, options: Readonly<FullTextOptions>, binding?: (value: any) => string): string {
+    if (options.mode === "boolean" || options.expanded !== undefined) {
+      throw new Error("PostgreSQL full-text search does not support boolean mode or query expansion.");
+    }
+    const language = options.language ?? "english";
+    const vector = compilePostgresFullTextVector(columns, language, options.vector ?? false);
+    const query = options.mode === "phrase"
+      ? "phraseto_tsquery"
+      : options.mode === "websearch"
+        ? "websearch_to_tsquery"
+        : options.mode === "raw"
+          ? "to_tsquery"
+          : "plainto_tsquery";
+    return `${vector} @@ ${query}('${language}', ${binding ? binding(value) : this.escape(value)})`;
   }
 
   compileExplain(sql: string): string {

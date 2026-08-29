@@ -1,5 +1,7 @@
 import { Grammar } from "./Grammar.js";
 import type { ColumnDefinition } from "../../types/index.js";
+import type { IndexDefinition } from "../../types/index.js";
+import { compilePostgresFullTextVector } from "../../fulltext.js";
 
 export class PostgresGrammar extends Grammar {
   protected wrappers = { prefix: '"', suffix: '"' };
@@ -120,6 +122,13 @@ export class PostgresGrammar extends Grammar {
   compileIndex(table: string, index: any): string {
     const type = index.unique ? "UNIQUE INDEX" : "INDEX";
     return `CREATE ${type} ${this.wrap(index.name)} ON ${this.wrap(table)} (${this.wrapArray(index.columns).join(", ")})`;
+  }
+
+  protected compileFullTextIndex(table: string, index: IndexDefinition): string {
+    const language = index.language ?? "english";
+    const columns = this.wrapArray(index.columns);
+    const expression = compilePostgresFullTextVector(columns, language, false);
+    return `CREATE INDEX ${this.wrap(index.name)} ON ${this.wrap(table)} USING GIN ((${expression}))`;
   }
 
   protected compileForeignKey(table: string, fk: any): string {
