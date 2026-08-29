@@ -513,8 +513,23 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       : this.where(key as any, "!=", value);
   }
 
+  orWhereKey(value: ModelColumnValue<T, any> | ModelColumnValue<T, any>[]): this {
+    const key = this.getModelPrimaryKey();
+    return Array.isArray(value)
+      ? this.whereIn(key as any, value as any[], "or")
+      : this.orWhere(key as any, value);
+  }
+
+  orWhereKeyNot(value: ModelColumnValue<T, any> | ModelColumnValue<T, any>[]): this {
+    const key = this.getModelPrimaryKey();
+    return Array.isArray(value)
+      ? this.whereNotIn(key as any, value as any[], "or")
+      : this.orWhere(key as any, "!=", value);
+  }
+
   private whereNested(callback: (query: Builder<T>) => void, boolean: "and" | "or" = "and"): this {
     const nested = new Builder<T>(this.connection, this.tableName);
+    nested.model = this.model;
     callback(nested);
     if (nested.wheres.length > 0) {
       this.invalidateSqlCache();
@@ -1765,6 +1780,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       return `${prefix} ${this.grammar.wrap(where.column)} ${validOperator(where.operator)} ${value}`;
     } else if (where.type === "in") {
       const op = where.operator === "NOT IN" ? "NOT IN" : "IN";
+      if ((where.value as any[]).length === 0) return `${prefix} ${op === "NOT IN" ? "1 = 1" : "0 = 1"}`;
       const values = this.parameterize
         ? (where.value as any[]).map((v: any) => this.addBinding(v)).join(", ")
         : (where.value as any[]).map((v: any) => this.grammar.escape(v)).join(", ");
@@ -2298,20 +2314,30 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return result === null ? await callback() : result;
   }
 
-  async find(id: any, column: ModelColumn<T> = "id"): Promise<TResult | null> {
-    return this.where(column, id).first();
+  async find(id: any, column?: ModelColumn<T>): Promise<TResult | null> {
+    return this.where((column ?? this.getModelPrimaryKey()) as ModelColumn<T>, id).first();
   }
 
-  async findOr<TFallback>(id: any, callback: () => TFallback, column: ModelColumn<T> = "id"): Promise<TResult | Awaited<TFallback>> {
-    return await this.where(column, id).firstOr(callback);
+  async findOr<TFallback>(id: any, callback: () => TFallback, column?: ModelColumn<T>): Promise<TResult | Awaited<TFallback>> {
+    const result = await this.find(id, column);
+    return result === null ? await callback() : result;
   }
 
-  async findOrFail(id: any, column: ModelColumn<T> = "id"): Promise<TResult> {
+  async findOrFail(id: any, column?: ModelColumn<T>): Promise<TResult> {
     const result = await this.find(id, column);
     if (!result) {
       throw new ModelNotFoundError(this.model?.name || "Model", id);
     }
     return result;
+  }
+
+  async findSole(id: any): Promise<TResult> {
+    return this.whereKey(id).sole();
+  }
+
+  async findOrNew(id: any): Promise<T> {
+    const found = await this.find(id);
+    return (found as T | null) ?? this.newModelForCreation("findOrNew");
   }
 
   async firstOrFail(): Promise<TResult> {
@@ -2407,6 +2433,10 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       plucked[row[keyField]] = row[valueField];
     }
     return plucked;
+  }
+
+  async implode<K extends ModelColumn<T>>(column: K, glue: string = ""): Promise<string> {
+    return (await this.pluck(column)).join(glue);
   }
 
   async findMany(ids: any[], column?: ModelColumn<T>): Promise<Collection<TResult>> {
@@ -3305,6 +3335,14 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return !(await this.exists());
   }
 
+  async existsOr<TFallback>(callback: () => TFallback): Promise<true | Awaited<TFallback>> {
+    return await this.exists() ? true : await callback();
+  }
+
+  async doesntExistOr<TFallback>(callback: () => TFallback): Promise<true | Awaited<TFallback>> {
+    return await this.doesntExist() ? true : await callback();
+  }
+
   async sole(): Promise<TResult> {
     const results = await this.limit(2).get();
     if (results.length === 0) {
@@ -3329,14 +3367,27 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return (result as any)[column];
   }
 
+  async soleValue<K extends ModelColumn<T>>(column: K): Promise<ModelColumnValue<T, K>> {
+    const result = await this.clone().select(column).sole();
+    return this.getResultValue(result, resultFieldFor(String(column)));
+  }
+
   dump(): this {
     console.log(this.toRawSql());
     return this;
   }
 
+  dumpRawSql(): this {
+    return this.dump();
+  }
+
   dd(): never {
     console.log(this.toRawSql());
     throw new Error("dd() called — execution halted.");
+  }
+
+  ddRawSql(): never {
+    return this.dd();
   }
 
   async explain(): Promise<any[]> {

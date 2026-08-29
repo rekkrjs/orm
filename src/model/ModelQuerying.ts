@@ -46,6 +46,10 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().whereKeyNot(value);
   }
 
+  static forPage<M extends ModelConstructor>(this: M, page: number, perPage: number = 15): Builder<InstanceType<M>> {
+    return (this as any).query().forPage(page, perPage);
+  }
+
   static orderBy<M extends ModelConstructor>(this: M, column: any, direction?: "asc" | "desc"): Builder<InstanceType<M>> {
     return (this as any).query().orderBy(column, direction);
   }
@@ -483,6 +487,26 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().pipe(callback);
   }
 
+  static dump<M extends ModelConstructor>(this: M): Builder<InstanceType<M>> {
+    return (this as any).query().dump();
+  }
+
+  static dd<M extends ModelConstructor>(this: M): never {
+    return (this as any).query().dd() as never;
+  }
+
+  static explain<M extends ModelConstructor>(this: M): Promise<any[]> {
+    return (this as any).query().explain();
+  }
+
+  static toSql<M extends ModelConstructor>(this: M): string {
+    return (this as any).query().toSql();
+  }
+
+  static toRawSql<M extends ModelConstructor>(this: M): string {
+    return (this as any).query().toRawSql();
+  }
+
   static take<M extends ModelConstructor>(this: M, count: number): Builder<InstanceType<M>> {
     return (this as any).query().take(count);
   }
@@ -541,6 +565,10 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
 
   static has<M extends ModelConstructor>(this: M, relationName: string, operator?: string, count?: number): Builder<InstanceType<M>> {
     return (this as any).query().has(relationName as any, operator as any, count as any);
+  }
+
+  static orHas<M extends ModelConstructor>(this: M, relationName: string, operator?: string, count?: number): Builder<InstanceType<M>> {
+    return (this as any).query().orHas(relationName as any, operator as any, count as any);
   }
 
   static whereHas<M extends ModelConstructor>(this: M, relationName: string, callback?: (query: Builder<any>) => void | Builder<any>, operator?: string, count?: number): Builder<InstanceType<M>> {

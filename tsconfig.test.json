@@ -15,6 +15,7 @@
     "tests/search-types.test.ts",
     "tests/postgres-fts-types.test.ts",
     "tests/eloquent-ergonomics.test.ts",
+    "tests/laravel-syntax-sugar.test.ts",
     "tests/model-timestamps.test.ts",
     "tests/native-appends.test.ts",
     "tests/schema-types.test.ts",

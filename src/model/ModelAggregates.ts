@@ -58,6 +58,10 @@ export class ModelAggregates<T extends Record<string, any> = any> extends ModelQ
     return (this as any).query().get();
   }
 
+  static async get<M extends ModelConstructor>(this: M): Promise<Collection<InstanceType<M>>> {
+    return (this as any).query().get();
+  }
+
   static async count<M extends ModelConstructor>(this: M): Promise<number> {
     return (this as any).query().count();
   }

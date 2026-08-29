@@ -309,6 +309,12 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
     return (this as any).query().has(relationName as any, operator as any, count as any);
   }
 
+  static orHas<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, operator?: string, count?: number): Builder<InstanceType<M>>;
+  static orHas<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, operator?: string, count?: number): Builder<InstanceType<M>>;
+  static orHas<M extends ModelConstructor>(this: M, relationName: string, operator?: string, count?: number): Builder<InstanceType<M>> {
+    return (this as any).query().orHas(relationName as any, operator as any, count as any);
+  }
+
   static whereHas<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, callback?: (query: RelationConstraintQuery<InstanceType<M>, R>) => void | Builder<any>, operator?: string, count?: number): Builder<InstanceType<M>>;
   static whereHas<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, callback?: (query: Builder<any>) => void | Builder<any>, operator?: string, count?: number): Builder<InstanceType<M>>;
   static whereHas<M extends ModelConstructor>(this: M, relationName: string, callback?: (query: Builder<any>) => void | Builder<any>, operator?: string, count?: number): Builder<InstanceType<M>> {
