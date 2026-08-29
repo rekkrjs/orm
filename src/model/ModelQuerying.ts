@@ -619,6 +619,10 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().whereNotMorphedTo(relationName as any, model as any);
   }
 
+  static orWhereNotMorphedTo<M extends ModelConstructor>(this: M, relationName: string, model: any): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereNotMorphedTo(relationName as any, model as any);
+  }
+
   static whereRelation<M extends ModelConstructor>(this: M, relationName: string, column: any, operator: any, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().whereRelation(relationName, column, operator, value);
   }
@@ -627,12 +631,32 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().whereBelongsTo(relationName as any, model as any);
   }
 
+  static orWhereBelongsTo<M extends ModelConstructor>(this: M, relationName: string, model: any): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereBelongsTo(relationName as any, model as any);
+  }
+
   static whereAttachedTo<M extends ModelConstructor>(this: M, relationName: string, model: any): Builder<InstanceType<M>> {
     return (this as any).query().whereAttachedTo(relationName as any, model as any);
   }
 
+  static orWhereAttachedTo<M extends ModelConstructor>(this: M, relationName: string, model: any): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereAttachedTo(relationName as any, model as any);
+  }
+
   static orWhereRelation<M extends ModelConstructor>(this: M, relationName: string, column: any, operator: any, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().orWhereRelation(relationName, column, operator, value);
+  }
+
+  static whereDoesntHaveRelation<M extends ModelConstructor>(this: M, relationName: string, column: any, operator: any, value?: any): Builder<InstanceType<M>> {
+    return (this as any).query().whereDoesntHaveRelation(relationName, column, operator, value);
+  }
+
+  static orWhereDoesntHaveRelation<M extends ModelConstructor>(this: M, relationName: string, column: any, operator: any, value?: any): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereDoesntHaveRelation(relationName, column, operator, value);
+  }
+
+  static withWhereRelation<M extends ModelConstructor>(this: M, relationName: string, column: any, operator: any, value?: any): Builder<InstanceType<M>> {
+    return (this as any).query().withWhereRelation(relationName, column, operator, value);
   }
 
   static withWhereHas<M extends ModelConstructor>(this: M, relation: any, callback?: (query: Builder<any>) => void | Builder<any>): Builder<InstanceType<M>> {

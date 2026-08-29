@@ -130,7 +130,7 @@ export class MorphTo<T extends Record<string, any> = Model> {
     const query = (Related as any).on(this.parent.getConnection()).selectRaw("1");
     query.whereColumn(`${Related.getQualifiedTable(this.parent.getConnection())}.${Related.primaryKey}`, "=", `${parentTable}.${this.idColumn}`);
     query.where(`${parentTable}.${this.typeColumn}`, type);
-    if (callback) callback(query);
+    if (callback) query.applyRelationConstraint(callback as any);
     return query.toRawSql();
   }
 
@@ -336,7 +336,7 @@ export class MorphOne<T extends Record<string, any> = Model, N extends string = 
     query.whereColumn(`${this.related.getQualifiedTable(this.parent.getConnection())}.${this.idColumn}`, "=", `${parentTable}.${this.localKey}`);
     query.where(`${this.related.getQualifiedTable(this.parent.getConnection())}.${this.typeColumn}`, this.getMorphType());
     this.applyAggregateSafeConstraintsTo(query);
-    if (callback) callback(query);
+    if (callback) query.applyRelationConstraint(callback as any);
     return query;
   }
 
@@ -509,7 +509,7 @@ export class MorphMany<T extends Record<string, any> = Model, N extends string =
     query.whereColumn(`${this.related.getQualifiedTable(this.parent.getConnection())}.${this.idColumn}`, "=", `${parentTable}.${this.localKey}`);
     query.where(`${this.related.getQualifiedTable(this.parent.getConnection())}.${this.typeColumn}`, this.getMorphType());
     this.applyAggregateSafeConstraintsTo(query);
-    if (callback) callback(query);
+    if (callback) query.applyRelationConstraint(callback as any);
     return query;
   }
 
@@ -585,6 +585,10 @@ export class MorphToMany<
       relation.applyPivotWhere(query, column, "IN", values, "or");
       return query;
     });
+    define("orWherePivotNotIn", (column: string, values: any[]) => {
+      relation.applyPivotWhere(query, column, "NOT IN", values, "or");
+      return query;
+    });
     define("wherePivotNull", (column: string) => {
       relation.applyPivotWhere(query, column, "IS NULL", null, "and");
       return query;
@@ -597,8 +601,32 @@ export class MorphToMany<
       relation.applyPivotWhere(query, column, "IS NULL", null, "or");
       return query;
     });
+    define("orWherePivotNotNull", (column: string) => {
+      relation.applyPivotWhere(query, column, "IS NOT NULL", null, "or");
+      return query;
+    });
     define("wherePivotBetween", (column: string, values: [any, any]) => {
       relation.applyPivotWhere(query, column, "BETWEEN", values, "and");
+      return query;
+    });
+    define("orWherePivotBetween", (column: string, values: [any, any]) => {
+      relation.applyPivotWhere(query, column, "BETWEEN", values, "or");
+      return query;
+    });
+    define("wherePivotNotBetween", (column: string, values: [any, any]) => {
+      relation.applyPivotWhere(query, column, "NOT BETWEEN", values, "and");
+      return query;
+    });
+    define("orWherePivotNotBetween", (column: string, values: [any, any]) => {
+      relation.applyPivotWhere(query, column, "NOT BETWEEN", values, "or");
+      return query;
+    });
+    define("orderByPivot", (column: string, direction: "asc" | "desc" = "asc") => {
+      relation.applyPivotOrder(query, column, direction);
+      return query;
+    });
+    define("orderByPivotDesc", (column: string) => {
+      relation.applyPivotOrder(query, column, "desc");
       return query;
     });
     define("withPivotValue", (column: string, value: any) => {
@@ -659,6 +687,8 @@ export class MorphToMany<
       builder.whereNotIn(where.column as any, where.value, where.boolean);
     } else if (where.operator === "BETWEEN") {
       builder.whereBetween(where.column as any, where.value, where.boolean);
+    } else if (where.operator === "NOT BETWEEN") {
+      builder.whereNotBetween(where.column as any, where.value, where.boolean);
     } else if (where.operator === "IS NULL") {
       builder.whereNull(where.column as any, where.boolean);
     } else if (where.operator === "IS NOT NULL") {
@@ -676,9 +706,17 @@ export class MorphToMany<
       value = operator;
       operator = "=";
     }
-    const entry = { column: `${this.table}.${column}`, operator, value, boolean };
+    const entry = { column: this.qualifyPivotColumn(column), operator, value, boolean };
     this.pivotWheres.push(entry);
     return this.applyStoredPivotWhere(builder, entry);
+  }
+
+  protected qualifyPivotColumn(column: string): string {
+    return column.includes(".") ? column : `${this.table}.${column}`;
+  }
+
+  protected applyPivotOrder(builder: Builder<any>, column: string, direction: "asc" | "desc" = "asc"): Builder<any> {
+    return builder.orderBy(this.qualifyPivotColumn(column) as any, direction);
   }
 
   wherePivot<K extends string>(column: K, operator: string | any, value?: any): MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
@@ -706,6 +744,11 @@ export class MorphToMany<
     return this as MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
   }
 
+  orWherePivotNotIn<K extends string>(column: K, values: any[]): MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
+    this.applyPivotWhere(this.builder, column, "NOT IN", values, "or");
+    return this as MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
+  }
+
   wherePivotNull<K extends string>(column: K): MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
     this.applyPivotWhere(this.builder, column, "IS NULL", null, "and");
     return this as MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
@@ -721,9 +764,40 @@ export class MorphToMany<
     return this as MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
   }
 
+  orWherePivotNotNull<K extends string>(column: K): MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
+    this.applyPivotWhere(this.builder, column, "IS NOT NULL", null, "or");
+    return this as MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
+  }
+
   wherePivotBetween<K extends string>(column: K, values: [any, any]): MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
     this.applyPivotWhere(this.builder, column, "BETWEEN", values, "and");
     return this as MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
+  }
+
+  orWherePivotBetween<K extends string>(column: K, values: [any, any]): MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
+    this.applyPivotWhere(this.builder, column, "BETWEEN", values, "or");
+    return this as MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
+  }
+
+  wherePivotNotBetween<K extends string>(column: K, values: [any, any]): MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
+    this.applyPivotWhere(this.builder, column, "NOT BETWEEN", values, "and");
+    return this as MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
+  }
+
+  orWherePivotNotBetween<K extends string>(column: K, values: [any, any]): MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
+    this.applyPivotWhere(this.builder, column, "NOT BETWEEN", values, "or");
+    return this as MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
+  }
+
+  orderByPivot(column: string, direction: "asc" | "desc" = "asc"): this {
+    const qualified = this.qualifyPivotColumn(column);
+    this.builder.orderBy(qualified as any, direction);
+    this.extraConstraints.push({ apply: (builder) => builder.orderBy(qualified as any, direction), aggregateSafe: false });
+    return this;
+  }
+
+  orderByPivotDesc(column: string): this {
+    return this.orderByPivot(column, "desc");
   }
 
   withPivotValue<K extends string>(column: K, value: any): MorphToMany<T, N, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
@@ -1038,7 +1112,7 @@ export class MorphToMany<
       this.applyStoredPivotWhere(query, where);
     }
     this.applyAggregateSafeConstraintsTo(query);
-    if (callback) callback(query);
+    if (callback) query.applyRelationConstraint(callback as any);
     return query;
   }
 

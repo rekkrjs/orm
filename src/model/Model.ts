@@ -47,6 +47,8 @@ import { Builder } from "../query/Builder.js";
 import { Collection } from "../support/Collection.js";
 import type { Factory } from "../seeding/Factory.js";
 
+type RelationModelInput = { getAttribute(key: string): any };
+
 export { backedEnum } from "./BackedEnum.js";
 export type { BackedEnumDefinition, EnumValue } from "./BackedEnum.js";
 export { InvalidEnumValueError } from "./InvalidEnumValueError.js";
@@ -280,27 +282,58 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
     return (this as any).query().orWhereRelation(relationName, column, operator, value);
   }
 
-  static whereBelongsTo<M extends ModelConstructor, R extends string & BelongsToRelationName<InstanceType<M>>>(this: M, relationName: R, model: Model | Model[] | Collection<Model>): Builder<InstanceType<M>> {
+  static whereDoesntHaveRelation<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: ModelColumn<RelationRelatedModel<InstanceType<M>, R>>, operator: string | any, value?: any): Builder<InstanceType<M>>;
+  static whereDoesntHaveRelation<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, operator: string | any, value?: any): Builder<InstanceType<M>>;
+  static whereDoesntHaveRelation<M extends ModelConstructor>(this: M, relationName: string, column: any, operator: any, value?: any): Builder<InstanceType<M>> {
+    return (this as any).query().whereDoesntHaveRelation(relationName, column, operator, value);
+  }
+
+  static orWhereDoesntHaveRelation<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: ModelColumn<RelationRelatedModel<InstanceType<M>, R>>, operator: string | any, value?: any): Builder<InstanceType<M>>;
+  static orWhereDoesntHaveRelation<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, operator: string | any, value?: any): Builder<InstanceType<M>>;
+  static orWhereDoesntHaveRelation<M extends ModelConstructor>(this: M, relationName: string, column: any, operator: any, value?: any): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereDoesntHaveRelation(relationName, column, operator, value);
+  }
+
+  static withWhereRelation<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: ModelColumn<RelationRelatedModel<InstanceType<M>, R>>, operator: string | any, value?: any): Builder<InstanceType<M>, WithLoadedRelations<InstanceType<M>, R>>;
+  static withWhereRelation<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, operator: string | any, value?: any): Builder<InstanceType<M>, WithLoadedRelations<InstanceType<M>, string>>;
+  static withWhereRelation<M extends ModelConstructor>(this: M, relationName: string, column: any, operator: any, value?: any): Builder<InstanceType<M>> {
+    return (this as any).query().withWhereRelation(relationName, column, operator, value);
+  }
+
+  static whereBelongsTo<M extends ModelConstructor, R extends string & BelongsToRelationName<InstanceType<M>>>(this: M, relationName: R, model: RelationModelInput | RelationModelInput[] | Collection<any>): Builder<InstanceType<M>> {
     return (this as any).query().whereBelongsTo(relationName as any, model as any);
   }
 
-  static whereAttachedTo<M extends ModelConstructor, R extends string & AttachedToRelationName<InstanceType<M>>>(this: M, relationName: R, model: Model | Model[] | Collection<Model>): Builder<InstanceType<M>> {
+  static orWhereBelongsTo<M extends ModelConstructor, R extends string & BelongsToRelationName<InstanceType<M>>>(this: M, relationName: R, model: RelationModelInput | RelationModelInput[] | Collection<any>): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereBelongsTo(relationName as any, model as any);
+  }
+
+  static whereAttachedTo<M extends ModelConstructor, R extends string & AttachedToRelationName<InstanceType<M>>>(this: M, relationName: R, model: RelationModelInput | RelationModelInput[] | Collection<any>): Builder<InstanceType<M>> {
     return (this as any).query().whereAttachedTo(relationName as any, model as any);
   }
 
-  static whereMorphedTo<M extends ModelConstructor, R extends string & MorphToRelationName<InstanceType<M>>>(this: M, relationName: R, model: Model | ModelConstructor | string): Builder<InstanceType<M>>;
-  static whereMorphedTo<M extends ModelConstructor>(this: M, relationName: string, model: Model | ModelConstructor | string): Builder<InstanceType<M>> {
+  static orWhereAttachedTo<M extends ModelConstructor, R extends string & AttachedToRelationName<InstanceType<M>>>(this: M, relationName: R, model: RelationModelInput | RelationModelInput[] | Collection<any>): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereAttachedTo(relationName as any, model as any);
+  }
+
+  static whereMorphedTo<M extends ModelConstructor, R extends string & MorphToRelationName<InstanceType<M>>>(this: M, relationName: R, model: RelationModelInput | ModelConstructor | string): Builder<InstanceType<M>>;
+  static whereMorphedTo<M extends ModelConstructor>(this: M, relationName: string, model: RelationModelInput | ModelConstructor | string): Builder<InstanceType<M>> {
     return (this as any).query().whereMorphedTo(relationName as any, model as any);
   }
 
-  static orWhereMorphedTo<M extends ModelConstructor, R extends string & MorphToRelationName<InstanceType<M>>>(this: M, relationName: R, model: Model | ModelConstructor | string): Builder<InstanceType<M>>;
-  static orWhereMorphedTo<M extends ModelConstructor>(this: M, relationName: string, model: Model | ModelConstructor | string): Builder<InstanceType<M>> {
+  static orWhereMorphedTo<M extends ModelConstructor, R extends string & MorphToRelationName<InstanceType<M>>>(this: M, relationName: R, model: RelationModelInput | ModelConstructor | string): Builder<InstanceType<M>>;
+  static orWhereMorphedTo<M extends ModelConstructor>(this: M, relationName: string, model: RelationModelInput | ModelConstructor | string): Builder<InstanceType<M>> {
     return (this as any).query().orWhereMorphedTo(relationName as any, model as any);
   }
 
-  static whereNotMorphedTo<M extends ModelConstructor, R extends string & MorphToRelationName<InstanceType<M>>>(this: M, relationName: R, model: Model | ModelConstructor | string): Builder<InstanceType<M>>;
-  static whereNotMorphedTo<M extends ModelConstructor>(this: M, relationName: string, model: Model | ModelConstructor | string): Builder<InstanceType<M>> {
+  static whereNotMorphedTo<M extends ModelConstructor, R extends string & MorphToRelationName<InstanceType<M>>>(this: M, relationName: R, model: RelationModelInput | ModelConstructor | string): Builder<InstanceType<M>>;
+  static whereNotMorphedTo<M extends ModelConstructor>(this: M, relationName: string, model: RelationModelInput | ModelConstructor | string): Builder<InstanceType<M>> {
     return (this as any).query().whereNotMorphedTo(relationName as any, model as any);
+  }
+
+  static orWhereNotMorphedTo<M extends ModelConstructor, R extends string & MorphToRelationName<InstanceType<M>>>(this: M, relationName: R, model: RelationModelInput | ModelConstructor | string): Builder<InstanceType<M>>;
+  static orWhereNotMorphedTo<M extends ModelConstructor>(this: M, relationName: string, model: RelationModelInput | ModelConstructor | string): Builder<InstanceType<M>> {
+    return (this as any).query().orWhereNotMorphedTo(relationName as any, model as any);
   }
 
   static has<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, operator?: string, count?: number): Builder<InstanceType<M>>;

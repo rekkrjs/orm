@@ -82,6 +82,10 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
       relation.applyPivotWhere(query, column, "IN", values, "or");
       return query;
     });
+    define("orWherePivotNotIn", (column: string, values: any[]) => {
+      relation.applyPivotWhere(query, column, "NOT IN", values, "or");
+      return query;
+    });
     define("wherePivotNull", (column: string) => {
       relation.applyPivotWhere(query, column, "IS NULL", null, "and");
       return query;
@@ -94,8 +98,32 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
       relation.applyPivotWhere(query, column, "IS NULL", null, "or");
       return query;
     });
+    define("orWherePivotNotNull", (column: string) => {
+      relation.applyPivotWhere(query, column, "IS NOT NULL", null, "or");
+      return query;
+    });
     define("wherePivotBetween", (column: string, values: [any, any]) => {
       relation.applyPivotWhere(query, column, "BETWEEN", values, "and");
+      return query;
+    });
+    define("orWherePivotBetween", (column: string, values: [any, any]) => {
+      relation.applyPivotWhere(query, column, "BETWEEN", values, "or");
+      return query;
+    });
+    define("wherePivotNotBetween", (column: string, values: [any, any]) => {
+      relation.applyPivotWhere(query, column, "NOT BETWEEN", values, "and");
+      return query;
+    });
+    define("orWherePivotNotBetween", (column: string, values: [any, any]) => {
+      relation.applyPivotWhere(query, column, "NOT BETWEEN", values, "or");
+      return query;
+    });
+    define("orderByPivot", (column: string, direction: "asc" | "desc" = "asc") => {
+      relation.applyPivotOrder(query, column, direction);
+      return query;
+    });
+    define("orderByPivotDesc", (column: string) => {
+      relation.applyPivotOrder(query, column, "desc");
       return query;
     });
     define("withPivotValue", (column: string, value: any) => {
@@ -129,9 +157,17 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
       value = operator;
       operator = "=";
     }
-    const entry = { column: `${this.table}.${column}`, operator, value, boolean };
+    const entry = { column: this.qualifyPivotColumn(column), operator, value, boolean };
     this.pivotWheres.push(entry);
     return this.applyStoredPivotWhere(builder, entry);
+  }
+
+  protected qualifyPivotColumn(column: string): string {
+    return column.includes(".") ? column : `${this.table}.${column}`;
+  }
+
+  protected applyPivotOrder(builder: Builder<any>, column: string, direction: "asc" | "desc" = "asc"): Builder<any> {
+    return builder.orderBy(this.qualifyPivotColumn(column) as any, direction);
   }
 
   protected applyStoredPivotWhere(builder: Builder<any>, where: { column: string; operator: string; value: any; boolean: "and" | "or" }): Builder<any> {
@@ -141,6 +177,8 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
       builder.whereNotIn(where.column as any, where.value, where.boolean);
     } else if (where.operator === "BETWEEN") {
       builder.whereBetween(where.column as any, where.value, where.boolean);
+    } else if (where.operator === "NOT BETWEEN") {
+      builder.whereNotBetween(where.column as any, where.value, where.boolean);
     } else if (where.operator === "IS NULL") {
       builder.whereNull(where.column as any, where.boolean);
     } else if (where.operator === "IS NOT NULL") {
@@ -178,6 +216,11 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
     return this as BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
   }
 
+  orWherePivotNotIn<K extends string>(column: K, values: any[]): BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
+    this.applyPivotWhere(this.builder, column, "NOT IN", values, "or");
+    return this as BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
+  }
+
   wherePivotNull<K extends string>(column: K): BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
     this.applyPivotWhere(this.builder, column, "IS NULL", null, "and");
     return this as BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
@@ -193,9 +236,40 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
     return this as BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
   }
 
+  orWherePivotNotNull<K extends string>(column: K): BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
+    this.applyPivotWhere(this.builder, column, "IS NOT NULL", null, "or");
+    return this as BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
+  }
+
   wherePivotBetween<K extends string>(column: K, values: [any, any]): BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
     this.applyPivotWhere(this.builder, column, "BETWEEN", values, "and");
     return this as BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
+  }
+
+  orWherePivotBetween<K extends string>(column: K, values: [any, any]): BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
+    this.applyPivotWhere(this.builder, column, "BETWEEN", values, "or");
+    return this as BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
+  }
+
+  wherePivotNotBetween<K extends string>(column: K, values: [any, any]): BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
+    this.applyPivotWhere(this.builder, column, "NOT BETWEEN", values, "and");
+    return this as BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
+  }
+
+  orWherePivotNotBetween<K extends string>(column: K, values: [any, any]): BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
+    this.applyPivotWhere(this.builder, column, "NOT BETWEEN", values, "or");
+    return this as BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>>;
+  }
+
+  orderByPivot(column: string, direction: "asc" | "desc" = "asc"): this {
+    const qualified = this.qualifyPivotColumn(column);
+    this.builder.orderBy(qualified as any, direction);
+    this.extraConstraints.push({ apply: (builder) => builder.orderBy(qualified as any, direction), aggregateSafe: false });
+    return this;
+  }
+
+  orderByPivotDesc(column: string): this {
+    return this.orderByPivot(column, "desc");
   }
 
   withPivotValue<K extends string>(column: K, value: any): BelongsToMany<T, RelatedFixed, PivotFixed | StripTablePrefix<K>> {
@@ -456,7 +530,7 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
     query.whereColumn(`${this.table}.${this.foreignPivotKey}`, "=", `${parentTable}.${this.parentKey}`);
     this.applyPivotWheres(query);
     this.applyAggregateSafeConstraintsTo(query);
-    if (callback) callback(query);
+    if (callback) query.applyRelationConstraint(callback as any);
     return query;
   }
 

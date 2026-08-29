@@ -180,10 +180,17 @@ export interface PivotQueryBuilder {
   wherePivotIn(column: string, values: any[]): any;
   wherePivotNotIn(column: string, values: any[]): any;
   orWherePivotIn(column: string, values: any[]): any;
+  orWherePivotNotIn(column: string, values: any[]): any;
   wherePivotNull(column: string): any;
   wherePivotNotNull(column: string): any;
   orWherePivotNull(column: string): any;
+  orWherePivotNotNull(column: string): any;
   wherePivotBetween(column: string, values: [any, any]): any;
+  orWherePivotBetween(column: string, values: [any, any]): any;
+  wherePivotNotBetween(column: string, values: [any, any]): any;
+  orWherePivotNotBetween(column: string, values: [any, any]): any;
+  orderByPivot(column: string, direction?: "asc" | "desc"): any;
+  orderByPivotDesc(column: string): any;
   withPivotValue(column: string, value: any): any;
 }
 
@@ -736,7 +743,7 @@ export abstract class Relation<T extends ModelType = ModelType> {
     const query = (this.related as any).on(parentQuery.connection).selectRaw(aggregate);
     query.whereColumn(`${this.related.getQualifiedTable(parentQuery.connection)}.${this.foreignKey}`, "=", `${parentQuery.tableName}.${this.localKey}`);
     this.applyAggregateSafeConstraintsTo(query);
-    if (callback) callback(query);
+    if (callback) query.applyRelationConstraint(callback as any);
     return query;
   }
 
@@ -1000,7 +1007,7 @@ export class BelongsTo<T extends ModelType = ModelType> extends Relation<T> {
     const query = (this.related as any).on(parentQuery.connection).selectRaw(aggregate);
     query.whereColumn(`${this.related.getQualifiedTable(parentQuery.connection)}.${this.localKey}`, "=", `${parentQuery.tableName}.${this.foreignKey}`);
     this.applyAggregateSafeConstraintsTo(query);
-    if (callback) callback(query);
+    if (callback) query.applyRelationConstraint(callback as any);
     return query;
   }
 }
@@ -1101,7 +1108,7 @@ export class HasManyThrough<T extends ModelType = ModelType> extends Relation<T>
     );
     query.whereColumn(`${throughTable}.${this.firstKey}`, "=", `${parentQuery.tableName}.${this.localKey}`);
     this.applyAggregateSafeConstraintsTo(query);
-    if (callback) callback(query);
+    if (callback) query.applyRelationConstraint(callback as any);
     return query;
   }
 }

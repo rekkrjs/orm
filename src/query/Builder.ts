@@ -42,7 +42,8 @@ function resolveResultField(row: Record<string, any> | undefined, field: string)
 type RelationConstraint<TModel = any, TRelation extends string = string> = (query: RelationConstraintQuery<TModel, TRelation>) => void | Builder<any> | RelationConstraintQuery<TModel, TRelation>;
 type ExistsConstraintMap<TResult> = Record<string, RelationConstraint<TResult, any> | undefined>;
 type RelatedColumn<TResult, R extends string> = ModelColumn<RelationRelatedModel<TResult, R>>;
-type RelationShortcutInput = Model | Model[] | Collection<Model>;
+type RelationModelInput = { getAttribute(key: string): any };
+type RelationShortcutInput = RelationModelInput | RelationModelInput[] | Collection<any>;
 type RecursiveCteDefinition = {
   name: string;
   anchor: Builder<any, any, any> | string;
@@ -1381,34 +1382,60 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return callback(this);
   }
 
-  whereBelongsTo<R extends string & BelongsToRelationName<TResult>>(relationName: R, model: RelationShortcutInput): this {
+  /** @internal Keep OR clauses added by a relation callback inside its correlation predicate. */
+  applyRelationConstraint(callback: (query: this) => unknown): this {
+    const offset = this.wheres.length;
+    callback(this);
+    const added = this.wheres.splice(offset);
+    if (added.some((where) => where.boolean === "or")) {
+      this.wheres.push({ type: "nested", column: "", query: added, boolean: "and", scope: undefined });
+    } else {
+      this.wheres.push(...added);
+    }
+    return this;
+  }
+
+  whereBelongsTo<R extends string & BelongsToRelationName<TResult>>(relationName: R, model: RelationShortcutInput, boolean: "and" | "or" = "and"): this {
+    boolean = validBoolean(boolean);
     const models = this.normalizeRelationShortcutModels(model);
-    if (models.length === 0) return this.whereRaw("0 = 1");
+    if (models.length === 0) return this.whereRaw("0 = 1", [], boolean);
     const { relation } = this.resolveRelationShortcut(models[0], relationName, "belongsTo");
     const foreignKey = relation.getForeignKeyName();
     const ownerKey = relation.getOwnerKeyName();
     const values = models.map((item) => item.getAttribute(ownerKey)).filter((value) => value !== undefined && value !== null);
 
-    if (values.length === 0) return this.whereRaw("0 = 1");
+    if (values.length === 0) return this.whereRaw("0 = 1", [], boolean);
     return values.length === 1
-      ? this.where(foreignKey as any, values[0])
-      : this.whereIn(foreignKey as any, values as any[]);
+      ? this.where(foreignKey as any, "=", values[0], boolean)
+      : this.whereIn(foreignKey as any, values as any[], boolean);
   }
 
-  whereAttachedTo<R extends string & AttachedToRelationName<TResult>>(relationName: R, model: RelationShortcutInput): this {
+  orWhereBelongsTo<R extends string & BelongsToRelationName<TResult>>(relationName: R, model: RelationShortcutInput): this {
+    return this.whereBelongsTo(relationName, model, "or");
+  }
+
+  whereAttachedTo<R extends string & AttachedToRelationName<TResult>>(relationName: R, model: RelationShortcutInput, boolean: "and" | "or" = "and"): this {
+    boolean = validBoolean(boolean);
     const models = this.normalizeRelationShortcutModels(model);
-    if (models.length === 0) return this.whereRaw("0 = 1");
+    if (models.length === 0) return this.whereRaw("0 = 1", [], boolean);
     const shortcut = this.resolveRelationShortcut(models[0], relationName, "attachedTo");
     const relatedKey = shortcut.relation.getRelatedKeyName();
     const values = models.map((item) => item.getAttribute(relatedKey)).filter((value) => value !== undefined && value !== null);
 
-    if (values.length === 0) return this.whereRaw("0 = 1");
-    return this.whereHas(shortcut.name as any, (query: Builder<any>) => {
+    if (values.length === 0) return this.whereRaw("0 = 1", [], boolean);
+    const callback = (query: Builder<any>) => {
       const column = shortcut.relation.qualifyRelatedColumn(relatedKey);
       values.length === 1
         ? query.where(column as any, values[0])
         : query.whereIn(column as any, values as any[]);
-    }) as this;
+    };
+    return boolean === "or"
+      ? this.orWhereHas(shortcut.name as any, callback as any)
+      : this.whereHas(shortcut.name as any, callback as any);
+  }
+
+  orWhereAttachedTo<R extends string & AttachedToRelationName<TResult>>(relationName: R, model: RelationShortcutInput): this {
+    return this.whereAttachedTo(relationName, model, "or");
   }
 
   has<R extends ModelRelationName<TResult>>(relationName: R, operator: string | RelationConstraint<TResult, R> = ">=", count: number = 1, callback?: RelationConstraint<TResult, R>): this {
@@ -1467,12 +1494,38 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     }) as this;
   }
 
+  whereDoesntHaveRelation<R extends string & ModelRelationName<TResult>>(relationName: R, column: RelatedColumn<TResult, R>, operator: string | any, value?: any): this;
+  whereDoesntHaveRelation(relationName: LiteralUnion<string & ModelRelationName<TResult>>, column: ModelColumn<T>, operator: string | any, value?: any): this;
+  whereDoesntHaveRelation(relationName: string, column: ModelColumn<T>, operator: string | any, value?: any): this {
+    return this.whereDoesntHave(relationName as any, ((query: Builder<any>) => {
+      value === undefined ? query.where(column as any, operator) : query.where(column as any, operator, value);
+    }) as any);
+  }
+
+  orWhereDoesntHaveRelation<R extends string & ModelRelationName<TResult>>(relationName: R, column: RelatedColumn<TResult, R>, operator: string | any, value?: any): this;
+  orWhereDoesntHaveRelation(relationName: LiteralUnion<string & ModelRelationName<TResult>>, column: ModelColumn<T>, operator: string | any, value?: any): this;
+  orWhereDoesntHaveRelation(relationName: string, column: ModelColumn<T>, operator: string | any, value?: any): this {
+    return this.orWhereDoesntHave(relationName as any, ((query: Builder<any>) => {
+      value === undefined ? query.where(column as any, operator) : query.where(column as any, operator, value);
+    }) as any);
+  }
+
+  withWhereRelation<R extends string & ModelRelationName<TResult>>(relationName: R, column: RelatedColumn<TResult, R>, operator: string | any, value?: any): Builder<T, WithLoadedRelations<TResult, R>, TSelected>;
+  withWhereRelation(relationName: LiteralUnion<string & ModelRelationName<TResult>>, column: ModelColumn<T>, operator: string | any, value?: any): Builder<T, WithLoadedRelations<TResult, string>, TSelected>;
+  withWhereRelation(relationName: string, column: ModelColumn<T>, operator: string | any, value?: any): any {
+    const callback = (query: Builder<any>) => {
+      value === undefined ? query.where(column as any, operator) : query.where(column as any, operator, value);
+    };
+    this.whereHas(relationName as any, callback as any);
+    return this.with(relationName as any, callback as any);
+  }
+
   withWhereHas<R extends TypedEagerLoad<T>>(
     relation: R,
     callback?: RelationConstraint<any, any>
   ): Builder<T, WithLoadedRelations<TResult, ExtractStringPaths<R>>, TSelected> {
     this.whereHas(relation as string, callback);
-    return (this as any).with(relation);
+    return callback ? (this as any).with(relation, callback) : (this as any).with(relation);
   }
 
   doesntHave<R extends ModelRelationName<TResult>>(relationName: R, callback?: RelationConstraint<TResult, R>): this {
@@ -1559,16 +1612,20 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     });
   }
 
-  whereMorphedTo<R extends MorphToRelationName<TResult>>(relationName: R, model: Model | ModelConstructor | string): this {
+  whereMorphedTo<R extends MorphToRelationName<TResult>>(relationName: R, model: RelationModelInput | ModelConstructor | string): this {
     return this.applyWhereMorphedTo(relationName, model, "and", false);
   }
 
-  orWhereMorphedTo<R extends MorphToRelationName<TResult>>(relationName: R, model: Model | ModelConstructor | string): this {
+  orWhereMorphedTo<R extends MorphToRelationName<TResult>>(relationName: R, model: RelationModelInput | ModelConstructor | string): this {
     return this.applyWhereMorphedTo(relationName, model, "or", false);
   }
 
-  whereNotMorphedTo<R extends MorphToRelationName<TResult>>(relationName: R, model: Model | ModelConstructor | string): this {
+  whereNotMorphedTo<R extends MorphToRelationName<TResult>>(relationName: R, model: RelationModelInput | ModelConstructor | string): this {
     return this.applyWhereMorphedTo(relationName, model, "and", true);
+  }
+
+  orWhereNotMorphedTo<R extends MorphToRelationName<TResult>>(relationName: R, model: RelationModelInput | ModelConstructor | string): this {
+    return this.applyWhereMorphedTo(relationName, model, "or", true);
   }
 
   withCount<R extends string & ModelRelationName<TResult>, A extends string | undefined = undefined>(relationName: R, alias?: A): Builder<T, WithRelationCount<TResult, R, A>, TSelected>;
@@ -2765,7 +2822,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     }
   }
 
-  private applyWhereMorphedTo(relationName: string, model: Model | ModelConstructor | string, boolean: "and" | "or", not: boolean): this {
+  private applyWhereMorphedTo(relationName: string, model: RelationModelInput | ModelConstructor | string, boolean: "and" | "or", not: boolean): this {
     if (!this.model) {
       throw new Error(`Cannot query morph relation "${relationName}" without a model`);
     }
@@ -2782,7 +2839,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     const idColumn = relation.getIdColumn();
     const type = this.morphTypeFor(model);
     const id = typeof model === "object" && typeof (model as any).getAttribute === "function"
-      ? (model as Model).getAttribute(((Object.getPrototypeOf(model).constructor as any).primaryKey || "id") as any)
+      ? model.getAttribute(((Object.getPrototypeOf(model).constructor as any).primaryKey || "id") as any)
       : undefined;
 
     if (!not) {
@@ -2800,7 +2857,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     }, undefined, undefined, boolean);
   }
 
-  private morphTypeFor(model: Model | ModelConstructor | string): string {
+  private morphTypeFor(model: RelationModelInput | ModelConstructor | string): string {
     if (typeof model === "string") return model;
     if (typeof model === "function") return (model as any).morphName || (model as any).name;
     const constructor = Object.getPrototypeOf(model).constructor as any;
@@ -3468,12 +3525,12 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return new Date().toISOString().slice(0, 10);
   }
 
-  private normalizeRelationShortcutModels(input: RelationShortcutInput): Model[] {
+  private normalizeRelationShortcutModels(input: RelationShortcutInput): RelationModelInput[] {
     return (input instanceof Collection ? input.all() : Array.isArray(input) ? input : [input])
-      .filter((item): item is Model => Boolean(item) && typeof (item as any).getAttribute === "function");
+      .filter((item): item is RelationModelInput => Boolean(item) && typeof (item as any).getAttribute === "function");
   }
 
-  private resolveRelationShortcut(target: Model, relationName: string | undefined, kind: "belongsTo" | "attachedTo"): { name: string; relation: any } {
+  private resolveRelationShortcut(target: RelationModelInput, relationName: string | undefined, kind: "belongsTo" | "attachedTo"): { name: string; relation: any } {
     if (!this.model) {
       throw new Error(`Cannot query ${kind} relation without a model`);
     }
@@ -3497,7 +3554,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return candidates[0];
   }
 
-  private getRelationShortcutCandidates(target: Model, kind: "belongsTo" | "attachedTo"): Array<{ name: string; relation: any }> {
+  private getRelationShortcutCandidates(target: RelationModelInput, kind: "belongsTo" | "attachedTo"): Array<{ name: string; relation: any }> {
     const candidates: Array<{ name: string; relation: any }> = [];
     const instance = new (this.model as any)();
     const seen = new Set<string>();
@@ -3532,7 +3589,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return typeof relation.getRelatedKeyName === "function" && typeof relation.getRelatedPivotKeyName === "function";
   }
 
-  private relationTargetsModel(relation: any, target: Model): boolean {
+  private relationTargetsModel(relation: any, target: RelationModelInput): boolean {
     const related = relation.getRelatedModelConstructor?.();
     if (!related) return false;
     const targetConstructor = Object.getPrototypeOf(target).constructor as ModelConstructor;
