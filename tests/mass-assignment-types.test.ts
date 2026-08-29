@@ -85,12 +85,15 @@ function typeAssertions(): void {
 
     ProtectedUser.firstOrNew({ admin: true }, { name: "Search criteria remain broad" });
     ProtectedUser.firstOrCreate({ admin: true }, { name: "Search criteria remain broad" });
+    ProtectedUser.createOrFirst({ admin: true }, { name: "Search criteria remain broad" });
     ProtectedUser.updateOrCreate({ admin: true }, { name: "Search criteria remain broad" });
     ProtectedUser.updateOrInsert({ admin: true }, { name: "Search criteria remain broad" });
     // @ts-expect-error firstOrNew values are protected.
     ProtectedUser.firstOrNew({ id: 1 }, { admin: true });
     // @ts-expect-error firstOrCreate values are protected.
     ProtectedUser.firstOrCreate({ id: 1 }, { admin: true });
+    // @ts-expect-error createOrFirst values are protected.
+    ProtectedUser.createOrFirst({ id: 1 }, { admin: true });
     // @ts-expect-error updateOrCreate values are protected.
     ProtectedUser.updateOrCreate({ id: 1 }, { admin: true });
     // @ts-expect-error updateOrInsert values are protected.

@@ -74,6 +74,7 @@ interface ModelType<T extends Record<string, any> = any> {
   $hidden: string[];
   $visible: string[];
   $appends: string[];
+  $appendsOverride?: string[];
   $wasRecentlyCreated: boolean;
   getAttribute(key: string): any;
   setAttribute(key: string, value: any): void;
@@ -83,26 +84,26 @@ interface ModelType<T extends Record<string, any> = any> {
   fill(attributes: Partial<T>): this;
   forceFill(attributes: Partial<T>): this;
   save(options?: any): Promise<this>;
-  setRelation(name: string, value: any): void;
+  setRelation(name: string, value: any): this;
   getRelation(name: string): any;
   isInstanceOf<M extends ModelConstructor<any>>(modelClass: M): this is InstanceType<M>;
 }
 
 type BaseModelInstanceKey =
   | "$attributes" | "$original" | "$changes" | "$exists" | "$relations"
-  | "$casts" | "$castCache" | "$mergedCasts" | "$dirtyKeys" | "$connection" | "$hidden" | "$visible" | "$appends"
+  | "$casts" | "$castCache" | "$mergedCasts" | "$dirtyKeys" | "$connection" | "$hidden" | "$visible" | "$appends" | "$appendsOverride"
   | "$wasRecentlyCreated" | "fill" | "setConnection" | "getConnection"
   | "forceFill"
   | "isFillable" | "getAttribute" | "setAttribute" | "castAttribute"
-  | "serializeCastAttribute" | "mergeCasts" | "getDirty" | "isDirty" | "isClean"
+  | "serializeCastAttribute" | "mergeCasts" | "getDirty" | "isDirty" | "isClean" | "only" | "except"
   | "wasChanged" | "getChanges" | "getOriginal" | "syncOriginal" | "discardChanges"
-  | "replicate" | "makeHidden" | "makeHiddenIf"
-  | "makeVisible" | "makeVisibleIf" | "append" | "setAppends" | "getAppends" | "save" | "update" | "updateQuietly"
+  | "replicate" | "makeHidden" | "makeHiddenIf" | "qualifyColumn" | "qualifyColumns"
+  | "makeVisible" | "makeVisibleIf" | "append" | "setAppends" | "mergeAppends" | "hasAppended" | "withoutAppends" | "getAppends" | "save" | "update" | "updateQuietly"
   | "updateTimestamps" | "touch" | "increment" | "decrement" | "is" | "isNot" | "isInstanceOf"
   | "load" | "loadMissing" | "loadMorph" | "loadCount" | "loadSum" | "loadAvg" | "loadMin"
   | "loadMax" | "delete" | "saveQuietly" | "deleteQuietly" | "restore"
   | "forceDelete" | "fresh" | "refresh" | "toJSON" | "json" | "toString" | "freshTimestamp"
-  | "setRelation" | "getRelation" | "hasMany" | "belongsTo" | "hasOne"
+  | "setRelation" | "getRelation" | "relationLoaded" | "setRelations" | "unsetRelation" | "unsetRelations" | "hasMany" | "belongsTo" | "hasOne"
   | "hasManyThrough" | "hasOneThrough" | "belongsToMany" | "morphTo" | "morphOne"
   | "morphMany" | "morphToMany" | "morphedByMany";
 

@@ -229,6 +229,53 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
         required_value: "first",
       });
 
+      const directlyCreated = await ContractUniqueRecord.on(connection).createOrFirst({
+        email: `create-or-first-${driver}@example.test`,
+      }, {
+        required_value: "created",
+      });
+      const recovered = await ContractUniqueRecord.on(connection).createOrFirst({
+        email: `create-or-first-${driver}@example.test`,
+      }, {
+        required_value: "must not overwrite",
+      });
+      expect(recovered.getAttribute("id")).toBe(directlyCreated.getAttribute("id"));
+      expect(recovered.getAttribute("required_value")).toBe("created");
+
+      await connection.transaction(async (transaction) => {
+        await ContractUniqueRecord.on(transaction).createOrFirst({
+          email: `create-or-first-${driver}@example.test`,
+        }, {
+          required_value: "savepoint conflict",
+        });
+        await ContractUniqueRecord.on(transaction).createOrFirst({
+          email: `after-savepoint-${driver}@example.test`,
+        }, {
+          required_value: "transaction remains usable",
+        });
+      });
+      expect(await ContractUniqueRecord.on(connection).where("email", `after-savepoint-${driver}@example.test`).count()).toBe(1);
+
+      const config = connection.getConfig();
+      const concurrentConnection = driver === "sqlite"
+        ? connection
+        : new Connection({ ...config, max: 5 });
+      try {
+        const concurrent = await Promise.all(Array.from({ length: 16 }, () =>
+          ContractUniqueRecord.on(concurrentConnection).createOrFirst({
+            email: `concurrent-create-or-first-${driver}@example.test`,
+          }, {
+            required_value: "winner",
+          })
+        ));
+        expect(new Set(concurrent.map((record) => record.getAttribute("id"))).size).toBe(1);
+        expect(await ContractUniqueRecord.on(connection)
+          .where("email", `concurrent-create-or-first-${driver}@example.test`)
+          .count()).toBe(1);
+      } finally {
+        if (concurrentConnection !== connection) await concurrentConnection.close();
+      }
+
       // On MySQL this model path goes through runAndGetMysqlInsertId() on a
       // reserved session, which must classify the failed INSERT before trying
       // to read LAST_INSERT_ID().

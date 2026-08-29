@@ -17,6 +17,8 @@
     "tests/eloquent-ergonomics.test.ts",
     "tests/laravel-syntax-sugar.test.ts",
     "tests/laravel-relation-pivot-sugar.test.ts",
+    "tests/laravel-p1-sugar.test.ts",
+    "tests/laravel-p2-static-forwarding.test.ts",
     "tests/model-timestamps.test.ts",
     "tests/native-appends.test.ts",
     "tests/schema-types.test.ts",

@@ -565,7 +565,7 @@ await user.delete();
 connection without applying global scopes. This lets an already-hydrated model
 reload itself after a soft delete; it does not expose unrelated rows.
 
-### `firstOrNew` / `firstOrCreate` / `updateOrInsert`
+### `firstOrNew` / `firstOrCreate` / `createOrFirst` / `updateOrCreate` / `updateOrInsert`
 
 ```ts
 // firstOrNew — find or instantiate; does NOT save automatically
@@ -582,14 +582,29 @@ const persistedUser = await User.firstOrCreate(
   { name: "Alice" },
 );
 
-// updateOrInsert — update if exists, otherwise insert
+// createOrFirst — insert first; on a UNIQUE conflict, fetch the existing row
+const likelyNewUser = await User.createOrFirst(
+  { email: "new@example.com" },
+  { name: "New User" },
+);
+
+// updateOrCreate — update if found, otherwise create and return the model
+const updatedUser = await User.updateOrCreate(
+  { email: "alice@example.com" },
+  { name: "Alice Smith", active: true },
+);
+
+// updateOrInsert — update if found, otherwise insert; returns a boolean
 await User.updateOrInsert(
   { email: "alice@example.com" },
   { name: "Alice Smith", active: true },
 );
 ```
 
-These are great for idempotent imports, OAuth login flows, and "ensure this record exists" scripts.
+`firstOrCreate()` starts with a lookup and delegates a miss to `createOrFirst()`.
+Use `createOrFirst()` when rows are usually new: it avoids that initial lookup and
+recovers from a concurrent UNIQUE collision by fetching the winning row. Both forms
+preserve other builder constraints when fetching an existing row.
 
 ### `replicate`
 

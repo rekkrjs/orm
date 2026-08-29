@@ -99,6 +99,140 @@ describe.serial("UniqueConstraintViolationError on SQLite", () => {
     ));
   });
 
+  test("createOrFirst inserts first and returns the existing row after a UNIQUE conflict", async () => {
+    const { statements } = await connection.pretend(() => UniqueRecord.on(connection).createOrFirst(
+      { email: "pretend-create-or-first@example.test" },
+      { required_value: "pretend" },
+    ));
+    expect(statements.some(({ sql }) => /^insert\s+into\s+/i.test(sql))).toBe(true);
+    expect(statements.some(({ sql }) => /select\b.*\bfrom\s+["`]?unique_error_records["`]?.*\bwhere\b/is.test(sql))).toBe(false);
+
+    const created = await UniqueRecord.on(connection).createOrFirst(
+      { email: "create-or-first@example.test" },
+      { required_value: "created" },
+    );
+    const existing = await UniqueRecord.on(connection).createOrFirst(
+      { email: "create-or-first@example.test" },
+      { required_value: "must not overwrite" },
+    );
+
+    expect(created.$wasRecentlyCreated).toBe(true);
+    expect(existing.$wasRecentlyCreated).toBe(false);
+    expect(existing.getAttribute("id")).toBe(created.getAttribute("id"));
+    expect(existing.getAttribute("required_value")).toBe("created");
+    expect(await UniqueRecord.on(connection).where("email", "create-or-first@example.test").count()).toBe(1);
+  });
+
+  test("createOrFirst rethrows conflicts that its attributes do not identify", async () => {
+    await UniqueRecord.on(connection).createOrFirst(
+      { email: "other-unique-key@example.test" },
+      { required_value: "original" },
+    );
+
+    const unrelatedConflict = await caught(UniqueRecord.on(connection).createOrFirst(
+      { required_value: "different lookup" },
+      { email: "other-unique-key@example.test" },
+    ));
+    expectWrappedSqliteUnique(unrelatedConflict);
+
+    const constrainedFallback = await caught(
+      UniqueRecord.on(connection)
+        .where("required_value", "excluded by builder constraint")
+        .createOrFirst(
+          { email: "other-unique-key@example.test" },
+          { required_value: "attempted" },
+        )
+    );
+    expectWrappedSqliteUnique(constrainedFallback);
+  });
+
+  test("createOrFirst only catches UNIQUE violations", async () => {
+    const notNull = await caught(UniqueRecord.on(connection).createOrFirst({
+      email: "create-or-first-not-null@example.test",
+    }));
+    expect(notNull).toBeInstanceOf(SQL.SQLiteError);
+    expect(notNull).not.toBeInstanceOf(UniqueConstraintViolationError);
+    expect((notNull as SQL.SQLiteError).code).toBe("SQLITE_CONSTRAINT_NOTNULL");
+  });
+
+  test("createOrFirst contains a failed insert in a savepoint", async () => {
+    await connection.transaction(async (transaction) => {
+      const existing = await UniqueRecord.on(transaction).createOrFirst(
+        { email: "create-or-first@example.test" },
+        { required_value: "must not overwrite" },
+      );
+      expect(existing.getAttribute("required_value")).toBe("created");
+
+      await UniqueRecord.on(transaction).createOrFirst(
+        { email: "after-savepoint@example.test" },
+        { required_value: "transaction remains usable" },
+      );
+    });
+
+    expect(await UniqueRecord.on(connection).where("email", "after-savepoint@example.test").count()).toBe(1);
+  });
+
+  test("concurrent create helpers converge on one row", async () => {
+    const direct = await Promise.all(Array.from({ length: 12 }, () =>
+      UniqueRecord.on(connection).createOrFirst(
+        { email: "concurrent-create-or-first@example.test" },
+        { required_value: "winner" },
+      )
+    ));
+    expect(new Set(direct.map((record) => record.getAttribute("id"))).size).toBe(1);
+    expect(await UniqueRecord.on(connection).where("email", "concurrent-create-or-first@example.test").count()).toBe(1);
+
+    const selected = await Promise.all(Array.from({ length: 12 }, () =>
+      UniqueRecord.on(connection).firstOrCreate(
+        { email: "concurrent-first-or-create@example.test" },
+        { required_value: "winner" },
+      )
+    ));
+    expect(new Set(selected.map((record) => record.getAttribute("id"))).size).toBe(1);
+    expect(await UniqueRecord.on(connection).where("email", "concurrent-first-or-create@example.test").count()).toBe(1);
+  });
+
+  test("updateOrCreate delegates creation safely and updates only existing rows", async () => {
+    const created = await UniqueRecord.on(connection).updateOrCreate(
+      { email: "update-or-create@example.test" },
+      { required_value: "created once" },
+    );
+    expect(created.$wasRecentlyCreated).toBe(true);
+
+    const updated = await UniqueRecord.on(connection).updateOrCreate(
+      { email: "update-or-create@example.test" },
+      { required_value: "updated" },
+    );
+    expect(updated.$wasRecentlyCreated).toBe(false);
+    expect(updated.getAttribute("id")).toBe(created.getAttribute("id"));
+    expect(updated.getAttribute("required_value")).toBe("updated");
+    expect(await UniqueRecord.on(connection).where("email", "update-or-create@example.test").count()).toBe(1);
+  });
+
+  test("updateOrCreate updates a freshly cached identity-map instance", async () => {
+    await UniqueRecord.useIdentityMap(async () => {
+      const created = await UniqueRecord.on(connection).createOrFirst(
+        { email: "identity-update-or-create@example.test" },
+        { required_value: "created" },
+      );
+      expect(created.$wasRecentlyCreated).toBe(true);
+
+      const updated = await UniqueRecord.on(connection).updateOrCreate(
+        { email: "identity-update-or-create@example.test" },
+        { required_value: "updated despite cached creation state" },
+      );
+      expect(updated).toBe(created);
+      expect(updated.$wasRecentlyCreated).toBe(false);
+      expect(updated.getAttribute("required_value")).toBe("updated despite cached creation state");
+    });
+  });
+
+  test("createOrFirst requires a model-backed builder", async () => {
+    await expect(new Builder(connection, "unique_error_records").createOrFirst({
+      email: "raw-builder@example.test",
+    })).rejects.toThrow("createOrFirst requires a model to be set on the builder");
+  });
+
   test("keeps insertOrIgnore behavior and non-unique constraint errors unchanged", async () => {
     const before = await new Builder(connection, "unique_error_records").count();
     await new Builder(connection, "unique_error_records").insertOrIgnore({

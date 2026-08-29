@@ -1,4 +1,5 @@
 import { Connection } from "../connection/Connection.js";
+import { UniqueConstraintViolationError } from "../connection/UniqueConstraintViolationError.js";
 import { TransactionContext } from "../connection/TransactionContext.js";
 import { Cache } from "../cache/index.js";
 import { MorphTo } from "../model/MorphRelations.js";
@@ -2441,25 +2442,47 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
 
   async firstOrCreate(attributes: ModelAttributeInput<T> = {}, values: ModelMassAssignmentInput<T> = {}): Promise<T> {
     const found = await this.clone().where(attributes as any).first() as T | null;
-    if (found) return found;
-    const instance = this.newModelForCreation("firstOrCreate", attributes, values);
-    await instance.save();
-    return instance;
+    return found ?? this.createOrFirst(attributes, values);
+  }
+
+  private async createOrFirstResult(
+    attributes: ModelAttributeInput<T>,
+    values: ModelMassAssignmentInput<T>,
+  ): Promise<{ model: T; created: boolean }> {
+    const instance = this.newModelForCreation("createOrFirst", attributes, values);
+    const useSavepoint = this.connection.isInTransaction();
+    if (useSavepoint) await this.connection.beginTransaction();
+
+    try {
+      await instance.save();
+      if (useSavepoint) await this.connection.commit();
+      return { model: instance, created: true };
+    } catch (error) {
+      if (useSavepoint) await this.connection.rollback();
+      if (!(error instanceof UniqueConstraintViolationError)) throw error;
+      const found = await this.clone().where(attributes as any).first() as T | null;
+      if (!found) throw error;
+      return { model: found, created: false };
+    }
+  }
+
+  async createOrFirst(attributes: ModelAttributeInput<T> = {}, values: ModelMassAssignmentInput<T> = {}): Promise<T> {
+    return (await this.createOrFirstResult(attributes, values)).model;
   }
 
   async updateOrCreate(attributes: ModelAttributeInput<T>, values: ModelMassAssignmentInput<T> = {}): Promise<T> {
-    const found = await this.clone().where(attributes as any).first() as T | null;
-    if (found) {
-      const model = found as any;
-      if (typeof model.fill === "function") {
-        model.fill(values);
-        await model.save();
-      }
-      return found;
+    let model = await this.clone().where(attributes as any).first() as T | null;
+    if (!model) {
+      const result = await this.createOrFirstResult(attributes, values);
+      if (result.created) return result.model;
+      model = result.model;
     }
-    const instance = this.newModelForCreation("updateOrCreate", attributes, values);
-    await instance.save();
-    return instance;
+    const instance = model as any;
+    if (typeof instance.fill === "function") {
+      instance.fill(values);
+      await instance.save();
+    }
+    return model;
   }
 
   async pluck<K extends ModelColumn<T>>(column: K): Promise<ModelColumnValue<T, K>[]>;

@@ -24,7 +24,7 @@ export { Builder, CursorPaginator, Paginator, SimplePaginator } from "./query/Bu
 export type { LikeOptions } from "./query/Builder.js";
 export type { CursorPaginatorJson, NumericAggregate, PaginatorJson, SimplePaginatorJson } from "./query/Builder.js";
 export { DB } from "./query/DB.js";
-export { Collection, collect } from "./support/Collection.js";
+export { Collection, ItemNotFoundError, MultipleItemsFoundError, collect } from "./support/Collection.js";
 export { Cache, RedisCacheStore, MemoryCacheStore } from "./cache/index.js";
 export type { CacheConfig, CacheStore, CacheRememberOptions, RedisCacheStoreOptions } from "./cache/index.js";
 

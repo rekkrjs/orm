@@ -109,17 +109,34 @@ export class ModelSerialization<T extends Record<string, any> = any> extends Mod
 
   append<K extends string>(...keys: (K | readonly K[])[]): this & Record<K, any> {
     const flat = keys.flat();
-    this.$appends = [...new Set([...this.$appends, ...flat])];
+    if (this.$appendsOverride !== undefined) {
+      this.$appendsOverride = [...new Set([...this.$appendsOverride, ...flat])];
+    } else {
+      this.$appends = [...new Set([...this.$appends, ...flat])];
+    }
     return this as this & Record<K, any>;
   }
 
   setAppends<K extends string>(keys: readonly K[]): this & Record<K, any> {
-    this.$appends = [...keys];
+    this.$appendsOverride = [...keys];
     return this as this & Record<K, any>;
+  }
+
+  mergeAppends<K extends string>(keys: readonly K[]): this & Record<K, any> {
+    return this.setAppends([...new Set([...this.getAppends(), ...keys])]);
+  }
+
+  hasAppended(key: string): boolean {
+    return this.getAppends().includes(key);
+  }
+
+  withoutAppends(): this {
+    return this.setAppends([]);
   }
 
   getAppends(): string[] {
     const target = getModelTarget(this);
+    if (target.$appendsOverride !== undefined) return [...target.$appendsOverride];
     // The raw hot path deliberately bypasses getModelConstructor() overrides.
     const constructor = target.constructor as typeof ModelPersistence;
     return [...new Set([...(constructor.appends || []), ...target.$appends])];
@@ -148,7 +165,7 @@ export class ModelSerialization<T extends Record<string, any> = any> extends Mod
       const needsCastPath = Boolean(accessors[key]?.get) || (cast !== undefined && !castValueIsReady(cast, value));
       result[key] = needsCastPath ? target.getAttributeFromTarget(receiver, key) : value;
     }
-    if ((constructor.appends?.length || 0) > 0 || target.$appends.length > 0) {
+    if (target.$appendsOverride !== undefined || (constructor.appends?.length || 0) > 0 || target.$appends.length > 0) {
       // Bind the Proxy intentionally so getAppends() overrides keep public
       // attribute lookup semantics.
       for (const key of target.getAppends.call(this)) {

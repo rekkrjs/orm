@@ -143,6 +143,14 @@ export class Blueprint {
     return this;
   }
 
+  private addIncrementColumn(type: "integer" | "bigInteger" | "smallInteger" | "tinyInteger", name: string): this {
+    this.addColumn(type, name);
+    this.currentColumn!.autoIncrement = true;
+    this.currentColumn!.primary = true;
+    this.currentColumn!.unsigned = true;
+    return this;
+  }
+
   private addTemporalColumn(type: "dateTime" | "time" | "timestamp", name: string, precision?: number): this {
     if (precision !== undefined && (!Number.isInteger(precision) || precision < 0 || precision > 6)) {
       throw new RangeError("Temporal precision must be an integer between 0 and 6.");
@@ -182,11 +190,19 @@ export class Blueprint {
   }
 
   increments(name: string = "id"): this {
-    const col = this.addColumn("integer", name);
-    col.currentColumn!.autoIncrement = true;
-    col.currentColumn!.primary = true;
-    col.currentColumn!.unsigned = true;
-    return this;
+    return this.addIncrementColumn("integer", name);
+  }
+
+  integerIncrements(name: string): this {
+    return this.increments(name);
+  }
+
+  smallIncrements(name: string): this {
+    return this.addIncrementColumn("smallInteger", name);
+  }
+
+  tinyIncrements(name: string): this {
+    return this.addIncrementColumn("tinyInteger", name);
   }
 
   /** The conventional auto-incrementing big integer primary key. Alias of bigIncrements(). */
@@ -195,11 +211,7 @@ export class Blueprint {
   }
 
   bigIncrements(name: string = "id"): this {
-    const col = this.addColumn("bigInteger", name);
-    col.currentColumn!.autoIncrement = true;
-    col.currentColumn!.primary = true;
-    col.currentColumn!.unsigned = true;
-    return this;
+    return this.addIncrementColumn("bigInteger", name);
   }
 
   string(name: string, length: number = 255): this {
@@ -311,12 +323,20 @@ export class Blueprint {
     return this.addColumn("uuid", name);
   }
 
+  ulid(name: string = "ulid", length: number = 26): this {
+    return this.char(name, length);
+  }
+
   foreignId(name: string): this {
     return this.bigInteger(name).unsigned();
   }
 
   foreignUuid(name: string): this {
     return this.uuid(name);
+  }
+
+  foreignUlid(name: string, length: number = 26): this {
+    return this.ulid(name, length);
   }
 
   enum(name: string, values: readonly string[]): this {
@@ -516,6 +536,10 @@ export class Blueprint {
     this.addTimestampColumns("timestamp", "timestamps", arguments);
   }
 
+  nullableTimestamps(precision?: number): void {
+    this.timestamps({ precision });
+  }
+
   datetimes(): void;
   datetimes(options: { precision?: number }): void;
   datetimes(createdAtColumn: string, updatedAtColumn: string, options?: { precision?: number }): void;
@@ -574,6 +598,22 @@ export class Blueprint {
       [`${name}_type`, `${name}_id`],
       `${this.table}_${name}_type_${name}_id_index`,
     );
+  }
+
+  ulidMorphs(name: string, indexName?: string, after?: string): void {
+    this.string(`${name}_type`);
+    if (after !== undefined) this.after(after);
+    this.ulid(`${name}_id`);
+    if (after !== undefined) this.after(`${name}_type`);
+    this.index([`${name}_type`, `${name}_id`], indexName);
+  }
+
+  nullableUlidMorphs(name: string, indexName?: string, after?: string): void {
+    this.string(`${name}_type`).nullable();
+    if (after !== undefined) this.after(after);
+    this.ulid(`${name}_id`).nullable();
+    if (after !== undefined) this.after(`${name}_type`);
+    this.index([`${name}_type`, `${name}_id`], indexName);
   }
 
   foreign(columns: string | string[], name?: string): ForeignKeyBuilder {

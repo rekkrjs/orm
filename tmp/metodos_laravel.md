@@ -51,72 +51,72 @@ Comparación con la API pública de Laravel 13. Solo incluye aliases, forwarding
 
 ### Collection: aliases
 
-- `average`
-- `doesntContain`
-- `pipe`
-- `tap`
-- `whenEmpty`
-- `whenNotEmpty`
-- `unlessEmpty`
-- `unlessNotEmpty`
-- `whereStrict`
-- `whereInStrict`
+- [x] `average`
+- [x] `doesntContain`
+- [x] `pipe`
+- [x] `tap`
+- [x] `whenEmpty`
+- [x] `whenNotEmpty`
+- [x] `unlessEmpty`
+- [x] `unlessNotEmpty`
+- [x] `whereStrict`
+- [x] `whereInStrict`
 
 ### Collection: helpers
 
-- `firstOrFail`
-- `sole`
-- `hasSole`
-- `hasMany`
-- `forPage`
-- `percentage`
-- `chunk`
-- `nth`
-- `partition`
-- `whereNull`
-- `whereNotNull`
-- `whereNotIn`
-- `whereBetween`
-- `whereNotBetween`
-- `implode`
+- [x] `firstOrFail`
+- [x] `sole`
+- [x] `hasSole`
+- [x] `hasMany`
+- [x] `forPage`
+- [x] `percentage`
+- [x] `chunk`
+- [x] `nth`
+- [x] `partition`
+- [x] `whereNull`
+- [x] `whereNotNull`
+- [x] `whereNotIn`
+- [x] `whereBetween`
+- [x] `whereNotBetween`
+- [x] `implode`
 
 ### Modelo de instancia
 
-- `relationLoaded`
-- `setRelations`
-- `unsetRelation`
-- `unsetRelations`
-- `only`
-- `except`
-- `qualifyColumn`
-- `qualifyColumns`
-- `mergeAppends`
-- `hasAppended`
-- `withoutAppends`
+- [x] `relationLoaded`
+- [x] `setRelations`
+- [x] `unsetRelation`
+- [x] `unsetRelations`
+- [x] `only`
+- [x] `except`
+- [x] `qualifyColumn`
+- [x] `qualifyColumns`
+- [x] `mergeAppends`
+- [x] `hasAppended`
+- [x] `withoutAppends`
 
 ### Schema
 
-- `nullableTimestamps`
-- `integerIncrements`
-- `smallIncrements`
-- `tinyIncrements`
-- `ulid`
-- `foreignUlid`
-- `ulidMorphs`
-- `nullableUlidMorphs`
+- [x] `nullableTimestamps`
+- [x] `integerIncrements`
+- [x] `smallIncrements`
+- [x] `tinyIncrements`
+- [x] `ulid`
+- [x] `foreignUlid`
+- [x] `ulidMorphs`
+- [x] `nullableUlidMorphs`
 
 ## P2
 
 ### Forwarding estático
 
-- `join`
-- `leftJoin`
-- `rightJoin`
-- `crossJoin`
-- `union`
-- `unionAll`
-- `insertGetId`
-- `insertOrIgnore`
+- [x] `join`
+- [x] `leftJoin`
+- [x] `rightJoin`
+- [x] `crossJoin`
+- [x] `union`
+- [x] `unionAll`
+- [x] `insertGetId`
+- [x] `insertOrIgnore`
 
 ## Fuera de alcance
 
@@ -126,7 +126,7 @@ No incluir por ahora:
 - Lateral joins y subquery joins.
 - Consultas vectoriales.
 - Tipos timezone o spatial.
-- `createOrFirst` e `incrementOrCreate`.
+- `incrementOrCreate`.
 - Duplicados de métodos nativos de `Array`.
 - `containsOneItem` y `containsManyItems`, obsoletos en Laravel.
 

@@ -31,6 +31,7 @@ type BaseModelInstanceKey =
   | "$hidden"
   | "$visible"
   | "$appends"
+  | "$appendsOverride"
   | "$wasRecentlyCreated"
   | "fill"
   | "forceFill"
@@ -42,6 +43,8 @@ type BaseModelInstanceKey =
   | "castAttribute"
   | "serializeCastAttribute"
   | "mergeCasts"
+  | "only"
+  | "except"
   | "getDirty"
   | "isDirty"
   | "isClean"
@@ -51,12 +54,17 @@ type BaseModelInstanceKey =
   | "syncOriginal"
   | "discardChanges"
   | "replicate"
+  | "qualifyColumn"
+  | "qualifyColumns"
   | "makeHidden"
   | "makeHiddenIf"
   | "makeVisible"
   | "makeVisibleIf"
   | "append"
   | "setAppends"
+  | "mergeAppends"
+  | "hasAppended"
+  | "withoutAppends"
   | "getAppends"
   | "save"
   | "update"
@@ -88,6 +96,10 @@ type BaseModelInstanceKey =
   | "freshTimestamp"
   | "setRelation"
   | "getRelation"
+  | "relationLoaded"
+  | "setRelations"
+  | "unsetRelation"
+  | "unsetRelations"
   | "hasMany"
   | "belongsTo"
   | "hasOne"
@@ -112,9 +124,10 @@ export type ModelAttributes<T> = T extends { $attributes: Record<string, any> }
   : T;
 export type ModelColumn<T> = LiteralUnion<Extract<keyof ModelAttributes<T>, string>>;
 export type ModelColumnValue<T, K> = K extends keyof ModelAttributes<T> ? ModelAttributes<T>[K] : any;
-export type ModelAttributeInput<T> = Partial<ModelAttributes<T>> & Record<string, any>;
+type NonArrayInput = { readonly [Symbol.iterator]?: never };
+export type ModelAttributeInput<T> = Partial<ModelAttributes<T>> & Record<string, any> & NonArrayInput;
 export type StripTablePrefix<S extends string> = S extends `${string}.${infer Tail}` ? Tail : S;
-export type ModelAttributeInputWithout<T, K extends string> = Partial<Omit<ModelAttributes<T>, K>> & Record<string, any>;
+export type ModelAttributeInputWithout<T, K extends string> = Partial<Omit<ModelAttributes<T>, K>> & Record<string, any> & NonArrayInput;
 
 declare const modelMassAssignable: unique symbol;
 
@@ -131,8 +144,8 @@ type ModelMassAssignmentMarker<T> =
 type IsAny<T> = 0 extends (1 & T) ? true : false;
 
 type StrictPartial<Attributes> = keyof Attributes extends never
-  ? Record<string, never>
-  : Partial<Attributes>;
+  ? Record<string, never> & NonArrayInput
+  : Partial<Attributes> & NonArrayInput;
 
 export type ModelMassAssignmentAttributes<T> =
   IsAny<T> extends true ? ModelAttributes<T>

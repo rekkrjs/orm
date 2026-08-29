@@ -430,6 +430,9 @@ const posts = await Post.query()
   .leftJoin("comments", "comments.post_id", "=", "posts.id")
   .crossJoin("tags")
   .get();
+
+// The first join can also start directly from the model.
+await Post.join("users", "posts.user_id", "=", "users.id").get();
 ```
 
 For a relation-aware filter, prefer [`whereHas`](./relationships.md#relation-queries) over manual joins — it composes with eager loading and respects soft deletes.
@@ -442,6 +445,9 @@ const admin = User.where("role", "admin");
 
 const distinct = await active.union(admin).get();    // dedupes
 const all = await active.unionAll(admin).get();      // keeps duplicates
+
+// Static entry point; the following where() constrains the base arm.
+await User.union(admin).where("active", true).get();
 ```
 
 ## Recursive CTEs
@@ -1129,8 +1135,8 @@ must have the same columns after undefined values have been omitted.
 ```ts
 // Raw insert — no model events fire
 await User.query().insert({ name: "Alice", email: "alice@example.com" });
-await User.query().insertOrIgnore([{ email: "a@b.com" }, { email: "c@d.com" }]);
-const id = await User.query().insertGetId({ name: "Bob" });
+await User.insertOrIgnore([{ email: "a@b.com" }, { email: "c@d.com" }]);
+const id = await User.insertGetId({ name: "Bob" });
 
 // Upsert: insert or update on conflict
 await User.query().upsert(
@@ -1159,7 +1165,7 @@ await user.decrement("stock", 10);
 await User.where("active", false).decrement("score", 2);
 ```
 
-Builder writes do not run per-instance lifecycle hooks or timestamps. `insert()` bypasses observers; when a model has registered observers, `update()` dispatches `updated`/`saved` and `delete()` dispatches `deleted` for the affected IDs. If before-hooks or fully hydrated event models matter, work through model instances (`new User()`, `user.save()`, `user.delete()`) instead.
+Builder writes do not run per-instance lifecycle hooks, timestamps, or mass-assignment filtering. The static `insertGetId()` and `insertOrIgnore()` methods above are direct Builder forwarding and have the same low-level semantics. `insert()` bypasses observers; when a model has registered observers, `update()` dispatches `updated`/`saved` and `delete()` dispatches `deleted` for the affected IDs. If before-hooks, fillable filtering, timestamps, or fully hydrated event models matter, work through model instances (`User.create()`, `new User()`, `user.save()`, `user.delete()`) instead.
 
 On model-backed builders, limited updates and increments first select the
 matching primary keys, so `limit()` constrains the rows actually modified.

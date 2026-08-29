@@ -130,6 +130,30 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().fromSub(query, alias);
   }
 
+  static join<M extends ModelConstructor>(this: M, table: string, first: string, operator: string, second: string, type: string = "INNER"): Builder<InstanceType<M>> {
+    return (this as any).query().join(table, first, operator, second, type);
+  }
+
+  static leftJoin<M extends ModelConstructor>(this: M, table: string, first: string, operator: string, second: string): Builder<InstanceType<M>> {
+    return (this as any).query().leftJoin(table, first, operator, second);
+  }
+
+  static rightJoin<M extends ModelConstructor>(this: M, table: string, first: string, operator: string, second: string): Builder<InstanceType<M>> {
+    return (this as any).query().rightJoin(table, first, operator, second);
+  }
+
+  static crossJoin<M extends ModelConstructor>(this: M, table: string): Builder<InstanceType<M>> {
+    return (this as any).query().crossJoin(table);
+  }
+
+  static union<M extends ModelConstructor>(this: M, query: Builder<any, any, any> | string, all: boolean = false): Builder<InstanceType<M>> {
+    return (this as any).query().union(query, all);
+  }
+
+  static unionAll<M extends ModelConstructor>(this: M, query: Builder<any, any, any> | string): Builder<InstanceType<M>> {
+    return (this as any).query().unionAll(query);
+  }
+
   static withRecursive<M extends ModelConstructor>(this: M, name: string, anchor: Builder<any> | string, recursive: Builder<any> | string): Builder<InstanceType<M>> {
     return (this as any).query().withRecursive(name, anchor, recursive);
   }

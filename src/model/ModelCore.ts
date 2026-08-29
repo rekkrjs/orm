@@ -193,6 +193,7 @@ export class ModelCore<T extends Record<string, any> = any> {
   $hidden: string[] = [];
   $visible: string[] = [];
   $appends: string[] = [];
+  declare $appendsOverride?: string[];
   $wasRecentlyCreated = false;
 
   constructor(attributes?: Partial<T>) {
@@ -467,6 +468,14 @@ export class ModelCore<T extends Record<string, any> = any> {
 
   getModelConstructor(): typeof ModelCore {
     return Object.getPrototypeOf(this).constructor as typeof ModelCore;
+  }
+
+  qualifyColumn(column: string): string {
+    return column.includes(".") ? column : `${this.getModelConstructor().getTable()}.${column}`;
+  }
+
+  qualifyColumns(columns: readonly string[]): string[] {
+    return columns.map((column) => this.qualifyColumn(column));
   }
 
   isFillable(key: string): boolean {
@@ -761,6 +770,24 @@ export class ModelCore<T extends Record<string, any> = any> {
     return { ...this.$original };
   }
 
+  only<K extends Extract<keyof T, string>>(attributes: readonly K[]): Pick<T, K>;
+  only<K extends Extract<keyof T, string>>(attribute: K, ...attributes: K[]): Pick<T, K>;
+  only(first: string | readonly string[], ...rest: string[]): Record<string, any> {
+    const attributes = typeof first === "string" ? [first, ...rest] : first;
+    return Object.fromEntries(attributes.map((attribute) => [attribute, this.getAttribute(attribute)]));
+  }
+
+  except<K extends Extract<keyof T, string>>(attributes: readonly K[]): Omit<T, K>;
+  except<K extends Extract<keyof T, string>>(attribute: K, ...attributes: K[]): Omit<T, K>;
+  except(first: string | readonly string[], ...rest: string[]): Record<string, any> {
+    const excluded = new Set(typeof first === "string" ? [first, ...rest] : first);
+    return Object.fromEntries(
+      Object.keys(this.$attributes)
+        .filter((attribute) => !excluded.has(attribute))
+        .map((attribute) => [attribute, this.getAttribute(attribute)]),
+    );
+  }
+
   /**
    * Accept the current attributes as the baseline, so nothing reads as dirty
    * until the next write. Nothing is written to the row — this moves what the
@@ -856,12 +883,32 @@ export class ModelCore<T extends Record<string, any> = any> {
     return new Date().toISOString();
   }
 
-  setRelation(name: string, value: any): void {
+  relationLoaded(name: string): boolean {
+    return Object.hasOwn(this.$relations, name);
+  }
+
+  setRelation(name: string, value: any): this {
     this.$relations[name] = value;
+    return this;
   }
 
   getRelation(name: string): any {
     return this.$relations[name];
+  }
+
+  setRelations(relations: Record<string, any>): this {
+    this.$relations = relations;
+    return this;
+  }
+
+  unsetRelation(name: string): this {
+    delete this.$relations[name];
+    return this;
+  }
+
+  unsetRelations(): this {
+    this.$relations = {};
+    return this;
   }
 
   is(other: ModelCore | null | undefined): boolean {

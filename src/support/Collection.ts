@@ -18,8 +18,23 @@ import { ModelNotFoundError } from "../model/ModelNotFoundError.js";
 type CollectionKey = string | number | symbol;
 
 type CollectionPredicate<T> = (item: T, index: number) => boolean;
+type CollectionCallback<T, R> = (item: T, index: number) => R;
 export type CollectionJson<T> = T extends { toJSON(): infer R } ? R[] : T[];
 type ItemJson<T> = T extends { toJSON(): infer R } ? R : T;
+
+export class ItemNotFoundError extends Error {
+  constructor() {
+    super("No items found.");
+    this.name = "ItemNotFoundError";
+  }
+}
+
+export class MultipleItemsFoundError extends Error {
+  constructor(public readonly count: number) {
+    super(`${count} items were found.`);
+    this.name = "MultipleItemsFoundError";
+  }
+}
 
 function deepPickCollection(obj: Record<string, any>, paths: string[]): Record<string, any> {
   const groups = new Map<string, string[]>();
@@ -69,6 +84,38 @@ function valueFor(item: any, key: CollectionKey): any {
     }
     return value?.[part];
   }, item);
+}
+
+function compareForWhere(left: any, operator: string, right: any): boolean {
+  switch (operator.toLowerCase()) {
+    case "=":
+    case "==":
+    case "===":
+      return left === right;
+    case "!=":
+    case "<>":
+    case "!==":
+      return left !== right;
+    case "<":
+      return left < right;
+    case "<=":
+      return left <= right;
+    case ">":
+      return left > right;
+    case ">=":
+      return left >= right;
+    default:
+      throw new Error(`Unsupported collection operator: ${operator}`);
+  }
+}
+
+function predicateFor<T>(args: readonly any[]): CollectionPredicate<T> | undefined {
+  if (args.length === 0 || args[0] === null || args[0] === undefined) return undefined;
+  if (typeof args[0] === "function") return args[0];
+  if (args.length === 1) return (item) => Boolean(valueFor(item, args[0]));
+  const operator = args.length === 2 ? "=" : String(args[1]);
+  const expected = args.length === 2 ? args[1] : args[2];
+  return (item) => compareForWhere(valueFor(item, args[0]), operator, expected);
 }
 
 function compareValues(a: any, b: any): number {
@@ -213,6 +260,33 @@ export class Collection<T = any> extends Array<T> {
     return this;
   }
 
+  pipe<R>(callback: (collection: this) => R): R {
+    return callback(this);
+  }
+
+  tap(callback: (collection: this) => unknown): this {
+    callback(this);
+    return this;
+  }
+
+  whenEmpty<R>(callback: (collection: this) => R, defaultCallback?: (collection: this) => R): this | NonNullable<R> {
+    const result = (this.isEmpty() ? callback : defaultCallback)?.(this);
+    return (result ?? this) as this | NonNullable<R>;
+  }
+
+  whenNotEmpty<R>(callback: (collection: this) => R, defaultCallback?: (collection: this) => R): this | NonNullable<R> {
+    const result = (this.isNotEmpty() ? callback : defaultCallback)?.(this);
+    return (result ?? this) as this | NonNullable<R>;
+  }
+
+  unlessEmpty<R>(callback: (collection: this) => R, defaultCallback?: (collection: this) => R): this | NonNullable<R> {
+    return this.whenNotEmpty(callback, defaultCallback);
+  }
+
+  unlessNotEmpty<R>(callback: (collection: this) => R, defaultCallback?: (collection: this) => R): this | NonNullable<R> {
+    return this.whenEmpty(callback, defaultCallback);
+  }
+
   reject(predicate: CollectionPredicate<T>): Collection<T> {
     return new Collection(this.filter((item, index) => !predicate(item, index)));
   }
@@ -263,21 +337,67 @@ export class Collection<T = any> extends Array<T> {
     return new Collection(this.filter((item) => valueFor(item, key) === value));
   }
 
-  whereIn<K extends CollectionKey>(key: K, values: any[]): Collection<T> {
+  whereStrict<K extends CollectionKey>(key: K, value: any): Collection<T> {
+    return this.where(key, value);
+  }
+
+  whereIn<K extends CollectionKey>(key: K, values: Iterable<any>): Collection<T> {
     const set = new Set(values);
     return new Collection(this.filter((item) => set.has(valueFor(item, key))));
   }
 
+  whereInStrict<K extends CollectionKey>(key: K, values: Iterable<any>): Collection<T> {
+    return this.whereIn(key, values);
+  }
+
+  whereNotIn<K extends CollectionKey>(key: K, values: Iterable<any>): Collection<T> {
+    const set = new Set(values);
+    return new Collection(this.filter((item) => !set.has(valueFor(item, key))));
+  }
+
+  whereNull<K extends CollectionKey>(key?: K): Collection<T> {
+    return new Collection(this.filter((item) => {
+      const value = key === undefined ? item : valueFor(item, key);
+      return value === null || value === undefined;
+    }));
+  }
+
+  whereNotNull<K extends CollectionKey>(key?: K): Collection<T> {
+    return new Collection(this.filter((item) => {
+      const value = key === undefined ? item : valueFor(item, key);
+      return value !== null && value !== undefined;
+    }));
+  }
+
+  whereBetween<K extends CollectionKey>(key: K, values: readonly [any, any]): Collection<T> {
+    const [minimum, maximum] = values;
+    return new Collection(this.filter((item) => {
+      const value = valueFor(item, key);
+      return value >= minimum && value <= maximum;
+    }));
+  }
+
+  whereNotBetween<K extends CollectionKey>(key: K, values: readonly [any, any]): Collection<T> {
+    const [minimum, maximum] = values;
+    return new Collection(this.filter((item) => {
+      const value = valueFor(item, key);
+      return value < minimum || value > maximum;
+    }));
+  }
+
   contains(value: T): boolean;
-  contains(key: unknown): boolean;
+  contains(key: string | number): boolean;
   contains(predicate: CollectionPredicate<T>): boolean;
   contains<K extends CollectionKey>(key: K, value: any): boolean;
+  contains<K extends CollectionKey>(key: K, operator: string, value: any): boolean;
   contains(keyOrValue: any, value?: any): boolean {
     if (typeof keyOrValue === "function") {
       return this.some(keyOrValue);
     }
-    if (arguments.length === 2) {
-      return this.some((item) => valueFor(item, keyOrValue) === value);
+    if (arguments.length >= 2) {
+      const expected = arguments.length === 2 ? value : arguments[2];
+      const operator = arguments.length === 2 ? "=" : String(value);
+      return this.some((item) => compareForWhere(valueFor(item, keyOrValue), operator, expected));
     }
     if (isModelLike(keyOrValue)) return this.some((item) => sameModel(item, keyOrValue));
     if (this.some(isModelLike)) {
@@ -286,6 +406,15 @@ export class Collection<T = any> extends Array<T> {
         : item === keyOrValue);
     }
     return this.includes(keyOrValue);
+  }
+
+  doesntContain(value: T): boolean;
+  doesntContain(key: string | number): boolean;
+  doesntContain(predicate: CollectionPredicate<T>): boolean;
+  doesntContain<K extends CollectionKey>(key: K, value: any): boolean;
+  doesntContain<K extends CollectionKey>(key: K, operator: string, value: any): boolean;
+  doesntContain(...args: any[]): boolean {
+    return !(this.contains as (...values: any[]) => boolean)(...args);
   }
 
   modelKeys(): any[] {
@@ -321,6 +450,67 @@ export class Collection<T = any> extends Array<T> {
       throw new ModelNotFoundError(name, key);
     }
     return found as T | Collection<T>;
+  }
+
+  firstOrFail(): T;
+  firstOrFail(predicate: CollectionPredicate<T>): T;
+  firstOrFail<K extends CollectionKey>(key: K, value: any): T;
+  firstOrFail<K extends CollectionKey>(key: K, operator: string, value: any): T;
+  firstOrFail(...args: any[]): T {
+    const predicate = predicateFor<T>(args);
+    if (!predicate) {
+      if (this.length > 0) return this[0];
+    } else {
+      for (let index = 0; index < this.length; index++) {
+        if (predicate(this[index], index)) return this[index];
+      }
+    }
+    throw new ItemNotFoundError();
+  }
+
+  sole(): T;
+  sole(predicate: CollectionPredicate<T>): T;
+  sole<K extends CollectionKey>(key: K, value: any): T;
+  sole<K extends CollectionKey>(key: K, operator: string, value: any): T;
+  sole(...args: any[]): T {
+    const predicate = predicateFor<T>(args);
+    let found: T | undefined;
+    let count = 0;
+    for (let index = 0; index < this.length; index++) {
+      if (!predicate || predicate(this[index], index)) {
+        found = this[index];
+        count++;
+      }
+    }
+    if (count === 0) throw new ItemNotFoundError();
+    if (count > 1) throw new MultipleItemsFoundError(count);
+    return found as T;
+  }
+
+  hasSole(): boolean;
+  hasSole(predicate: CollectionPredicate<T>): boolean;
+  hasSole<K extends CollectionKey>(key: K, value: any): boolean;
+  hasSole<K extends CollectionKey>(key: K, operator: string, value: any): boolean;
+  hasSole(...args: any[]): boolean {
+    const predicate = predicateFor<T>(args);
+    let count = 0;
+    for (let index = 0; index < this.length && count < 2; index++) {
+      if (!predicate || predicate(this[index], index)) count++;
+    }
+    return count === 1;
+  }
+
+  hasMany(): boolean;
+  hasMany(predicate: CollectionPredicate<T>): boolean;
+  hasMany<K extends CollectionKey>(key: K, value: any): boolean;
+  hasMany<K extends CollectionKey>(key: K, operator: string, value: any): boolean;
+  hasMany(...args: any[]): boolean {
+    const predicate = predicateFor<T>(args);
+    let count = 0;
+    for (let index = 0; index < this.length && count < 2; index++) {
+      if (!predicate || predicate(this[index], index)) count++;
+    }
+    return count === 2;
   }
 
   diff(items: Iterable<T>): Collection<T> {
@@ -366,6 +556,60 @@ export class Collection<T = any> extends Array<T> {
 
   avg<K extends CollectionKey>(key?: K | ((item: T) => any)): number {
     return this.length === 0 ? 0 : this.sum(key as any) / this.length;
+  }
+
+  average<K extends CollectionKey>(key?: K | ((item: T) => any)): number {
+    return this.avg(key as any);
+  }
+
+  forPage(page: number, perPage: number): Collection<T> {
+    const offset = Math.max(0, (page - 1) * perPage);
+    return new Collection(this.slice(offset, offset + perPage));
+  }
+
+  percentage(callback: CollectionPredicate<T>, precision: number = 2): number | null {
+    if (this.isEmpty()) return null;
+    const factor = 10 ** precision;
+    return Math.round((this.filter(callback).length / this.length * 100) * factor) / factor;
+  }
+
+  chunk(size: number): Collection<Collection<T>> {
+    size = Math.floor(size);
+    if (!Number.isFinite(size) || size <= 0) return new Collection();
+    const chunks = new Collection<Collection<T>>();
+    for (let index = 0; index < this.length; index += size) {
+      chunks.push(new Collection(this.slice(index, index + size)));
+    }
+    return chunks;
+  }
+
+  nth(step: number, offset: number = 0): Collection<T> {
+    if (!Number.isInteger(step) || step < 1) throw new RangeError("Step value must be at least 1.");
+    const result = new Collection<T>();
+    const items = this.slice(offset);
+    for (let index = 0; index < items.length; index += step) result.push(items[index]);
+    return result;
+  }
+
+  partition(predicate: CollectionPredicate<T>): Collection<Collection<T>>;
+  partition<K extends CollectionKey>(key: K, value: any): Collection<Collection<T>>;
+  partition<K extends CollectionKey>(key: K, operator: string, value: any): Collection<Collection<T>>;
+  partition(...args: any[]): Collection<Collection<T>> {
+    const predicate = predicateFor<T>(args)!;
+    const passed = new Collection<T>();
+    const failed = new Collection<T>();
+    this.forEach((item, index) => (predicate(item, index) ? passed : failed).push(item));
+    return new Collection([passed, failed]);
+  }
+
+  implode(glue?: string): string;
+  implode<K extends CollectionKey>(key: K, glue?: string): string;
+  implode(callback: CollectionCallback<T, unknown>, glue?: string): string;
+  implode(valueOrGlue: CollectionKey | CollectionCallback<T, unknown> = "", glue?: string): string {
+    if (typeof valueOrGlue === "function") return this.map(valueOrGlue).join(glue ?? "");
+    const first = this[0];
+    if (first !== null && typeof first === "object") return this.pluck(valueOrGlue).join(glue ?? "");
+    return this.join(String(valueOrGlue ?? ""));
   }
 
   min<K extends CollectionKey>(key?: K | ((item: T) => any)): any {

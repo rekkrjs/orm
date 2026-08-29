@@ -9,6 +9,7 @@ import type {
   BulkModelOptions,
   SaveOptions,
   ModelAttributeInput,
+  ModelColumn,
   ModelMassAssignmentInput,
 } from "./ModelBase.js";
 import { ModelCore } from "./ModelCore.js";
@@ -281,6 +282,21 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     });
   }
 
+  static async insertGetId<M extends ModelConstructor>(
+    this: M,
+    attributes: ModelAttributeInput<InstanceType<M>>,
+    idColumn: ModelColumn<InstanceType<M>> = "id"
+  ): Promise<any> {
+    return (this as any).query().insertGetId(attributes, idColumn);
+  }
+
+  static async insertOrIgnore<M extends ModelConstructor>(
+    this: M,
+    records: ModelAttributeInput<InstanceType<M>> | ModelAttributeInput<InstanceType<M>>[]
+  ): Promise<any> {
+    return (this as any).query().insertOrIgnore(records);
+  }
+
   static async upsert<M extends ModelConstructor>(
     this: M,
     records: ModelMassAssignmentInput<InstanceType<M>> | ModelMassAssignmentInput<InstanceType<M>>[],
@@ -492,6 +508,14 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     values: ModelMassAssignmentInput<InstanceType<M>> = {}
   ): Promise<InstanceType<M>> {
     return (this as any).query().firstOrCreate(attributes, values);
+  }
+
+  static async createOrFirst<M extends ModelConstructor>(
+    this: M,
+    attributes: ModelAttributeInput<InstanceType<M>> = {},
+    values: ModelMassAssignmentInput<InstanceType<M>> = {}
+  ): Promise<InstanceType<M>> {
+    return (this as any).query().createOrFirst(attributes, values);
   }
 
   static async updateOrCreate<M extends ModelConstructor>(
