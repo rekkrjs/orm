@@ -1,5 +1,61 @@
 # Changelog
 
+## 2.4.0 - 2026-08-29
+
+### Added
+
+- Expanded Laravel-style Builder and static model APIs with SQL diagnostics,
+  paging, key predicates, joins, unions, direct inserts, single-result helpers,
+  and existence callbacks.
+- Added relation and pivot shortcuts for negative relation predicates, filtered
+  eager loading, OR variants, pivot ranges, null checks, and pivot ordering.
+- Added Collection aliases and helpers for strict matching, conditional
+  pipelines, paging, percentages, chunks, partitions, null/range filters, and
+  `implode()`.
+- Added model relation-state, attribute-selection, column-qualification, and
+  append-management helpers, plus portable increment and ULID Schema aliases.
+- Added `createOrFirst()`. It attempts the insert first and recovers the
+  existing row after a matching UNIQUE conflict. `firstOrCreate()` and the
+  creation branch of `updateOrCreate()` now share that race-safe path.
+
+### Fixed
+
+- Relation callbacks containing OR predicates now remain grouped with their
+  correlation condition, and `withWhereHas()` applies its constraint to both
+  the parent filter and eager-loaded relation.
+- Empty `IN` and `NOT IN` lists now compile to portable constants. Nested key
+  predicates preserve model metadata, and the Builder find family honors
+  custom primary keys.
+- `setAppends()` now replaces inherited appends, relation setters remain
+  chainable, and write typings no longer allow arrays to masquerade as one
+  attribute object.
+
+### Compatibility
+
+- This release is additive and requires no migration or opt-in. Existing query,
+  model, relation, collection, and schema APIs retain their behavior.
+- Static `insertGetId()` and `insertOrIgnore()` are low-level Builder forwarding:
+  they intentionally bypass mass-assignment filtering, timestamps, and model
+  lifecycle hooks.
+- `createOrFirst()` requires a matching database UNIQUE constraint to resolve
+  concurrent inserts. Conflicts unrelated to its lookup attributes and all
+  non-UNIQUE database errors are rethrown.
+
+### Performance
+
+- Aliases and static forwarding add no work beyond their existing Builder or
+  Collection operations. `createOrFirst()` removes the initial SELECT when the
+  row is normally absent.
+- Inside an existing transaction, `createOrFirst()` uses a savepoint around the
+  INSERT so PostgreSQL remains usable after a UNIQUE violation. This adds one
+  savepoint round trip on that transactional path; outside transactions there
+  is no savepoint overhead.
+
+### Verification
+
+- The complete non-benchmark suite passed with 1,633 tests, 5,272 expectations,
+  124 files, and no failures. All 46 benchmark tests passed separately.
+
 ## 2.3.0 - 2026-08-27
 
 ### Changed

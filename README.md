@@ -3,7 +3,7 @@
 > **Bun-only package.** Install with:
 >
 > ```bash
-> bun add github:rekkrjs/orm#v2.3.0
+> bun add github:rekkrjs/orm#v2.4.0
 > ```
 >
 > The package is installed directly from its public GitHub repository. npm,
@@ -21,15 +21,15 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 - 🧯 **Portable unique errors** — Duplicate unique and primary keys share one safe public error type across drivers
 - 🔷 **Fully Typed** — Generate declarations for plain `extends Model` classes with typed attributes, queries, relations, and eager loads
 - 🏗️ **Schema Builder** — Programmatic table creation, indexes, foreign keys
-- 🔍 **Query Builder** — Chainable `where`, `join`, `orderBy`, `groupBy`, date filters, conditional building, etc.
+- 🔍 **Query Builder** — Chainable joins, unions, relation and pivot shortcuts, SQL diagnostics, and Laravel-style aliases
 - ⚡ **Predictable direct JSON** — `rawJson()` skips per-row hydration or reports why it cannot
 - 🔎 **Search** — Meilisearch, PostgreSQL full-text search, and SQLite FTS5 engines
 - 🧠 **Tagged Cache** — Redis-backed cache facade, query `remember()`, and exact tag invalidation
 - 📣 **Events** — Application-level event dispatcher with function listeners and class handlers
 - 📨 **Queue Jobs** — Database- and Redis-backed background job queue with named queues, retries, delays, and an `orm queue` worker
 - 🛠️ **Commands** — Artisan-style CLI commands with a signature DSL, argument/option parsing, and `orm run`
-- 🧬 **Eloquent-style Models** — Property attributes, defaults, casts, dirty tracking, soft deletes, scopes, find-or-fail, first-or-create
-- 🧺 **Collections** — Laravel-style helpers for multi-record query results
+- 🧬 **Eloquent-style Models** — Property attributes, casts, scopes, soft deletes, and concurrency-safe find-or-create helpers
+- 🧺 **Collections** — Laravel-style paging, filtering, partitioning, strict matching, and aggregation helpers
 - 🔗 **Relations** — Standard, many-to-many, polymorphic, through, one-of-many, and relation queries
 - 👁️ **Observers** — Lifecycle hooks (`creating`, `created`, `updating`, `updated`, etc.)
 - 🚀 **Migrations & CLI** — Create, run, reset, refresh, and inspect migrations from the command line
@@ -43,7 +43,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 ## Installation
 
 ```bash
-bun add github:rekkrjs/orm#v2.3.0
+bun add github:rekkrjs/orm#v2.4.0
 ```
 
 See [Installation](./docs/installation.md) for details.
