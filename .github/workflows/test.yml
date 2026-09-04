@@ -27,7 +27,8 @@ jobs:
         options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       POSTGRES_TEST_URL: postgres://postgres:orm_test@127.0.0.1:5432/orm_test
-      MYSQL_TEST_URL: mysql://root:orm_test@127.0.0.1:3306/orm_test
+      # Require TLS for MySQL 8's caching_sha2_password authentication.
+      MYSQL_TEST_URL: mysql://root:orm_test@127.0.0.1:3306/orm_test?ssl-mode=require
       REDIS_TEST_URL: redis://127.0.0.1:6379
       TZ: UTC
     steps:
