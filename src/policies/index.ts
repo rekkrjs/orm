@@ -92,7 +92,7 @@ export async function inspect(
   if (typeof method !== "function") {
     return { allowed: false, message: `Policy does not define "${ability}" ability.` };
   }
-  const decision = await method(user, model);
+  const decision = await method.call(policy, user, model);
   if (typeof decision === "boolean") {
     return decision ? { allowed: true } : { allowed: false, message: "Forbidden." };
   }

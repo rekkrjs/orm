@@ -1,4 +1,5 @@
 import type { QueueDriver } from "./QueueDriver.js";
+import { afterCommit, currentTenantId } from "../connection/ExecutionContext.js";
 import { TenantContext } from "../connection/TenantContext.js";
 
 export interface JobStatics {
@@ -40,6 +41,8 @@ export function setJobDriver(d: QueueDriver, queue: string): void {
 export function registerJobDriver(name: string, d: QueueDriver): void {
   drivers.set(name, d);
 }
+
+export function resetJobDrivers(): void { driver = null; defaultQueue = "default"; drivers.clear(); }
 
 export function getJobDriver(): QueueDriver {
   if (!driver) throw new Error("Queue not configured. Call configureOrm() with a queue config first.");
@@ -108,9 +111,10 @@ export abstract class DispatchableJob {
     const queue = this.queue ?? defaultQueue;
     const maxAttempts = this.maxAttempts ?? 3;
     const delay = this.delay ?? 0;
-    const tenantId = TenantContext.current()?.tenantId;
+    const tenantId = currentTenantId();
     const payload = JSON.stringify({ args, tenantId });
-    await TenantContext.asLandlord(() => d.dispatch(queue, jobKeyFor(this), payload, delay, maxAttempts));
+    const key = jobKeyFor(this);
+    await afterCommit(() => TenantContext.asLandlord(() => d.dispatch(queue, key, payload, delay, maxAttempts)));
   }
 }
 

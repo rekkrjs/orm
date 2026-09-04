@@ -1,0 +1,42 @@
+name: ORM compatibility
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: orm_test
+          POSTGRES_DB: orm_test
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres -d orm_test" --health-interval 5s --health-timeout 5s --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: orm_test
+          MYSQL_DATABASE: orm_test
+        ports: ['3306:3306']
+        options: --health-cmd "mysqladmin ping -h 127.0.0.1 -porm_test" --health-interval 5s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      POSTGRES_TEST_URL: postgres://postgres:orm_test@127.0.0.1:5432/orm_test
+      MYSQL_TEST_URL: mysql://root:orm_test@127.0.0.1:3306/orm_test
+      REDIS_TEST_URL: redis://127.0.0.1:6379
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.1
+      - run: bun install --frozen-lockfile
+      - run: bun run scripts/verify-services.ts
+      - run: bun run build
+      - run: bun run test
+      - run: bun audit

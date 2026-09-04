@@ -5,11 +5,11 @@
 > cleanly. If you only want the removal steps, jump to
 > [Retiring the workaround](#retiring-the-workaround).
 
-- **Status:** documented; the ORM-side split is not written yet
-- **Last reviewed:** 2026-08-25
+- **Status:** active; centralized in `Connection.affectedRows(result)`
+- **Last reviewed:** 2026-09-04
 - **Affects:** MySQL diverges. SQLite and PostgreSQL agree with each other.
-- **Verified with:** Bun 1.4.0 (`34cbb9a40`), MySQL 9.7.1 (Homebrew),
-  PostgreSQL 16 (alpine), macOS arm64
+- **Verified with:** Bun 1.4.1 (`4661e494f`) and 1.4.0 (`34cbb9a40`),
+  MySQL 9.7.1 (Homebrew), PostgreSQL 16 (alpine), macOS arm64
 - **Upstream:** [oven-sh/bun#40432](https://github.com/oven-sh/bun/issues/40432),
   filed 2026-08-25. Related open reports, none of which covers the cross-adapter
   split itself:
@@ -22,7 +22,8 @@
   [#22569](https://github.com/oven-sh/bun/issues/22569) (`console.log` printing
   `[]` for these results). [#25488](https://github.com/oven-sh/bun/issues/25488)
   asked for `SQLResultArray` to be exported and is closed as completed, but
-  `bun-types@1.4.0` still ships neither it nor `affectedRows` in any `.d.ts`.
+  `bun-types` still ships neither it nor `affectedRows` in any `.d.ts` as of
+  1.4.1.
 
 ## The symptom
 
@@ -103,20 +104,16 @@ which Bun does not appear to expose. A fix to the property split will not make
 this column converge, so any portable `count` the ORM exposes has to pick a
 meaning and document it.
 
-## What the workaround will do
+## What the workaround does
 
-Nothing is implemented yet. `Builder.update()`, `delete()` and `forceDelete()`
-are declared `Promise<any>` and hand the driver result straight back
-(`src/query/Builder.ts`), so today every consumer inherits the problem.
+`Connection.affectedRows(result)` reads `affectedRows` for MySQL and `count`
+for SQLite/PostgreSQL. It is additive: Builder writes still return the original
+driver object. Queue leases and internal write-count consumers use this helper.
+The implementation is marked `WORKAROUND(bun-sql-write-count)`.
 
-When the typed write result lands it needs a per-driver read, in the same shape
-as the existing `RETURNING` split in `Builder.insertGetId()`:
-
-```ts
-const raw = this.connection.getDriverName() === "mysql" ? result?.affectedRows : result?.count;
-```
-
-Mark it `WORKAROUND(bun-sql-write-count)` so the removal step can find it.
+`tests/v3-acceptance.test.ts` checks insert, update, no-op update and delete on all
+three real drivers. The probe was rerun on Bun 1.4.1 on 2026-09-04: the split and
+no-op divergence above remain, so the adapter is retained.
 
 ## Is Bun fixed yet?
 
@@ -126,7 +123,7 @@ SQLite and PostgreSQL already agree and leaving MySQL out hides the divergence:
 
 ```console
 $ bun scripts/bun-sql-write-count-probe.ts mysql://root@127.0.0.1:3306/test postgres://postgres:pw@127.0.0.1:5432/test
-bun 1.4.0 (34cbb9a40)
+bun 1.4.1 (4661e494f)
 
   UPDATE affecting 2 rows:
 

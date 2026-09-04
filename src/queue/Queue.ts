@@ -2,6 +2,7 @@ import type { QueueDriver } from "./QueueDriver.js";
 import {
   DispatchableJob,
   setJobDriver,
+  resetJobDrivers,
   registerJobDriver,
   getJobDriver,
   getJobDriverByConnection,
@@ -11,9 +12,12 @@ import {
   type JobStatics,
   type DispatchOptions,
 } from "./Job.js";
+import { afterCommit, currentTenantId } from "../connection/ExecutionContext.js";
 import { TenantContext } from "../connection/TenantContext.js";
 
 export class Queue {
+  static reset(): void { resetJobDrivers(); }
+
   static configure(driver: QueueDriver, defaultQueue = "default"): void {
     setJobDriver(driver, defaultQueue);
   }
@@ -49,9 +53,10 @@ export class Queue {
     const queue = opts.queue ?? statics.queue ?? getDefaultQueue();
     const delay = opts.delay ?? statics.delay ?? 0;
     const maxAttempts = opts.maxAttempts ?? statics.maxAttempts ?? 3;
-    const tenantId = TenantContext.current()?.tenantId;
+    const tenantId = currentTenantId();
     const payload = JSON.stringify({ args: jobArgs, tenantId });
-    await TenantContext.asLandlord(() => d.dispatch(queue, jobKeyFor(statics), payload, delay, maxAttempts));
+    const key = jobKeyFor(statics);
+    await afterCommit(() => TenantContext.asLandlord(() => d.dispatch(queue, key, payload, delay, maxAttempts)));
   }
 
   static async size(queue?: string, connection?: string): Promise<number> {

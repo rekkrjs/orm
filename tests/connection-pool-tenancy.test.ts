@@ -184,7 +184,7 @@ describe("concurrent tenant resolution", () => {
     expect(b).toBe(c);
     // The registered connection must be the one every caller received; a second
     // build would have overwritten it and orphaned the first, unclosed.
-    expect(ConnectionManager.get("race:acme")).toBe(a.connection);
+    expect(ConnectionManager.get("race:acme")!.sharesResource(a.connection)).toBe(true);
   });
 
   test("different tenants still resolve independently", async () => {

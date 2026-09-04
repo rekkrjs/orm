@@ -178,6 +178,7 @@ export function canReturnRawJsonRows(plan: RawJsonPlan): boolean {
 }
 
 export function normalizeHydratedCastValue(cast: unknown, value: unknown): unknown {
+  if (typeof cast !== "string" || value === null || value === undefined || typeof value === "string") return value;
   const separator = typeof cast === "string" ? cast.indexOf(":") : -1;
   const type = typeof cast === "string"
     ? separator === -1 ? cast : cast.slice(0, separator)
@@ -206,35 +207,49 @@ const builtInCasts = new Set([
 
 export function assertSupportedStringCast(cast: unknown, modelName: string, attribute: string): void {
   if (typeof cast !== "string") return;
-  const type = cast.split(":", 1)[0];
-  if (!builtInCasts.has(type)) {
+  const { type, supported } = castMetadata(cast);
+  if (!supported) {
     throw new Error(`Unsupported cast "${type}" (${modelName}.${attribute}).`);
   }
 }
 
-function compileCast(definition: CastDefinition, context: CastContext): CompiledCast {
+type CastMetadata = Omit<CompiledCast, keyof CastContext>;
+// ponytail: bounded FIFO covers built-ins and common decimal scales; profile
+// definition churn before adding a more elaborate eviction policy.
+const stringCastMetadata = new Map<string, CastMetadata>();
+
+export function castMetadata(definition: CastDefinition): CastMetadata {
+  if (typeof definition === "string") {
+    const cached = stringCastMetadata.get(definition);
+    if (cached) return cached;
+  }
   const backedEnum = isBackedEnumDefinition(definition);
-  const [type, argument] = typeof definition === "string"
-    ? definition.split(":")
-    : ["", undefined];
-  return {
-    ...context,
-    definition,
-    type,
+  const [type, argument] = typeof definition === "string" ? definition.split(":") : ["", undefined];
+  const metadata: CastMetadata = {
+    definition, type,
     decimalScale: type === "decimal" ? Number(argument || 2) : undefined,
     backedEnum,
     custom: typeof definition !== "string" && !backedEnum,
     supported: typeof definition !== "string" || builtInCasts.has(type),
   };
+  if (typeof definition === "string") {
+    if (stringCastMetadata.size >= 64) stringCastMetadata.delete(stringCastMetadata.keys().next().value!);
+    stringCastMetadata.set(definition, metadata);
+  }
+  return metadata;
 }
 
-function castCompiledAttribute(cast: CompiledCast, value: unknown): unknown {
+function compileCast(definition: CastDefinition, context: CastContext): CompiledCast {
+  return { ...castMetadata(definition), ...context };
+}
+
+function castCompiledAttribute(cast: CastMetadata, value: unknown, context: CastContext = cast as CompiledCast): unknown {
   if (!cast.supported) {
-    throw new Error(`Unsupported cast "${cast.type}" (${cast.modelName}.${cast.attribute}).`);
+    throw new Error(`Unsupported cast "${cast.type}" (${context.modelName}.${context.attribute}).`);
   }
   if (value === null) return value;
   if (cast.backedEnum) {
-    assertBackedEnumValue(cast.definition as any, value, cast.modelName, cast.attribute);
+    assertBackedEnumValue(cast.definition as any, value, context.modelName, context.attribute);
     return value;
   }
   if (value === undefined) return value;
@@ -283,7 +298,7 @@ function castCompiledAttribute(cast: CompiledCast, value: unknown): unknown {
     case "base64":
       return typeof value === "string" ? Buffer.from(value, "base64").toString("utf8") : value;
     default:
-      throw new Error(`Unsupported cast "${cast.type}" (${cast.modelName}.${cast.attribute}).`);
+      throw new Error(`Unsupported cast "${cast.type}" (${context.modelName}.${context.attribute}).`);
   }
 }
 
@@ -292,7 +307,7 @@ export function castBuiltInAttribute(
   value: unknown,
   context: CastContext,
 ): unknown {
-  return castCompiledAttribute(compileCast(cast, context), value);
+  return castCompiledAttribute(castMetadata(cast), value, context);
 }
 
 export function serializeRawJsonRow(

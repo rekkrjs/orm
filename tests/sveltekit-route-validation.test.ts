@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { configureSvelteKit, flash, route } from "../src/sveltekit/index.js";
+import { configureSvelteKit, extendLocalsUser, flash, route } from "../src/sveltekit/index.js";
 import { Validator, rule } from "../src/validation/index.js";
 import { clearPolicies, registerPolicy } from "../src/policies/index.js";
 
@@ -63,10 +63,6 @@ describe("sveltekit route() validation response", () => {
         issues: {
           title: ["The title field is required."],
           email: ["The email field must be a valid email address."],
-        },
-        values: {
-          title: "",
-          email: "not-an-email",
         },
       },
     });
@@ -243,7 +239,7 @@ describe("sveltekit route() validation response", () => {
     ).rejects.toMatchObject({ status: 403, message: "Forbidden." });
   });
 
-  it("uses a local extended user for policy checks without mutating event.locals.user", async () => {
+  it("stores the extended policy user on event.locals.user", async () => {
     configureSvelteKit({
       error: (status, body) => {
         const err = new Error(body.message) as Error & { status: number };
@@ -271,7 +267,7 @@ describe("sveltekit route() validation response", () => {
         cookies: makeCookies(),
         locals: { user: { id: "u1" } },
       } as any),
-    ).resolves.toEqual({ hasCan: false });
+    ).resolves.toEqual({ hasCan: true });
   });
 
   it("request() returns 422 JSON payload when schema validation fails", async () => {
@@ -306,9 +302,6 @@ describe("sveltekit route() validation response", () => {
       issues: {
         title: ["The title field is required."],
       },
-      values: {
-        title: "",
-      },
     });
   });
 
@@ -328,7 +321,7 @@ describe("sveltekit route() validation response", () => {
 
     const handler = route()
       .schema(schema)
-      .request(async () => new Response("ok"), { validationError: "problem+json" });
+      .request(async () => new Response("ok"), { validationError: "problem+json", includeValues: true });
 
     const form = new FormData();
     form.set("title", "");
@@ -395,4 +388,12 @@ describe("sveltekit route() validation response", () => {
       },
     });
   });
+});
+
+
+it("reassigns frozen locals users when adding policy methods", async () => {
+  const event = { locals: { user: Object.freeze({ id: 1 }) } };
+  extendLocalsUser(event);
+  expect(typeof (event.locals.user as any).can).toBe("function");
+  expect(event.locals.user.id).toBe(1);
 });

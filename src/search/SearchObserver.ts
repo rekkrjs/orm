@@ -1,3 +1,5 @@
+import { afterCommit, currentTenantId } from "../connection/ExecutionContext.js";
+import { TenantContext } from "../connection/TenantContext.js";
 import type { Model, ModelConstructor } from "../model/Model.js";
 import { ObserverRegistry, type ObserverContract } from "../model/Observer.js";
 import { getSearchConfig, getSearchEngine, Search } from "./SearchManager.js";
@@ -45,8 +47,14 @@ class SearchObserver implements ObserverContract<Model> {
       });
       return;
     }
-    if (Search.enqueueUpdate(record)) return;
-    await getSearchEngine().update([record]);
+    const snapshot = structuredClone(record);
+    const engine = getSearchEngine();
+    const tenantId = currentTenantId();
+    const deliver = async () => {
+      if (Search.config() === cfg && Search.enqueueUpdate(snapshot)) return;
+      await engine.update([snapshot]);
+    };
+    await afterCommit(() => tenantId === undefined ? deliver() : TenantContext.run(tenantId, deliver));
   }
 
   private async dispatchDelete(record: ReturnType<typeof makeSearchableRecord>) {
@@ -59,8 +67,14 @@ class SearchObserver implements ObserverContract<Model> {
       });
       return;
     }
-    if (Search.enqueueDelete(record)) return;
-    await getSearchEngine().delete([record]);
+    const snapshot = structuredClone(record);
+    const engine = getSearchEngine();
+    const tenantId = currentTenantId();
+    const deliver = async () => {
+      if (Search.config() === cfg && Search.enqueueDelete(snapshot)) return;
+      await engine.delete([snapshot]);
+    };
+    await afterCommit(() => tenantId === undefined ? deliver() : TenantContext.run(tenantId, deliver));
   }
 }
 

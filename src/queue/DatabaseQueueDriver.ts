@@ -1,4 +1,5 @@
-import type { Connection } from "../connection/Connection.js";
+import { Schema } from "../schema/Schema.js";
+import { Connection } from "../connection/Connection.js";
 import type { JobRecord, QueueDriver } from "./QueueDriver.js";
 
 export interface DatabaseQueueDriverOptions {
@@ -8,6 +9,7 @@ export interface DatabaseQueueDriverOptions {
 
 interface RawJobRow {
   id: number;
+  reservation_token: string;
   queue: string;
   job_class: string;
   payload: string;
@@ -21,6 +23,7 @@ interface RawJobRow {
 function toJobRecord(row: RawJobRow): JobRecord {
   return {
     id: row.id,
+    reservationToken: row.reservation_token,
     queue: row.queue,
     jobClass: row.job_class,
     payload: row.payload,
@@ -40,6 +43,8 @@ export class DatabaseQueueDriver implements QueueDriver {
   constructor(private connection: Connection, options: DatabaseQueueDriverOptions = {}) {
     this.table = options.table ?? "jobs";
     this.failedTable = options.failedTable ?? "failed_jobs";
+    Connection.assertSafeIdentifier(this.table, "queue table");
+    Connection.assertSafeIdentifier(this.failedTable, "failed queue table");
   }
 
   private async withSqliteMutex<T>(work: () => Promise<T>): Promise<T> {
@@ -137,6 +142,14 @@ export class DatabaseQueueDriver implements QueueDriver {
         )
       `);
     }
+    // Additive migration keeps pending jobs and upgrades existing installations.
+    if (!await Schema.hasColumn(this.table, "reservation_token", this.connection)) {
+      try {
+        await this.connection.run(`ALTER TABLE ${this.connection.getGrammar().wrap(this.table)} ADD COLUMN reservation_token VARCHAR(64) NULL`);
+      } catch (error) {
+        if (!await Schema.hasColumn(this.table, "reservation_token", this.connection)) throw error;
+      }
+    }
   }
 
   private placeholders(count: number): string {
@@ -172,123 +185,64 @@ export class DatabaseQueueDriver implements QueueDriver {
 
   async reserve(queue: string, retryAfterSeconds: number): Promise<JobRecord | null> {
     const now = Math.floor(Date.now() / 1000);
-    const expiredCutoff = now - retryAfterSeconds;
+    const token = crypto.randomUUID();
     const driver = this.connection.getDriverName();
-    const t = this.table;
-
-    if (driver === "sqlite") {
-      return this.withSqliteMutex(async () => this.connection.transaction(async (conn) => {
-        const rows = (await conn.query(
-          `SELECT * FROM ${t}
-           WHERE queue = ? AND (reserved_at IS NULL OR reserved_at <= ?) AND available_at <= ?
-           ORDER BY id ASC LIMIT 1`,
-          [queue, expiredCutoff, now],
-        )) as RawJobRow[];
-        const row = rows[0];
-        if (!row) return null;
-        await conn.run(
-          `UPDATE ${t} SET reserved_at = ?, attempts = attempts + 1 WHERE id = ?`,
-          [now, row.id],
-        );
-        return toJobRecord({ ...row, reserved_at: now, attempts: row.attempts + 1 });
-      }));
-    }
-
-    if (driver === "postgres") {
-      return this.connection.transaction(async (conn) => {
-        const rows = (await conn.query(
-          `SELECT * FROM ${t}
-           WHERE queue = $1 AND (reserved_at IS NULL OR reserved_at <= $2) AND available_at <= $3
-           ORDER BY id ASC LIMIT 1 FOR UPDATE SKIP LOCKED`,
-          [queue, expiredCutoff, now],
-        )) as RawJobRow[];
-        const row = rows[0];
-        if (!row) return null;
-        await conn.run(
-          `UPDATE ${t} SET reserved_at = $1, attempts = attempts + 1 WHERE id = $2`,
-          [now, row.id],
-        );
-        return toJobRecord({ ...row, reserved_at: now, attempts: row.attempts + 1 });
-      });
-    }
-
-    const skipLocked = "FOR UPDATE SKIP LOCKED";
-    const tq = `\`${t}\``;
-
-    return this.connection.transaction(async (conn) => {
-      const rows = (await conn.query(
-        `SELECT * FROM ${tq}
-         WHERE queue = ? AND (reserved_at IS NULL OR reserved_at <= ?) AND available_at <= ?
-         ORDER BY id ASC LIMIT 1 ${skipLocked}`,
-        [queue, expiredCutoff, now],
-      )) as RawJobRow[];
+    const grammar = this.connection.getGrammar();
+    const t = grammar.wrap(this.table);
+    const p = (n: number) => grammar.placeholder(n);
+    const reserve = () => this.connection.transaction(async conn => {
+      const rows = await conn.query(`SELECT * FROM ${t}
+        WHERE queue = ${p(1)} AND (reserved_at IS NULL OR reserved_at <= ${p(2)}) AND available_at <= ${p(3)}
+        ORDER BY id ASC LIMIT 1 ${driver === "sqlite" ? "" : "FOR UPDATE SKIP LOCKED"}`,
+        [queue, now - retryAfterSeconds, now]) as RawJobRow[];
       const row = rows[0];
       if (!row) return null;
-      await conn.run(
-        `UPDATE ${tq} SET reserved_at = ?, attempts = attempts + 1 WHERE id = ?`,
-        [now, row.id],
-      );
-      return toJobRecord({ ...row, reserved_at: now, attempts: row.attempts + 1 });
+      await conn.run(`UPDATE ${t} SET reserved_at = ${p(1)}, reservation_token = ${p(2)}, attempts = attempts + 1 WHERE id = ${p(3)}`, [now, token, row.id]);
+      return toJobRecord({ ...row, reservation_token: token, reserved_at: now, attempts: row.attempts + 1 });
     });
+    return driver === "sqlite" ? this.withSqliteMutex(reserve) : reserve();
   }
 
-  async complete(id: number): Promise<void> {
-    const driver = this.connection.getDriverName();
-    const t = driver === "mysql" ? `\`${this.table}\`` : this.table;
-    if (driver === "postgres") {
-      await this.connection.run(`DELETE FROM ${t} WHERE id = $1`, [id]);
-    } else {
-      await this.connection.run(`DELETE FROM ${t} WHERE id = ?`, [id]);
-    }
+  async complete(id: number, token: string): Promise<boolean> {
+    const g = this.connection.getGrammar();
+    const result = await this.connection.run(`DELETE FROM ${g.wrap(this.table)} WHERE id = ${g.placeholder(1)} AND reservation_token = ${g.placeholder(2)}`, [id, token]);
+    return this.connection.affectedRows(result) > 0;
   }
 
-  async fail(id: number, exception: string): Promise<void> {
-    const now = Math.floor(Date.now() / 1000);
+  async fail(id: number, token: string, exception: string): Promise<boolean> {
     const driver = this.connection.getDriverName();
-    const t = driver === "mysql" ? `\`${this.table}\`` : this.table;
-    const f = driver === "mysql" ? `\`${this.failedTable}\`` : this.failedTable;
-
-    const failWork = async () => this.connection.transaction(async (conn) => {
-      const rows = (await conn.query(`SELECT * FROM ${t} WHERE id = ${driver === "postgres" ? "$1" : "?"}`, [id])) as RawJobRow[];
+    const g = this.connection.getGrammar();
+    const t = g.wrap(this.table);
+    const fail = () => this.connection.transaction(async conn => {
+      const rows = await conn.query(`SELECT * FROM ${t} WHERE id = ${g.placeholder(1)} AND reservation_token = ${g.placeholder(2)} ${driver === "sqlite" ? "" : "FOR UPDATE"}`, [id, token]) as RawJobRow[];
       const row = rows[0];
-      if (!row) return;
-      if (driver === "postgres") {
-        await conn.run(
-          `INSERT INTO ${f} (queue, job_class, payload, exception, failed_at) VALUES ($1, $2, $3, $4, $5)`,
-          [row.queue, row.job_class, row.payload, exception, now],
-        );
-        await conn.run(`DELETE FROM ${t} WHERE id = $1`, [id]);
-      } else {
-        await conn.run(
-          `INSERT INTO ${f} (queue, job_class, payload, exception, failed_at) VALUES (?, ?, ?, ?, ?)`,
-          [row.queue, row.job_class, row.payload, exception, now],
-        );
-        await conn.run(`DELETE FROM ${t} WHERE id = ?`, [id]);
-      }
+      if (!row) return false;
+      await conn.run(`INSERT INTO ${g.wrap(this.failedTable)} (queue, job_class, payload, exception, failed_at) VALUES (${this.placeholders(5)})`,
+        [row.queue, row.job_class, row.payload, exception, Math.floor(Date.now() / 1000)]);
+      await conn.run(`DELETE FROM ${t} WHERE id = ${g.placeholder(1)} AND reservation_token = ${g.placeholder(2)}`, [id, token]);
+      return true;
     });
-    if (driver === "sqlite") {
-      await this.withSqliteMutex(failWork);
-      return;
-    }
-    await failWork();
+    return driver === "sqlite" ? this.withSqliteMutex(fail) : fail();
   }
 
-  async release(id: number, delaySeconds: number): Promise<void> {
-    const now = Math.floor(Date.now() / 1000);
-    const availableAt = now + delaySeconds;
-    const driver = this.connection.getDriverName();
-    const t = driver === "mysql" ? `\`${this.table}\`` : this.table;
-    if (driver === "postgres") {
-      await this.connection.run(
-        `UPDATE ${t} SET reserved_at = NULL, available_at = $1 WHERE id = $2`,
-        [availableAt, id],
-      );
-    } else {
-      await this.connection.run(
-        `UPDATE ${t} SET reserved_at = NULL, available_at = ? WHERE id = ?`,
-        [availableAt, id],
-      );
-    }
+  async release(id: number, token: string, delaySeconds: number): Promise<boolean> {
+    const g = this.connection.getGrammar();
+    const result = await this.connection.run(`UPDATE ${g.wrap(this.table)} SET reserved_at = NULL, reservation_token = NULL, available_at = ${g.placeholder(1)} WHERE id = ${g.placeholder(2)} AND reservation_token = ${g.placeholder(3)}`,
+      [Math.floor(Date.now() / 1000) + delaySeconds, id, token]);
+    return this.connection.affectedRows(result) > 0;
+  }
+
+  async heartbeat(id: number, token: string): Promise<boolean> {
+    const g = this.connection.getGrammar();
+    // Select under lock also distinguishes a valid same-second MySQL heartbeat
+    // from its zero changed-row count.
+    const beat = () => this.connection.transaction(async conn => {
+      const rows = await conn.query(`SELECT id FROM ${g.wrap(this.table)} WHERE id = ${g.placeholder(1)} AND reservation_token = ${g.placeholder(2)} ${this.connection.getDriverName() === "sqlite" ? "" : "FOR UPDATE"}`, [id, token]);
+      if (!rows.length) return false;
+      await conn.run(`UPDATE ${g.wrap(this.table)} SET reserved_at = ${g.placeholder(1)} WHERE id = ${g.placeholder(2)} AND reservation_token = ${g.placeholder(3)}`, [Math.floor(Date.now() / 1000), id, token]);
+      return true;
+    });
+    return this.connection.getDriverName() === "sqlite" ? this.withSqliteMutex(beat) : beat();
   }
 
   async size(queue?: string): Promise<number> {

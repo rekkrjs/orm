@@ -1,0 +1,935 @@
+{
+  "protocol": "orm-runtime-v1",
+  "createdAt": "2026-09-04T20:07:46.130Z",
+  "sourceSha256": "a9035db3f92f8ea9e7bb044fc4b07b09d6f8ab17040e15c2917ba89e1b8363fe",
+  "harnessSha256": "141c492007aa7f2ea93fa75069a236076b2aa0b3f97ed4c549f06be744c40b97",
+  "sourceLabel": "worktree",
+  "commit": "9eff217986e89ee8b662b22f8dda8447e2bd4fee",
+  "dirtyPaths": "M .tmp_hacks/bun-mysql-event-loop.md\n M .tmp_hacks/bun-sql-write-count.md\n M .tmp_hacks/elysia-1.4-collection-constructor-name.md\n M README.md\n M bun.lock\n M docs/README.md\n M docs/cache.md\n M docs/configuration.md\n M docs/installation.md\n M docs/migrations.md\n M docs/query-builder.md\n M docs/queue.md\n M docs/search.md\n M docs/sveltekit.md\n M docs/testing.md\n M docs/transactions.md\n M package.json\n M src/cache/Cache.ts\n M src/cache/CacheStore.ts\n M src/cache/MemoryCacheStore.ts\n M src/cache/RedisCacheStore.ts\n M src/cli/MigrationHelpers.ts\n M src/cli/QueueInstallCommand.ts\n M src/cli/TypesGenerateCommand.ts\n M src/config/OrmConfig.ts\n M src/connection/Connection.ts\n M src/connection/ConnectionManager.ts\n M src/connection/TenantContext.ts\n M src/connection/TransactionContext.ts\n M src/index.ts\n M src/migration/MigrationLock.ts\n M src/model/IdentityMap.ts\n M src/model/ModelCore.ts\n M src/model/ModelJsonRow.ts\n M src/model/ModelPersistence.ts\n M src/model/ModelQuerying.ts\n M src/policies/index.ts\n M src/query/Builder.ts\n M src/query/DB.ts\n M src/queue/DatabaseQueueDriver.ts\n M src/queue/Job.ts\n M src/queue/Queue.ts\n M src/queue/QueueDriver.ts\n M src/queue/RedisQueueDriver.ts\n M src/queue/Worker.ts\n M src/schema/Schema.ts\n M src/search/SearchManager.ts\n M src/search/SearchObserver.ts\n M src/search/engines/PostgresFTSEngine.ts\n M src/search/engines/SqliteFTS5Engine.ts\n M src/sveltekit/route.ts\n M src/types/index.ts\n M tests/cache-events-regressions.test.ts\n M tests/cache.test.ts\n M tests/config-logging.test.ts\n M tests/connection-pool-tenancy.test.ts\n M tests/database-queue.integration.test.ts\n M tests/orm-config-facade.test.ts\n M tests/policies.test.ts\n M tests/postgres-fts-sql.test.ts\n M tests/query-builder-advanced.test.ts\n M tests/queue-redis.test.ts\n M tests/queue.test.ts\n M tests/redis.integration.test.ts\n M tests/search-observer.test.ts\n M tests/search-queue-connection.test.ts\n M tests/search-tenancy.test.ts\n M tests/sveltekit-route-validation.test.ts\n M tests/tenant-connection.test.ts\n M tmp/plan-3_0_0.md\n?? .github/\n?? benchmarks/profiles/\n?? benchmarks/results/2026-09-04T19-37-36.911Z-9eff217-76628494.json\n?? benchmarks/results/2026-09-04T19-38-27.479Z-9eff217-5f139dd8.json\n?? benchmarks/results/2026-09-04T19-39-08.699Z-9eff217-2913c5d7.json\n?? benchmarks/results/2026-09-04T19-42-36.686Z-9eff217-fddc0e6e.json\n?? benchmarks/results/2026-09-04T20-07-09.256Z-9eff217-3e40e95a.json\n?? benchmarks/runtime/\n?? docs/upgrade-3.0.md\n?? scripts/benchmark-runtime.ts\n?? scripts/elysia-consumer-probe.ts\n?? scripts/verify-services.ts\n?? src/connection/AfterCommitError.ts\n?? src/connection/ExecutionContext.ts\n?? src/query/SqlFragment.ts\n?? tests/execution-context.test.ts\n?? tests/lifecycle-v3.test.ts\n?? tests/queue-leases.test.ts\n?? tests/sql-fragments.test.ts\n?? tests/tenant-transaction-matrix.test.ts\n?? tests/v3-acceptance.test.ts",
+  "bun": {
+    "version": "1.4.1",
+    "revision": "4661e494f052c83c80dade1318e5710238340be6"
+  },
+  "machine": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "release": "24.6.0",
+    "cpu": "Apple M4",
+    "totalmem": 34359738368
+  },
+  "samples": 200,
+  "repetitions": 3,
+  "results": [
+    {
+      "driver": "sqlite",
+      "serverVersion": "3.43.2",
+      "poolMax": 4,
+      "run": 1,
+      "metrics": [
+        {
+          "name": "point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 2.722125000000002,
+          "operationsPerSecond": 73472.01175552183,
+          "medianMs": 0.011750000000002814,
+          "p95Ms": 0.02366699999999966,
+          "p99Ms": 0.03966700000000145
+        },
+        {
+          "name": "tenant-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 3.8578750000000035,
+          "operationsPerSecond": 51842.01147004499,
+          "medianMs": 0.010750000000001592,
+          "p95Ms": 0.021708999999997758,
+          "p99Ms": 0.0642499999999977
+        },
+        {
+          "name": "tenant-transaction-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 4.854959000000001,
+          "operationsPerSecond": 41194.992583871455,
+          "medianMs": 0.01820799999999423,
+          "p95Ms": 0.032374999999994714,
+          "p99Ms": 0.05183399999999949
+        },
+        {
+          "name": "pool-contention",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 1.154167000000001,
+          "operationsPerSecond": 173285.14850970425,
+          "medianMs": 0.0453329999999994,
+          "p95Ms": 0.05112499999999898,
+          "p99Ms": 0.05841699999999861
+        },
+        {
+          "name": "create-save-delete",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 13.851124999999996,
+          "operationsPerSecond": 14439.260348888633,
+          "medianMs": 0.048166999999999405,
+          "p95Ms": 0.11570799999999792,
+          "p99Ms": 0.21774999999999523
+        },
+        {
+          "name": "create-save-delete-observers",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 7.802500000000002,
+          "operationsPerSecond": 25632.80999679589,
+          "medianMs": 0.035583000000002585,
+          "p95Ms": 0.04520800000000236,
+          "p99Ms": 0.06516700000000242
+        },
+        {
+          "name": "bulk-insert-update-delete-25",
+          "concurrency": 1,
+          "operations": 30,
+          "elapsedMs": 1.2845000000000013,
+          "operationsPerSecond": 23355.391202802624,
+          "medianMs": 0.03912499999999852,
+          "p95Ms": 0.05137500000000017,
+          "p99Ms": 0.1322499999999991
+        },
+        {
+          "name": "queue-reserve-complete",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 8.537708000000002,
+          "operationsPerSecond": 23425.490775744493,
+          "medianMs": 0.294832999999997,
+          "p95Ms": 0.6857089999999957,
+          "p99Ms": 0.8052919999999943
+        }
+      ]
+    },
+    {
+      "driver": "sqlite",
+      "serverVersion": "3.43.2",
+      "poolMax": 4,
+      "run": 2,
+      "metrics": [
+        {
+          "name": "point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 1.48058300000001,
+          "operationsPerSecond": 135081.9238097416,
+          "medianMs": 0.0051660000000026685,
+          "p95Ms": 0.008167000000000257,
+          "p99Ms": 0.01475000000000648
+        },
+        {
+          "name": "tenant-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 1.258708999999996,
+          "operationsPerSecond": 158892.96096238337,
+          "medianMs": 0.00549999999999784,
+          "p95Ms": 0.009624999999999773,
+          "p99Ms": 0.01841699999999946
+        },
+        {
+          "name": "tenant-transaction-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 2.822084000000004,
+          "operationsPerSecond": 70869.61266921883,
+          "medianMs": 0.012000000000000455,
+          "p95Ms": 0.016791999999995255,
+          "p99Ms": 0.022082999999994968
+        },
+        {
+          "name": "pool-contention",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 0.8869159999999994,
+          "operationsPerSecond": 225500.49835610154,
+          "medianMs": 0.034874999999999545,
+          "p95Ms": 0.039957999999998606,
+          "p99Ms": 0.042792000000005714
+        },
+        {
+          "name": "create-save-delete",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 7.184333999999993,
+          "operationsPerSecond": 27838.349386317535,
+          "medianMs": 0.03270899999999699,
+          "p95Ms": 0.04437499999998806,
+          "p99Ms": 0.11487499999999784
+        },
+        {
+          "name": "create-save-delete-observers",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 6.701834000000005,
+          "operationsPerSecond": 29842.577419852514,
+          "medianMs": 0.03083300000000122,
+          "p95Ms": 0.03870799999999974,
+          "p99Ms": 0.047416999999995824
+        },
+        {
+          "name": "bulk-insert-update-delete-25",
+          "concurrency": 1,
+          "operations": 30,
+          "elapsedMs": 1.1050419999999974,
+          "operationsPerSecond": 27148.289386285833,
+          "medianMs": 0.03520799999999724,
+          "p95Ms": 0.04637500000001182,
+          "p99Ms": 0.05858299999999872
+        },
+        {
+          "name": "queue-reserve-complete",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 7.570292000000009,
+          "operationsPerSecond": 26419.060189488035,
+          "medianMs": 0.276291999999998,
+          "p95Ms": 0.38870899999999153,
+          "p99Ms": 0.7216249999999889
+        }
+      ]
+    },
+    {
+      "driver": "sqlite",
+      "serverVersion": "3.43.2",
+      "poolMax": 4,
+      "run": 3,
+      "metrics": [
+        {
+          "name": "point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 1.2649580000000071,
+          "operationsPerSecond": 158108.01623453022,
+          "medianMs": 0.00462500000000432,
+          "p95Ms": 0.006292000000001963,
+          "p99Ms": 0.020042000000003668
+        },
+        {
+          "name": "tenant-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 1.0838750000000061,
+          "operationsPerSecond": 184523.12305385663,
+          "medianMs": 0.005124999999992497,
+          "p95Ms": 0.00679200000000435,
+          "p99Ms": 0.010165999999998121
+        },
+        {
+          "name": "tenant-transaction-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 2.332250000000002,
+          "operationsPerSecond": 85754.10011791182,
+          "medianMs": 0.011250000000003979,
+          "p95Ms": 0.013707999999994058,
+          "p99Ms": 0.02049999999999841
+        },
+        {
+          "name": "pool-contention",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 1.0689999999999884,
+          "operationsPerSecond": 187090.7390084211,
+          "medianMs": 0.030917000000002304,
+          "p95Ms": 0.04479099999998937,
+          "p99Ms": 0.29579200000000583
+        },
+        {
+          "name": "create-save-delete",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 7.120874999999998,
+          "operationsPerSecond": 28086.436006810967,
+          "medianMs": 0.029457999999991102,
+          "p95Ms": 0.05604200000000503,
+          "p99Ms": 0.13791700000000162
+        },
+        {
+          "name": "create-save-delete-observers",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 6.470249999999993,
+          "operationsPerSecond": 30910.706696031873,
+          "medianMs": 0.028291999999993322,
+          "p95Ms": 0.04120799999999747,
+          "p99Ms": 0.08374999999999488
+        },
+        {
+          "name": "bulk-insert-update-delete-25",
+          "concurrency": 1,
+          "operations": 30,
+          "elapsedMs": 0.9963750000000005,
+          "operationsPerSecond": 30109.145652992083,
+          "medianMs": 0.03212499999999352,
+          "p95Ms": 0.04050000000000864,
+          "p99Ms": 0.05937500000000284
+        },
+        {
+          "name": "queue-reserve-complete",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 7.5344579999999866,
+          "operationsPerSecond": 26544.70965263863,
+          "medianMs": 0.2760420000000181,
+          "p95Ms": 0.38587499999999864,
+          "p99Ms": 0.6856249999999875
+        }
+      ]
+    },
+    {
+      "driver": "postgres",
+      "serverVersion": "PostgreSQL 18.6 (Postgres.app) on aarch64-apple-darwin23.6.0, compiled by Apple clang version 15.0.0 (clang-1500.3.9.4), 64-bit",
+      "poolMax": 4,
+      "run": 1,
+      "metrics": [
+        {
+          "name": "point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 12.014707999999985,
+          "operationsPerSecond": 16646.263895884964,
+          "medianMs": 0.05837500000001228,
+          "p95Ms": 0.07583299999998871,
+          "p99Ms": 0.08999999999997499
+        },
+        {
+          "name": "tenant-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 11.248958999999985,
+          "operationsPerSecond": 17779.422967049686,
+          "medianMs": 0.05533299999999031,
+          "p95Ms": 0.06866700000000492,
+          "p99Ms": 0.08187499999999659
+        },
+        {
+          "name": "tenant-transaction-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 23.787000000000006,
+          "operationsPerSecond": 8407.953924412492,
+          "medianMs": 0.09524999999999295,
+          "p95Ms": 0.17845800000000622,
+          "p99Ms": 0.39795899999998596
+        },
+        {
+          "name": "pool-contention",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 2.7277919999999938,
+          "operationsPerSecond": 73319.3733246525,
+          "medianMs": 0.09833299999999667,
+          "p95Ms": 0.16429200000001742,
+          "p99Ms": 0.21299999999999386
+        },
+        {
+          "name": "create-save-delete",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 326.284875,
+          "operationsPerSecond": 612.9612964744382,
+          "medianMs": 1.5977920000000267,
+          "p95Ms": 1.7845829999999978,
+          "p99Ms": 2.1156249999999943
+        },
+        {
+          "name": "create-save-delete-observers",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 393.63083299999994,
+          "operationsPerSecond": 508.0902796046976,
+          "medianMs": 1.8369159999999738,
+          "p95Ms": 2.151917000000026,
+          "p99Ms": 4.7797500000000355
+        },
+        {
+          "name": "bulk-insert-update-delete-25",
+          "concurrency": 1,
+          "operations": 30,
+          "elapsedMs": 17.14091600000006,
+          "operationsPerSecond": 1750.1981807739967,
+          "medianMs": 0.45641699999998764,
+          "p95Ms": 1.508542000000034,
+          "p99Ms": 1.5308339999999134
+        },
+        {
+          "name": "queue-reserve-complete",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 18.579166999999984,
+          "operationsPerSecond": 10764.745265490114,
+          "medianMs": 0.6676250000000437,
+          "p95Ms": 1.1275419999999485,
+          "p99Ms": 1.5261669999999867
+        }
+      ]
+    },
+    {
+      "driver": "postgres",
+      "serverVersion": "PostgreSQL 18.6 (Postgres.app) on aarch64-apple-darwin23.6.0, compiled by Apple clang version 15.0.0 (clang-1500.3.9.4), 64-bit",
+      "poolMax": 4,
+      "run": 2,
+      "metrics": [
+        {
+          "name": "point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 6.248166999999967,
+          "operationsPerSecond": 32009.387713228705,
+          "medianMs": 0.030542000000082226,
+          "p95Ms": 0.03558399999997164,
+          "p99Ms": 0.04070899999999256
+        },
+        {
+          "name": "tenant-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 6.46387500000003,
+          "operationsPerSecond": 30941.192396201826,
+          "medianMs": 0.031042000000070402,
+          "p95Ms": 0.03808300000002873,
+          "p99Ms": 0.0500409999999647
+        },
+        {
+          "name": "tenant-transaction-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 17.705874999999878,
+          "operationsPerSecond": 11295.685754022401,
+          "medianMs": 0.08520899999996345,
+          "p95Ms": 0.1004169999999931,
+          "p99Ms": 0.11079200000017408
+        },
+        {
+          "name": "pool-contention",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 3.2899579999998423,
+          "operationsPerSecond": 60791.04961218641,
+          "medianMs": 0.11970900000005713,
+          "p95Ms": 0.18791699999997036,
+          "p99Ms": 0.24545899999998255
+        },
+        {
+          "name": "create-save-delete",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 367.4999170000001,
+          "operationsPerSecond": 544.2178099866073,
+          "medianMs": 1.6292499999999563,
+          "p95Ms": 2.5422499999999673,
+          "p99Ms": 4.8716249999999945
+        },
+        {
+          "name": "create-save-delete-observers",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 341.0377500000002,
+          "operationsPerSecond": 586.4453421945221,
+          "medianMs": 1.679540999999972,
+          "p95Ms": 1.9325410000001284,
+          "p99Ms": 2.08466599999997
+        },
+        {
+          "name": "bulk-insert-update-delete-25",
+          "concurrency": 1,
+          "operations": 30,
+          "elapsedMs": 12.757707999999866,
+          "operationsPerSecond": 2351.519567621419,
+          "medianMs": 0.3898330000001806,
+          "p95Ms": 0.49695900000006077,
+          "p99Ms": 1.2531670000000759
+        },
+        {
+          "name": "queue-reserve-complete",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 16.788584000000128,
+          "operationsPerSecond": 11912.856974715585,
+          "medianMs": 0.6337079999998423,
+          "p95Ms": 0.9329999999999927,
+          "p99Ms": 1.0943340000001172
+        }
+      ]
+    },
+    {
+      "driver": "postgres",
+      "serverVersion": "PostgreSQL 18.6 (Postgres.app) on aarch64-apple-darwin23.6.0, compiled by Apple clang version 15.0.0 (clang-1500.3.9.4), 64-bit",
+      "poolMax": 4,
+      "run": 3,
+      "metrics": [
+        {
+          "name": "point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 6.177208000000064,
+          "operationsPerSecond": 32377.086865133555,
+          "medianMs": 0.030167000000119515,
+          "p95Ms": 0.03495899999984431,
+          "p99Ms": 0.03995899999995345
+        },
+        {
+          "name": "tenant-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 6.251792000000023,
+          "operationsPerSecond": 31990.8275899133,
+          "medianMs": 0.030874999999923602,
+          "p95Ms": 0.035209000000122614,
+          "p99Ms": 0.042542000000139524
+        },
+        {
+          "name": "tenant-transaction-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 17.220415999999886,
+          "operationsPerSecond": 11614.12128487496,
+          "medianMs": 0.08491699999990487,
+          "p95Ms": 0.1007089999998243,
+          "p99Ms": 0.14029200000004494
+        },
+        {
+          "name": "pool-contention",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 2.425958000000037,
+          "operationsPerSecond": 82441.65809960311,
+          "medianMs": 0.09187500000007276,
+          "p95Ms": 0.12341700000001765,
+          "p99Ms": 0.14841599999999744
+        },
+        {
+          "name": "create-save-delete",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 323.0065410000002,
+          "operationsPerSecond": 619.1825075146076,
+          "medianMs": 1.5745420000002923,
+          "p95Ms": 1.8837919999996302,
+          "p99Ms": 1.9707079999998314
+        },
+        {
+          "name": "create-save-delete-observers",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 370.2616250000001,
+          "operationsPerSecond": 540.1585973161543,
+          "medianMs": 1.831666000000041,
+          "p95Ms": 1.9785420000002887,
+          "p99Ms": 2.21679099999983
+        },
+        {
+          "name": "bulk-insert-update-delete-25",
+          "concurrency": 1,
+          "operations": 30,
+          "elapsedMs": 14.913040999999794,
+          "operationsPerSecond": 2011.6621418797424,
+          "medianMs": 0.41379200000028504,
+          "p95Ms": 1.4259170000000267,
+          "p99Ms": 1.50525000000016
+        },
+        {
+          "name": "queue-reserve-complete",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 16.891541999999845,
+          "operationsPerSecond": 11840.245254104204,
+          "medianMs": 0.631083000000217,
+          "p95Ms": 0.9990410000000338,
+          "p99Ms": 1.2042500000002292
+        }
+      ]
+    },
+    {
+      "driver": "mysql",
+      "serverVersion": "26.7.0",
+      "poolMax": 4,
+      "run": 1,
+      "metrics": [
+        {
+          "name": "point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 14.86245800000006,
+          "operationsPerSecond": 13456.724318413495,
+          "medianMs": 0.07529199999999037,
+          "p95Ms": 0.10187499999983629,
+          "p99Ms": 0.12887499999987995
+        },
+        {
+          "name": "tenant-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 7.843041000000085,
+          "operationsPerSecond": 25500.312952590437,
+          "medianMs": 0.03774999999995998,
+          "p95Ms": 0.05004200000030323,
+          "p99Ms": 0.06337500000017826
+        },
+        {
+          "name": "tenant-transaction-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 18.28912500000024,
+          "operationsPerSecond": 10935.46028035772,
+          "medianMs": 0.08116700000027777,
+          "p95Ms": 0.11741699999993216,
+          "p99Ms": 0.2262919999998303
+        },
+        {
+          "name": "pool-contention",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 2.4974999999999454,
+          "operationsPerSecond": 80080.08008008183,
+          "medianMs": 0.09074999999984357,
+          "p95Ms": 0.15875000000005457,
+          "p99Ms": 0.18645799999967494
+        },
+        {
+          "name": "create-save-delete",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 109.17954199999986,
+          "operationsPerSecond": 1831.8450172652333,
+          "medianMs": 0.5289170000000922,
+          "p95Ms": 0.7012079999999514,
+          "p99Ms": 1.1365829999999733
+        },
+        {
+          "name": "create-save-delete-observers",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 109.33445800000027,
+          "operationsPerSecond": 1829.2494759520325,
+          "medianMs": 0.5226670000001832,
+          "p95Ms": 0.7062089999999444,
+          "p99Ms": 0.8513749999997344
+        },
+        {
+          "name": "bulk-insert-update-delete-25",
+          "concurrency": 1,
+          "operations": 30,
+          "elapsedMs": 21.458082999999988,
+          "operationsPerSecond": 1398.0745623921773,
+          "medianMs": 0.707332999999835,
+          "p95Ms": 1.3713330000000497,
+          "p99Ms": 1.499667000000045
+        },
+        {
+          "name": "queue-reserve-complete",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 29.095916000000216,
+          "operationsPerSecond": 6873.816930183552,
+          "medianMs": 1.1109999999998763,
+          "p95Ms": 1.6643749999998363,
+          "p99Ms": 2.242583000000195
+        }
+      ]
+    },
+    {
+      "driver": "mysql",
+      "serverVersion": "26.7.0",
+      "poolMax": 4,
+      "run": 2,
+      "metrics": [
+        {
+          "name": "point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 7.278708999999708,
+          "operationsPerSecond": 27477.40018181906,
+          "medianMs": 0.03412500000013097,
+          "p95Ms": 0.040833999999904336,
+          "p99Ms": 0.059958000000278844
+        },
+        {
+          "name": "tenant-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 6.7588330000003225,
+          "operationsPerSecond": 29590.90718767433,
+          "medianMs": 0.03308400000014444,
+          "p95Ms": 0.03912499999978536,
+          "p99Ms": 0.042832999999973254
+        },
+        {
+          "name": "tenant-transaction-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 16.903917000000092,
+          "operationsPerSecond": 11831.57726105724,
+          "medianMs": 0.08216599999968821,
+          "p95Ms": 0.09320800000023155,
+          "p99Ms": 0.1101250000001528
+        },
+        {
+          "name": "pool-contention",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 2.4605000000001382,
+          "operationsPerSecond": 81284.29181060303,
+          "medianMs": 0.08283400000027541,
+          "p95Ms": 0.1729169999998703,
+          "p99Ms": 0.30150000000003274
+        },
+        {
+          "name": "create-save-delete",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 110.69808400000011,
+          "operationsPerSecond": 1806.716004226413,
+          "medianMs": 0.5317919999997684,
+          "p95Ms": 0.7059590000003482,
+          "p99Ms": 0.8449169999998958
+        },
+        {
+          "name": "create-save-delete-observers",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 108.5024169999997,
+          "operationsPerSecond": 1843.276910596384,
+          "medianMs": 0.5254579999996167,
+          "p95Ms": 0.6811670000001868,
+          "p99Ms": 0.827375000000302
+        },
+        {
+          "name": "bulk-insert-update-delete-25",
+          "concurrency": 1,
+          "operations": 30,
+          "elapsedMs": 21.494166999999834,
+          "operationsPerSecond": 1395.7275013263009,
+          "medianMs": 0.6519589999998061,
+          "p95Ms": 1.2094999999999345,
+          "p99Ms": 1.8397919999997612
+        },
+        {
+          "name": "queue-reserve-complete",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 42.072957999999744,
+          "operationsPerSecond": 4753.647223948486,
+          "medianMs": 0.9762089999999262,
+          "p95Ms": 5.119834000000083,
+          "p99Ms": 9.928292000000056
+        }
+      ]
+    },
+    {
+      "driver": "mysql",
+      "serverVersion": "26.7.0",
+      "poolMax": 4,
+      "run": 3,
+      "metrics": [
+        {
+          "name": "point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 6.92166700000007,
+          "operationsPerSecond": 28894.773470032287,
+          "medianMs": 0.03408300000000963,
+          "p95Ms": 0.04204100000015387,
+          "p99Ms": 0.054917000000386906
+        },
+        {
+          "name": "tenant-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 6.805917000000136,
+          "operationsPerSecond": 29386.194395258713,
+          "medianMs": 0.03341599999976097,
+          "p95Ms": 0.04045899999982794,
+          "p99Ms": 0.05108300000028976
+        },
+        {
+          "name": "tenant-transaction-point",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 17.182582999999795,
+          "operationsPerSecond": 11639.693519885945,
+          "medianMs": 0.08162499999980355,
+          "p95Ms": 0.10050000000001091,
+          "p99Ms": 0.12345900000036636
+        },
+        {
+          "name": "pool-contention",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 1.816124999999829,
+          "operationsPerSecond": 110124.57842935857,
+          "medianMs": 0.07320799999979499,
+          "p95Ms": 0.09900000000016007,
+          "p99Ms": 0.11191599999983737
+        },
+        {
+          "name": "create-save-delete",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 112.42912500000011,
+          "operationsPerSecond": 1778.8984838225842,
+          "medianMs": 0.4793329999997695,
+          "p95Ms": 0.697041999999783,
+          "p99Ms": 0.9832500000002256
+        },
+        {
+          "name": "create-save-delete-observers",
+          "concurrency": 1,
+          "operations": 200,
+          "elapsedMs": 107.3272920000004,
+          "operationsPerSecond": 1863.4589233836186,
+          "medianMs": 0.5229589999999007,
+          "p95Ms": 0.6661669999998594,
+          "p99Ms": 0.7388340000002245
+        },
+        {
+          "name": "bulk-insert-update-delete-25",
+          "concurrency": 1,
+          "operations": 30,
+          "elapsedMs": 19.697749999999814,
+          "operationsPerSecond": 1523.0165881890207,
+          "medianMs": 0.6796250000002146,
+          "p95Ms": 1.2387920000001031,
+          "p99Ms": 1.325749999999971
+        },
+        {
+          "name": "queue-reserve-complete",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 27.84462500000018,
+          "operationsPerSecond": 7182.714796841356,
+          "medianMs": 1.0876250000001164,
+          "p95Ms": 1.4060829999998532,
+          "p99Ms": 1.663000000000011
+        }
+      ]
+    },
+    {
+      "driver": "redis",
+      "serverVersion": "8.10.1",
+      "run": 1,
+      "metrics": [
+        {
+          "name": "queue-reserve-complete",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 10.668749999999818,
+          "operationsPerSecond": 18746.338605741385,
+          "medianMs": 0.41116699999975026,
+          "p95Ms": 0.5134170000001177,
+          "p99Ms": 0.5789999999997235
+        }
+      ]
+    },
+    {
+      "driver": "redis",
+      "serverVersion": "8.10.1",
+      "run": 2,
+      "metrics": [
+        {
+          "name": "queue-reserve-complete",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 5.762541999999939,
+          "operationsPerSecond": 34706.90539001748,
+          "medianMs": 0.23045799999999872,
+          "p95Ms": 0.2579160000000229,
+          "p99Ms": 0.26537499999994907
+        }
+      ]
+    },
+    {
+      "driver": "redis",
+      "serverVersion": "8.10.1",
+      "run": 3,
+      "metrics": [
+        {
+          "name": "queue-reserve-complete",
+          "concurrency": 8,
+          "operations": 200,
+          "elapsedMs": 5.623792000000321,
+          "operationsPerSecond": 35563.192948812575,
+          "medianMs": 0.2227499999999054,
+          "p95Ms": 0.2468749999998181,
+          "p99Ms": 0.24970799999982773
+        }
+      ]
+    }
+  ],
+  "memory": [
+    {
+      "before": {
+        "rss": 80576512,
+        "heapTotal": 8066048,
+        "heapUsed": 5844712,
+        "external": 1722472,
+        "arrayBuffers": 0
+      },
+      "afterGc": {
+        "rss": 97763328,
+        "heapTotal": 7493632,
+        "heapUsed": 6479288,
+        "external": 2178600,
+        "arrayBuffers": 0
+      },
+      "peakHeapUsed": 20381355,
+      "peakRssBytes": 97779712,
+      "elapsedMs": 62.426708000000005,
+      "explicitGcMs": 1.4824580000000083,
+      "rows": 2000,
+      "rounds": 30
+    },
+    {
+      "before": {
+        "rss": 79020032,
+        "heapTotal": 8131584,
+        "heapUsed": 5846082,
+        "external": 1725234,
+        "arrayBuffers": 0
+      },
+      "afterGc": {
+        "rss": 95649792,
+        "heapTotal": 9541632,
+        "heapUsed": 6475520,
+        "external": 2177168,
+        "arrayBuffers": 0
+      },
+      "peakHeapUsed": 20557511,
+      "peakRssBytes": 95666176,
+      "elapsedMs": 63.120166999999995,
+      "explicitGcMs": 1.7443329999999975,
+      "rows": 2000,
+      "rounds": 30
+    },
+    {
+      "before": {
+        "rss": 78135296,
+        "heapTotal": 8082432,
+        "heapUsed": 5843827,
+        "external": 1722979,
+        "arrayBuffers": 0
+      },
+      "afterGc": {
+        "rss": 98893824,
+        "heapTotal": 7018496,
+        "heapUsed": 6253378,
+        "external": 2128898,
+        "arrayBuffers": 0
+      },
+      "peakHeapUsed": 24503106,
+      "peakRssBytes": 98910208,
+      "elapsedMs": 58.823625,
+      "explicitGcMs": 1.4522079999999988,
+      "rows": 2000,
+      "rounds": 30
+    }
+  ]
+}

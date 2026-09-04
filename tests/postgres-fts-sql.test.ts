@@ -8,6 +8,9 @@ class FakePostgresConnection {
 
   constructor(private readonly schema?: string) {}
 
+  reusableConnection() { return this; }
+  isRetired() { return false; }
+
   getDriverName(): string {
     return "postgres";
   }

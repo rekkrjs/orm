@@ -923,7 +923,7 @@ describe("Advanced Query Builder Features", () => {
       const builder = new Builder(db, "products")
         .updateFrom("categories", "products.category", "=", "categories.name");
       expect(builder.updateJoins.length).toBe(1);
-      expect(builder.updateJoins[0]).toContain("INNER JOIN");
+      expect(builder.updateJoins[0]).toMatchObject({ type: "INNER", table: "categories" });
     });
   });
 

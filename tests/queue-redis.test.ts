@@ -69,7 +69,7 @@ describe.skipIf(!url)("RedisQueueDriver", () => {
   it("complete() removes job data", async () => {
     await driver.dispatch("default", "SendEmail", "{}", 0, 3);
     const job = await driver.reserve("default", 90);
-    await driver.complete(job!.id);
+    await driver.complete(job!.id, job!.reservationToken);
     expect(await driver.size("default")).toBe(0);
     expect(await client!.send("EXISTS", [`${prefix}job:${job!.id}`])).toBe(0);
     expect(await client!.send("ZCARD", [`${prefix}reserved:default`])).toBe(0);
@@ -78,7 +78,7 @@ describe.skipIf(!url)("RedisQueueDriver", () => {
   it("fail() writes to failed list and removes job", async () => {
     await driver.dispatch("default", "SendEmail", "{}", 0, 3);
     const job = await driver.reserve("default", 90);
-    await driver.fail(job!.id, "Error: SMTP timeout");
+    await driver.fail(job!.id, job!.reservationToken, "Error: SMTP timeout");
 
     const failed = (await client!.send("LRANGE", [`${prefix}failed`, "0", "-1"])) as string[];
     expect(failed).toHaveLength(1);
@@ -95,7 +95,7 @@ describe.skipIf(!url)("RedisQueueDriver", () => {
   it("release() with no delay puts the job back on the pending list", async () => {
     await driver.dispatch("default", "SendEmail", "{}", 0, 3);
     const job = await driver.reserve("default", 90);
-    await driver.release(job!.id, 0);
+    await driver.release(job!.id, job!.reservationToken, 0);
 
     expect(await client!.send("LLEN", [`${prefix}pending:default`])).toBe(1);
     expect(await client!.send("ZCARD", [`${prefix}reserved:default`])).toBe(0);
@@ -108,7 +108,7 @@ describe.skipIf(!url)("RedisQueueDriver", () => {
   it("release() with a delay goes to the delayed set", async () => {
     await driver.dispatch("default", "SendEmail", "{}", 0, 3);
     const job = await driver.reserve("default", 90);
-    await driver.release(job!.id, 60);
+    await driver.release(job!.id, job!.reservationToken, 60);
 
     expect(await client!.send("ZCARD", [`${prefix}delayed:default`])).toBe(1);
     expect(await client!.send("LLEN", [`${prefix}pending:default`])).toBe(0);
@@ -260,7 +260,7 @@ describe.skipIf(!url)("RedisQueueDriver atomicity", () => {
   it("release clears the reservation and republishes in one step", async () => {
     await driver.dispatch("default", "SendEmail", "{}", 0, 3);
     const job = await driver.reserve("default", 90);
-    await driver.release(job!.id, 0);
+    await driver.release(job!.id, job!.reservationToken, 0);
 
     // Never both reserved and pending, and never neither.
     expect(await client!.send("ZCARD", [`${prefix}reserved:default`])).toBe(0);
@@ -270,8 +270,8 @@ describe.skipIf(!url)("RedisQueueDriver atomicity", () => {
   it("release on a job that no longer exists is a no-op", async () => {
     await driver.dispatch("default", "SendEmail", "{}", 0, 3);
     const job = await driver.reserve("default", 90);
-    await driver.complete(job!.id);
-    await driver.release(job!.id, 0);
+    await driver.complete(job!.id, job!.reservationToken);
+    await driver.release(job!.id, job!.reservationToken, 0);
 
     expect(await client!.send("LLEN", [`${prefix}pending:default`])).toBe(0);
   });
@@ -279,7 +279,7 @@ describe.skipIf(!url)("RedisQueueDriver atomicity", () => {
   it("fail buries the job and clears its reservation together", async () => {
     await driver.dispatch("default", "SendEmail", "{}", 0, 3);
     const job = await driver.reserve("default", 90);
-    await driver.fail(job!.id, "boom");
+    await driver.fail(job!.id, job!.reservationToken, "boom");
 
     expect(await client!.send("LLEN", [`${prefix}failed`])).toBe(1);
     expect(await client!.send("ZCARD", [`${prefix}reserved:default`])).toBe(0);

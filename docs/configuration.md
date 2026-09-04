@@ -575,49 +575,44 @@ const orm = configureOrm(config);
 
 It returns a [facade](./library-usage.md) you can use to run migrations and seeders programmatically.
 
-### SvelteKit
+### Reconfiguration and SvelteKit HMR
 
-Bootstrap ORM in a server-only singleton module so hot reloads do not re-create it from multiple places. Guard the singleton against Vite HMR invalidating the framework's own internal modules (`Model`, `ConnectionManager`) — when that happens the cached `__orm` survives on `globalThis` but `Model.connection` / `ConnectionManager.defaultConnection` are wiped on the new class instances, which is exactly when you see `No connection set on model Tenant`:
+`configureOrm(config)` configures once. Replace an active configuration with
+`await reconfigureOrm(config)` from outside a tenant, query or transaction scope.
+It validates first, retires the old state, drains active work and search batches,
+closes owned pools, then installs the replacement. Omitted cache, queue, search,
+logging and tenancy options are cleared. A cleanup failure rejects; retry the
+asynchronous operation before admitting new requests.
+
+Use a server-only bootstrap module. Keep ORM modules outside Vite's hot module
+replacement graph; restart the server if those modules themselves change.
+For application configuration reloads, serialize the replacement:
 
 ```ts
 // src/lib/server/orm.ts
-import { configureOrm, ConnectionManager, type ConfiguredOrm } from "@rekkr/orm";
+import { configureOrm, reconfigureOrm, type ConfiguredOrm } from "@rekkr/orm";
 import config from "../../../orm.config";
 
 declare global {
-  // eslint-disable-next-line no-var
-  var __orm: ConfiguredOrm | undefined;
+  var __ormReady: Promise<ConfiguredOrm> | undefined;
 }
 
-// First load OR HMR invalidated Model/ConnectionManager (their static state
-// was reset). Re-running configureOrm is race-free — new defaults install
-// before the previous pool is torn down in the background.
-if (!globalThis.__orm || !ConnectionManager.getDefault()) {
-  globalThis.__orm = configureOrm(config);
-}
-
-const orm = globalThis.__orm;
-export default orm;
+const previous = globalThis.__ormReady;
+globalThis.__ormReady = previous
+  ? previous.then(() => reconfigureOrm(config))
+  : Promise.resolve(configureOrm(config));
+export default await globalThis.__ormReady;
 ```
 
-The double check matters:
+Import this module from server code (`import orm from "$lib/server/orm"`).
+Await readiness before handling requests; do not configure separately in routes.
 
-- `!globalThis.__orm` — cold start.
-- `!ConnectionManager.getDefault()` — Vite re-evaluated `connection/ConnectionManager.ts` (or `model/Model.ts`); the cached singleton points at a stale module's pool. Re-running `configureOrm` writes the connection onto the live classes AND refreshes the cached singleton.
-
-Then import the module from server code:
-
-```ts
-import "$lib/server/orm";
-```
-
-or:
-
-```ts
-import orm from "$lib/server/orm";
-```
-
-Do not call `configureOrm()` directly inside `hooks.server.ts`, route modules, or actions. Those files are re-evaluated during dev reloads; centralize the bootstrap in `src/lib/server/orm.ts` with the guard above.
+`await ConnectionManager.setTenantResolver(resolver)` also retires previous
+cached tenant contexts and invalidates pending resolutions. Existing scopes and
+operations renew the idle TTL; a referenced model alone does not keep a pool alive.
+Connections created from configuration are owned. Passing an existing Connection
+to `add` or `setDefault` borrows it unless `{ owned: true }` is explicit. Borrowed
+connections remain the caller's responsibility. See [v3 migration](./upgrade-3.0.md).
 
 ## Environment variables (CLI only)
 

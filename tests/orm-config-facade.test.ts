@@ -1,7 +1,7 @@
 import { expect, test, describe, beforeAll, afterAll } from "bun:test";
 import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
-import { ConnectionManager, configureOrm, Schema } from "../src/index.js";
+import { ConnectionManager, configureOrm, reconfigureOrm, Schema } from "../src/index.js";
 import { cleanupSqliteFile } from "./helpers.js";
 
 const MIGRATIONS_DIR = join(process.cwd(), "tests", "temp_bcf_migrations");
@@ -69,7 +69,7 @@ export default class WidgetSeeder extends Seeder {
     await rm(SEEDERS_DIR, { recursive: true, force: true });
   });
 
-  test("configureOrm closes the previous default connection before replacing it", async () => {
+  test("reconfigureOrm closes the previous default connection before replacing it", async () => {
     const first = configureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
@@ -82,7 +82,7 @@ export default class WidgetSeeder extends Seeder {
       await originalClose();
     };
 
-    configureOrm({
+    await reconfigureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
@@ -92,7 +92,7 @@ export default class WidgetSeeder extends Seeder {
   });
 
   test("migrate() runs landlord migrations from config.migrationsPath", async () => {
-    const orm = configureOrm({
+    const orm = await reconfigureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
       seedersPath: SEEDERS_DIR,
@@ -105,7 +105,7 @@ export default class WidgetSeeder extends Seeder {
   });
 
   test("migrator() exposes underlying instance", async () => {
-    const orm = configureOrm({
+    const orm = await reconfigureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
@@ -117,7 +117,7 @@ export default class WidgetSeeder extends Seeder {
   });
 
   test("seed() runs seeders from config.seedersPath", async () => {
-    const orm = configureOrm({
+    const orm = await reconfigureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
       seedersPath: SEEDERS_DIR,
@@ -131,7 +131,7 @@ export default class WidgetSeeder extends Seeder {
   });
 
   test("seed() throws when seedersPath missing", async () => {
-    const orm = configureOrm({
+    const orm = await reconfigureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
@@ -139,7 +139,7 @@ export default class WidgetSeeder extends Seeder {
   });
 
   test("rollback() reverses last batch", async () => {
-    const orm = configureOrm({
+    const orm = await reconfigureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
@@ -152,7 +152,7 @@ export default class WidgetSeeder extends Seeder {
   });
 
   test("fresh() drops all + re-runs", async () => {
-    const orm = configureOrm({
+    const orm = await reconfigureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
@@ -167,7 +167,7 @@ export default class WidgetSeeder extends Seeder {
   });
 
   test("migrate('tenant') uses config.migrations.tenant path", async () => {
-    const orm = configureOrm({
+    const orm = await reconfigureOrm({
       connection: { url: "sqlite://:memory:" },
       migrations: {
         landlord: MIGRATIONS_DIR,
@@ -183,7 +183,7 @@ export default class WidgetSeeder extends Seeder {
   });
 
   test("migrate() throws when scope path not configured", async () => {
-    const orm = configureOrm({
+    const orm = await reconfigureOrm({
       connection: { url: "sqlite://:memory:" },
       migrations: { landlord: MIGRATIONS_DIR },
     });
@@ -191,7 +191,7 @@ export default class WidgetSeeder extends Seeder {
   });
 
   test("overrides pass through to Migrator", async () => {
-    const orm = configureOrm({
+    const orm = await reconfigureOrm({
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
@@ -202,7 +202,7 @@ export default class WidgetSeeder extends Seeder {
   });
 
   test("createIfMissing is a no-op for SQLite (no error)", async () => {
-    const orm = configureOrm({
+    const orm = await reconfigureOrm({
       connection: { url: "sqlite://:memory:" },
       migrations: {
         landlord: MIGRATIONS_DIR,
@@ -217,7 +217,7 @@ export default class WidgetSeeder extends Seeder {
   test("createIfMissing creates SQLite file on disk if missing", async () => {
     const dbPath = join(process.cwd(), "tests", `temp_bcf_${Date.now()}.sqlite`);
 
-    const orm = configureOrm({
+    const orm = await reconfigureOrm({
       connection: { url: `sqlite://${dbPath}` },
       migrations: {
         landlord: MIGRATIONS_DIR,

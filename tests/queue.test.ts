@@ -50,14 +50,14 @@ describe("DatabaseQueueDriver", () => {
   it("completes a job (removes from table)", async () => {
     await driver.dispatch("default", "SendEmail", "{}", 0, 3);
     const job = await driver.reserve("default", 90);
-    await driver.complete(job!.id);
+    await driver.complete(job!.id, job!.reservationToken);
     expect(await driver.size("default")).toBe(0);
   });
 
   it("fails a job (moves to failed_jobs)", async () => {
     await driver.dispatch("default", "SendEmail", "{}", 0, 3);
     const job = await driver.reserve("default", 90);
-    await driver.fail(job!.id, "Error: SMTP timeout");
+    await driver.fail(job!.id, job!.reservationToken, "Error: SMTP timeout");
     expect(await driver.size("default")).toBe(0);
     const failed = await conn.query<any>("SELECT * FROM failed_jobs");
     expect(failed).toHaveLength(1);
@@ -69,7 +69,7 @@ describe("DatabaseQueueDriver", () => {
     const now = Math.floor(Date.now() / 1000);
     await driver.dispatch("default", "SendEmail", "{}", 0, 3);
     const job = await driver.reserve("default", 90);
-    await driver.release(job!.id, 60);
+    await driver.release(job!.id, job!.reservationToken, 60);
 
     // Not available yet (delay=60)
     const notYet = await driver.reserve("default", 90);

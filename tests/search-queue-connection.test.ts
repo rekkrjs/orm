@@ -12,9 +12,10 @@ class FakeDriver implements QueueDriver {
     this.dispatched.push({ queue, jobClass, payload });
   }
   async reserve(): Promise<JobRecord | null> { return null; }
-  async complete() {}
-  async fail() {}
-  async release() {}
+  async complete() { return true; }
+  async heartbeat() { return true; }
+  async fail() { return true; }
+  async release() { return true; }
   async size() { return this.dispatched.length; }
 }
 

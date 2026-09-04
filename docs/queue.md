@@ -109,7 +109,7 @@ The worker is a long-running process. It polls the database, reserves a job, run
 - On `handle()` error, the job is released back to the queue. Attempt count increments.
 - `retryDelaySeconds` controls how long the job waits before becoming available again.
 - When `attempts >= maxAttempts`, the job moves to `failed_jobs` and is not retried.
-- Jobs reserved but not completed within `retryAfterSeconds` are automatically re-queued on the next poll.
+- Jobs whose reservation has not been renewed within `retryAfterSeconds` are automatically re-queued on the next poll. Workers heartbeat while handling a job.
 
 ## Database Tables
 
@@ -133,7 +133,8 @@ orm migrate
 | `attempts` | int | Incremented on each reservation |
 | `max_attempts` | int | Moves to failed_jobs when `attempts >= max_attempts` |
 | `available_at` | int | Unix timestamp; future value = delayed job |
-| `reserved_at` | int | Set when a worker picks up the job; cleared on release |
+| `reserved_at` | int | Last acquisition/heartbeat; cleared on release |
+| `reservation_token` | varchar(64), nullable | Fresh ownership token on each acquisition |
 | `created_at` | int | Unix timestamp |
 
 ### `failed_jobs`
@@ -205,9 +206,10 @@ class MyDriver implements QueueDriver {
   async migrate() {}
   async dispatch(queue, jobClass, payload, delay, maxAttempts) { /* ... */ }
   async reserve(queue, retryAfter): Promise<JobRecord | null> { /* ... */ }
-  async complete(id) { /* ... */ }
-  async fail(id, exception) { /* ... */ }
-  async release(id, delay) { /* ... */ }
+  async complete(id, reservationToken): Promise<boolean> { /* ... */ }
+  async fail(id, reservationToken, exception): Promise<boolean> { /* ... */ }
+  async release(id, reservationToken, delay): Promise<boolean> { /* ... */ }
+  async heartbeat(id, reservationToken): Promise<boolean> { /* ... */ }
   async size(queue?) { /* ... */ }
 }
 
@@ -223,3 +225,22 @@ Queue.configure(new MyDriver(), "default");
 | Persistence | No | Yes (database) |
 | Retries | No | Yes |
 | Use case | React to something now | Do work later or in background |
+
+## v3 reservations and deployment
+
+Every `reserve()` returns a fresh `JobRecord.reservationToken`. Complete, release,
+fail and heartbeat must atomically match the current token and return false on
+ownership loss. A stale worker must not write a failed-job record. Worker renews
+its reservation during `handle()` and stops on completion, failure or lease loss.
+The token protects queue state; job side effects still need application idempotency.
+
+Stop and drain **all old workers** before migration. Run
+`await Queue.getDriver().migrate()` to add nullable `reservation_token` to existing
+jobs tables without deleting pending jobs, then start only v3 workers. Redis
+pending job hashes gain tokens when reserved; its migration remains a no-op.
+Old workers mutate by id and cannot safely coexist with v3 workers.
+
+RedisQueueDriver supports standalone Redis. Redis Cluster is not supported.
+Dispatch inside an ORM transaction waits for root commit and captures the tenant
+and serialized payload. Rolled-back jobs are never queued. See
+[post-commit errors](./transactions.md#effects-after-commit).

@@ -245,3 +245,5 @@ The full index lives at [docs/README.md](./docs/README.md).
 MIT
 
 > This project is a fork of [Bunny](https://github.com/bunnykit/orm).
+
+Migrating from v2: [v3 upgrade guide](./docs/upgrade-3.0.md). Performance and verification: [benchmark history](./benchmarks/README.md).

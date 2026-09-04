@@ -31,6 +31,7 @@ describe("Cache: non-serializable values", () => {
   test("null is a cacheable value", async () => {
     await Cache.set("n", null);
     expect(await Cache.get("n")).toBeNull();
+    expect(await Cache.remember("n", () => "must not run")).toBeNull();
   });
 
   test("a corrupt entry reads as a miss and is dropped", async () => {

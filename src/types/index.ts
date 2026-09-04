@@ -1,3 +1,4 @@
+import type { SqlFragment } from "../query/SqlFragment.js";
 import type { FullTextOptions, PostgresFullTextLanguage } from "../fulltext.js";
 
 export type ColumnType =
@@ -69,6 +70,7 @@ export interface ForeignKeyDefinition {
 }
 
 export interface WhereClause {
+  fragment?: SqlFragment;
   type: "basic" | "in" | "null" | "raw" | "nested" | "between" | "between_columns" | "column" | "exists" | "like" | "regexp" | "fulltext" | "json_contains" | "json_length" | "date" | "all" | "any";
   column: string;
   columns?: string[];
@@ -87,6 +89,7 @@ export interface WhereClause {
 }
 
 export interface OrderClause {
+  fragment?: SqlFragment;
   column: string;
   direction: "asc" | "desc";
   raw?: boolean;
@@ -98,7 +101,7 @@ export interface HavingClause {
   column?: string;
   operator?: string;
   value?: any;
-  sql?: string;
+  sql?: string | SqlFragment;
   boolean: "and" | "or";
   bindings?: readonly unknown[];
   not?: boolean;

@@ -25,7 +25,7 @@ describe("Tenant-scoped index naming", () => {
   test("searchableAs() runs base name through tenantScope when TenantContext is active", async () => {
     const conn = setupTestDb();
     await Schema.create("posts", (t) => { t.increments("id"); t.string("title"); t.timestamps(); });
-    ConnectionManager.setTenantResolver(async (tenantId) => ({
+    await ConnectionManager.setTenantResolver(async (tenantId) => ({
       strategy: "schema",
       name: "default",
       schema: `t_${tenantId}`,
@@ -52,7 +52,7 @@ describe("Tenant-scoped index naming", () => {
   test("observer dispatch bakes tenant-scoped index into the SearchableRecord", async () => {
     const conn = setupTestDb();
     await Schema.create("posts", (t) => { t.increments("id"); t.string("title"); t.timestamps(); });
-    ConnectionManager.setTenantResolver(async (tenantId) => ({
+    await ConnectionManager.setTenantResolver(async (tenantId) => ({
       strategy: "schema",
       name: "default",
       schema: `t_${tenantId}`,
@@ -147,7 +147,7 @@ describe("Queue path preserves tenant-scoped index", () => {
   test("record dispatched under tenant context carries the scoped index name", async () => {
     const conn = setupTestDb();
     await Schema.create("posts", (t) => { t.increments("id"); t.string("title"); t.timestamps(); });
-    ConnectionManager.setTenantResolver(async (tenantId) => ({
+    await ConnectionManager.setTenantResolver(async (tenantId) => ({
       strategy: "schema",
       name: "default",
       schema: `t_${tenantId}`,

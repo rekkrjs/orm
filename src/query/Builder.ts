@@ -1,6 +1,8 @@
+import { SqlFragment } from "./SqlFragment.js";
 import { Connection } from "../connection/Connection.js";
 import { UniqueConstraintViolationError } from "../connection/UniqueConstraintViolationError.js";
 import { TransactionContext } from "../connection/TransactionContext.js";
+import { resolveConnection } from "../connection/ExecutionContext.js";
 import { Cache } from "../cache/index.js";
 import { MorphTo } from "../model/MorphRelations.js";
 import type { WhereClause, OrderClause, HavingClause } from "../types/index.js";
@@ -52,7 +54,8 @@ type RecursiveCteDefinition = {
   recursive: Builder<any, any, any> | string;
 };
 export interface LikeOptions { caseSensitive?: boolean }
-type RawFragment = { sql: string; bindings: readonly unknown[] };
+type JoinDefinition = { type: string; table: string; first?: string; operator?: string; second?: string };
+type RawFragment = { sql: string | SqlFragment; bindings: readonly unknown[] };
 type UnionDefinition = { query: Builder<any, any, any> | string; all: boolean };
 export type NumericAggregate = number | string | bigint;
 
@@ -292,7 +295,9 @@ export class CursorPaginator<T> {
 }
 
 export class Builder<T = Record<string, any>, TResult = T, TSelected extends string = "*"> {
-  connection: Connection;
+  private boundConnection: Connection;
+  get connection(): Connection { return resolveConnection(this.boundConnection); }
+  set connection(connection: Connection) { this.boundConnection = connection; }
   tableName: string;
   columns: Array<string | RawFragment> = ["*"];
   wheres: WhereClause[] = [];
@@ -301,7 +306,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   havings: HavingClause[] = [];
   limitValue?: number;
   offsetValue?: number;
-  joins: string[] = [];
+  joins: Array<string | JoinDefinition> = [];
   distinctFlag = false;
   model?: ModelConstructor;
   eagerLoads: EagerLoadDefinition[] = [];
@@ -313,17 +318,19 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   fromRaw?: string;
   private fromSubQuery?: Builder<any, any, any> | string;
   private fromSubAlias?: string;
-  updateJoins: string[] = [];
+  updateJoins: Array<string | JoinDefinition> = [];
   bindings: any[] = [];
   private parameterize = false;
   private sqlCache?: string;
+  private sqlCacheSchema?: string;
+  private cteNames = new Set<string>();
   private booleanResultColumns = new Set<string>();
   private cacheKey?: string;
   private cacheTtl?: number;
   private cacheTagNames: string[] = [];
 
   constructor(connection: Connection, table: string) {
-    this.connection = connection;
+    this.boundConnection = connection;
     this.tableName = table;
   }
 
@@ -689,13 +696,13 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   }
 
   whereRaw(
-    sql: string,
+    sql: string | SqlFragment,
     bindings: readonly unknown[] = [],
     boolean: "and" | "or" = "and",
     scope?: string,
   ): this {
     this.invalidateSqlCache();
-    this.wheres.push({ type: "raw", column: sql, bindings, boolean: validBoolean(boolean), scope });
+    this.wheres.push({ type: "raw", column: typeof sql === "string" ? sql : "", fragment: sql instanceof SqlFragment ? sql : undefined, bindings, boolean: validBoolean(boolean), scope });
     return this;
   }
 
@@ -720,17 +727,17 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   }
 
   whereExists(
-    sql: string,
+    sql: string | SqlFragment,
     bindings: readonly unknown[] = [],
     boolean: "and" | "or" = "and",
     not: boolean = false,
   ): this {
     this.invalidateSqlCache();
-    this.wheres.push({ type: "exists", column: sql, bindings, boolean: validBoolean(boolean), operator: not ? "NOT EXISTS" : "EXISTS" });
+    this.wheres.push({ type: "exists", column: typeof sql === "string" ? sql : "", fragment: sql instanceof SqlFragment ? sql : undefined, bindings, boolean: validBoolean(boolean), operator: not ? "NOT EXISTS" : "EXISTS" });
     return this;
   }
 
-  whereNotExists(sql: string): this {
+  whereNotExists(sql: string | SqlFragment): this {
     return this.whereExists(sql, [], "and", true);
   }
 
@@ -766,11 +773,11 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return this.whereNotIn(column, values, "or", scope);
   }
 
-  orWhereExists(sql: string, bindings: readonly unknown[] = []): this {
+  orWhereExists(sql: string | SqlFragment, bindings: readonly unknown[] = []): this {
     return this.whereExists(sql, bindings, "or");
   }
 
-  orWhereNotExists(sql: string, bindings: readonly unknown[] = []): this {
+  orWhereNotExists(sql: string | SqlFragment, bindings: readonly unknown[] = []): this {
     return this.whereExists(sql, bindings, "or", true);
   }
 
@@ -790,7 +797,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       : this.whereColumn(first, operatorOrSecond!, second, "or");
   }
 
-  orWhereRaw(sql: string, bindings: readonly unknown[] = [], scope?: string): this {
+  orWhereRaw(sql: string | SqlFragment, bindings: readonly unknown[] = [], scope?: string): this {
     return this.whereRaw(sql, bindings, "or", scope);
   }
 
@@ -982,9 +989,9 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return this;
   }
 
-  orderByRaw(sql: string, bindings: readonly unknown[] = []): this {
+  orderByRaw(sql: string | SqlFragment, bindings: readonly unknown[] = []): this {
     this.invalidateSqlCache();
-    this.orders.push({ column: sql, bindings, direction: "asc", raw: true });
+    this.orders.push({ column: typeof sql === "string" ? sql : "", fragment: sql instanceof SqlFragment ? sql : undefined, bindings, direction: "asc", raw: true });
     return this;
   }
 
@@ -1028,7 +1035,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return this;
   }
 
-  groupByRaw(sql: string, bindings: readonly unknown[] = []): this {
+  groupByRaw(sql: string | SqlFragment, bindings: readonly unknown[] = []): this {
     this.invalidateSqlCache();
     this.groups.push({ sql, bindings });
     return this;
@@ -1046,7 +1053,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return this;
   }
 
-  havingRaw(sql: string, bindings: readonly unknown[] = [], boolean: "and" | "or" = "and"): this {
+  havingRaw(sql: string | SqlFragment, bindings: readonly unknown[] = [], boolean: "and" | "or" = "and"): this {
     this.invalidateSqlCache();
     this.havings.push({
       sql,
@@ -1056,7 +1063,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return this;
   }
 
-  orHavingRaw(sql: string, bindings: readonly unknown[] = []): this {
+  orHavingRaw(sql: string | SqlFragment, bindings: readonly unknown[] = []): this {
     return this.havingRaw(sql, bindings, "or");
   }
 
@@ -1099,7 +1106,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     if (!new Set(["INNER", "LEFT", "RIGHT", "FULL"]).has(joinType)) {
       throw new Error(`Invalid join type: ${type}`);
     }
-    const joinSql = `${joinType} JOIN ${this.grammar.wrap(table)} ON ${this.grammar.wrap(first)} ${validOperator(operator)} ${this.grammar.wrap(second)}`;
+    const joinSql = { type: joinType, table, first, operator: validOperator(operator), second };
     this.invalidateSqlCache();
     this.joins.push(joinSql);
     return this;
@@ -1115,7 +1122,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
 
   crossJoin(table: string): this {
     this.invalidateSqlCache();
-    this.joins.push(`CROSS JOIN ${this.grammar.wrap(table)}`);
+    this.joins.push({ type: "CROSS", table });
     return this;
   }
 
@@ -1760,7 +1767,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return this as unknown as Builder<T, TResult, TSelected | K>;
   }
 
-  selectRaw(sql: string, bindings: readonly unknown[] = []): Builder<T, TResult, string> {
+  selectRaw(sql: string | SqlFragment, bindings: readonly unknown[] = []): Builder<T, TResult, string> {
     this.invalidateSqlCache();
     if (this.columns.length === 1 && this.columns[0] === "*") {
       this.columns = [];
@@ -1769,7 +1776,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return this as unknown as Builder<T, TResult, string>;
   }
 
-  private addSelectRaw(sql: string, bindings: readonly unknown[] = []): this {
+  private addSelectRaw(sql: string | SqlFragment, bindings: readonly unknown[] = []): this {
     this.invalidateSqlCache();
     if (this.columns.length === 1 && this.columns[0] === "*") {
       this.columns = [`${this.tableName}.*`];
@@ -1789,7 +1796,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
 
   updateFrom(table: string, first: string, operator: string, second: string): this {
     this.invalidateSqlCache();
-    this.updateJoins.push(`INNER JOIN ${this.grammar.wrap(table)} ON ${this.grammar.wrap(first)} ${validOperator(operator)} ${this.grammar.wrap(second)}`);
+    this.updateJoins.push({ type: "INNER", table, first, operator: validOperator(operator), second });
     return this;
   }
 
@@ -1803,6 +1810,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     cloned.limitValue = this.limitValue;
     cloned.offsetValue = this.offsetValue;
     cloned.joins = [...this.joins];
+    cloned.cteNames = new Set(this.cteNames);
     cloned.distinctFlag = this.distinctFlag;
     cloned.model = this.model;
     cloned.eagerLoads = [...this.eagerLoads];
@@ -1837,7 +1845,19 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return this.grammar.placeholder(this.bindings.length);
   }
 
-  private compileRaw(sql: string, bindings: readonly unknown[] = []): string {
+  private compileRaw(sql: string | SqlFragment, bindings: readonly unknown[] = []): string {
+    if (sql instanceof SqlFragment) {
+      if (bindings.length) throw new Error("Tagged SQL already carries its bindings; do not pass a separate bindings array.");
+      let text = sql.strings[0] ?? "";
+      for (let i = 0; i < sql.values.length; i++) {
+        const value = sql.values[i];
+        text += value instanceof SqlFragment ? this.compileRaw(value)
+          : value instanceof Builder ? `(${this.compileEmbedded(value)})`
+          : this.parameterize ? this.addBinding(value) : this.grammar.escape(value);
+        text += sql.strings[i + 1] ?? "";
+      }
+      return text;
+    }
     if (bindings.length === 0) return sql;
     let index = 0;
     const compiled = sql.replace(/\?/g, () => {
@@ -1855,6 +1875,8 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
 
   private compileEmbedded(query: Builder<any, any, any> | string): string {
     if (typeof query === "string") return query;
+    const previousCtes = query.cteNames;
+    query.cteNames = new Set([...this.cteNames, ...this.recursiveCtes.map(cte => cte.name), ...query.cteNames]);
     const previousBindings = query.bindings;
     const previousParameterize = query.parameterize;
     query.bindings = this.bindings;
@@ -1863,16 +1885,31 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       return query.compileSelectSql();
     } finally {
       this.bindings = query.bindings;
+      query.cteNames = previousCtes;
       query.bindings = previousBindings;
       query.parameterize = previousParameterize;
     }
+  }
+
+  private wrapTable(table: string): string {
+    const name = table.split(/\s+as\s+/i)[0]!;
+    const schema = this.connection.getSchema();
+    const cte = this.cteNames.has(name) || this.recursiveCtes.some(item => item.name === name);
+    return this.grammar.wrap(schema && this.connection.getDriverName() !== "sqlite" && !name.includes(".") && !cte
+      ? `${schema}.${table}` : table);
+  }
+
+  private compileJoins(joins = this.joins): string[] {
+    return joins.map(join => typeof join === "string" ? join :
+      `${join.type} JOIN ${this.wrapTable(join.table)}` + (join.type === "CROSS" ? "" :
+        ` ON ${this.grammar.wrap(join.first!)} ${join.operator} ${this.grammar.wrap(join.second!)}`));
   }
 
   private compileFrom(): string {
     if (this.fromSubQuery && this.fromSubAlias) {
       return `(${this.compileEmbedded(this.fromSubQuery)}) AS ${this.grammar.wrap(this.fromSubAlias)}`;
     }
-    return this.fromRaw || this.grammar.wrap(this.tableName);
+    return this.fromRaw || this.wrapTable(this.tableName);
   }
 
   private compileWhereClause(where: WhereClause, prefix: string): string {
@@ -1898,7 +1935,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       const op = where.not ? "NOT BETWEEN" : "BETWEEN";
       return `${prefix} ${this.grammar.wrap(where.column)} ${op} ${this.grammar.wrap(where.value[0])} AND ${this.grammar.wrap(where.value[1])}`;
     } else if (where.type === "raw") {
-      return `${prefix} ${this.compileRaw(where.column, where.bindings)}`;
+      return `${prefix} ${this.compileRaw(where.fragment ?? where.column, where.bindings)}`;
     } else if (where.type === "nested") {
       const sql = this.compileWhereClauses(where.query || [], "");
       return `${prefix} (${sql})`;
@@ -1941,7 +1978,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     } else if (where.type === "column") {
       return `${prefix} ${this.grammar.wrap(where.column)} ${validOperator(where.operator)} ${this.grammar.wrap(where.value)}`;
     } else if (where.type === "exists") {
-      return `${prefix} ${where.operator} (${this.compileRaw(where.column, where.bindings)})`;
+      return `${prefix} ${where.operator} (${this.compileRaw(where.fragment ?? where.column, where.bindings)})`;
     }
     return "";
   }
@@ -1966,7 +2003,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     }
     if (this.orders.length === 0) return "";
     return `ORDER BY ${this.orders.map((o) => o.raw
-      ? this.compileRaw(o.column, o.bindings)
+      ? this.compileRaw(o.fragment ?? o.column, o.bindings)
       : `${this.grammar.wrap(o.column)} ${validDirection(o.direction).toUpperCase()}`
     ).join(", ")}`;
   }
@@ -2041,19 +2078,17 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   }
 
   private compileSelectSql(): string {
-    if (!this.parameterize && this.sqlCache) return this.sqlCache;
+    const schema = this.connection.getSchema();
+    if (!this.parameterize && this.sqlCache && this.sqlCacheSchema === schema) return this.sqlCache;
     const cteSql = this.compileRecursiveCtes();
     const distinct = this.distinctFlag ? "DISTINCT " : "";
     const columns = this.compileColumns();
     const from = this.compileFrom();
     let sql = `SELECT ${distinct}${columns} FROM ${from}`;
-    if (this.joins.length > 0) sql += " " + this.joins.join(" ");
-    sql += " " + this.compileWheres();
-    sql += " " + this.compileGroups();
-    sql += " " + this.compileHavings();
-    sql += " " + this.compileOrders();
-    sql += " " + this.compileLimit();
-    sql += " " + this.compileOffset();
+    if (this.joins.length > 0) sql += " " + this.compileJoins().join(" ");
+    for (const clause of [this.compileWheres(), this.compileGroups(), this.compileHavings(), this.compileOrders(), this.compileLimit(), this.compileOffset()]) {
+      if (clause) sql += " " + clause;
+    }
     sql += this.grammar.compileLock(this.lockMode);
     if (this.unions.length > 0) {
       // An arm that declares its own ORDER BY / LIMIT / OFFSET has to be scoped,
@@ -2069,8 +2104,8 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       }
     }
     if (cteSql) sql = `${cteSql} ${sql}`;
-    const compiled = sql.replace(/\s+/g, " ").trim();
-    if (!this.parameterize) this.sqlCache = compiled;
+    const compiled = sql.trim();
+    if (!this.parameterize) { this.sqlCache = compiled; this.sqlCacheSchema = schema; }
     return compiled;
   }
 
@@ -2125,35 +2160,42 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   }
 
   async get(): Promise<Collection<TResult>> {
+    return this.connection.use(() => this.executeGet());
+  }
+
+  private async executeGet(): Promise<Collection<TResult>> {
+    const connection = this.connection;
+    const key = this.cacheKey ? Cache.queryKey(this.cacheKey, connection) : undefined;
+    const tags = this.cacheTagNames.map(tag => Cache.queryKey(tag, connection));
     const sql = this.toSql();
     const bindings = [...this.bindings];
     const cacheable = this.shouldUseCache();
     const cachesEagerGraph = cacheable && Boolean(this.model) && this.eagerLoads.length > 0;
-    const cachedGraph = cachesEagerGraph ? await Cache.get<CachedModelGraph[]>(this.cacheKey!) : null;
+    const cachedGraph = cachesEagerGraph ? await Cache.get<CachedModelGraph[]>(key!) : null;
     if (cachedGraph) {
       return new Collection(
         cachedGraph.map((item) => this.hydrateCachedGraph(item, this.model!))
       ) as unknown as Collection<TResult>;
     }
 
-    const cachedRows = cacheable && !cachesEagerGraph ? await Cache.get<any[]>(this.cacheKey!) : null;
-    const queriedRows = cachedRows ?? await this.connection.query(sql, bindings);
+    const cachedRows = cacheable && !cachesEagerGraph ? await Cache.get<any[]>(key!) : null;
+    const queriedRows = cachedRows ?? await connection.query(sql, bindings);
     if (cachedRows === null && this.booleanResultColumns.size > 0) {
       for (const row of queriedRows) this.coerceBooleanResultColumns(row);
     }
     const rows = this.decorateRecursiveRows(queriedRows);
 
     if (cacheable && !cachesEagerGraph && cachedRows === null) {
-      await Cache.set(this.cacheKey!, rows, {
+      await Cache.set(key!, rows, {
         ttl: this.cacheTtl,
-        tags: this.cacheTagNames,
+        tags,
       });
     }
 
     if (this.model) {
       const identityMap = IdentityMap.current();
       const table = typeof (this.model as any).getQualifiedTable === "function"
-        ? (this.model as any).getQualifiedTable(this.connection)
+        ? (this.model as any).getQualifiedTable(connection)
         : (this.model as any).getTable();
       const primaryKey = (this.model as any).primaryKey || "id";
 
@@ -2161,7 +2203,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
         if (identityMap) {
           const pk = row[primaryKey];
           if (pk !== null && pk !== undefined) {
-            const cached = IdentityMap.get(table, pk, this.connection);
+            const cached = IdentityMap.get(table, pk, connection);
             if (cached) {
               for (const column of this.booleanResultColumns) {
                 if (column in row) {
@@ -2174,13 +2216,13 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
         }
 
         const instance = cacheable
-          ? (this.model as any).hydrate(row, this.connection)
-          : (BaseModel as any).hydrateOwnedRow.call(this.model, row, this.connection);
+          ? (this.model as any).hydrate(row, connection)
+          : (BaseModel as any).hydrateOwnedRow.call(this.model, row, connection);
 
         if (identityMap) {
           const pk = row[primaryKey];
           if (pk !== null && pk !== undefined) {
-            IdentityMap.set(table, pk, instance, this.connection);
+            IdentityMap.set(table, pk, instance, connection);
           }
         }
 
@@ -2192,9 +2234,9 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       }
 
       if (cachesEagerGraph) {
-        await Cache.set(this.cacheKey!, models.map((model: any) => this.serializeModelGraph(model)), {
+        await Cache.set(key!, models.map((model: any) => this.serializeModelGraph(model)), {
           ttl: this.cacheTtl,
-          tags: this.cacheTagNames,
+          tags,
         });
       }
 
@@ -2625,7 +2667,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     query.bindings = [];
     query.parameterize = true;
     const from = query.compileFrom();
-    const joins = query.joins.length > 0 ? ` ${query.joins.join(" ")}` : "";
+    const joins = query.joins.length > 0 ? ` ${query.compileJoins().join(" ")}` : "";
     const whereSql = query.compileWheres();
     query.parameterize = false;
     const sql = `SELECT ${countSql} as cnt FROM ${from}${joins}${whereSql ? " " + whereSql : ""}`;
@@ -3101,7 +3143,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     if (columns.length === 0) {
       let result: any;
       for (const _record of records) {
-        result = await this.connection.run(this.grammar.compileInsertDefault(this.grammar.wrap(this.tableName)));
+        result = await this.connection.run(this.grammar.compileInsertDefault(this.wrapTable(this.tableName)));
       }
       return result;
     }
@@ -3113,7 +3155,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       }).join(", ")})`;
     });
 
-    const sql = `INSERT INTO ${this.grammar.wrap(this.tableName)} (${columns.map((c) => this.grammar.wrap(c)).join(", ")}) VALUES ${values.join(", ")}`;
+    const sql = `INSERT INTO ${this.wrapTable(this.tableName)} (${columns.map((c) => this.grammar.wrap(c)).join(", ")}) VALUES ${values.join(", ")}`;
     return await this.connection.run(sql, bindings);
   }
 
@@ -3131,8 +3173,8 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     });
 
     let sql = columns.length === 0
-      ? this.grammar.compileInsertDefault(this.grammar.wrap(this.tableName))
-      : `INSERT INTO ${this.grammar.wrap(this.tableName)} (${columns.map((c) => this.grammar.wrap(c)).join(", ")}) VALUES ${values.join(", ")}`;
+      ? this.grammar.compileInsertDefault(this.wrapTable(this.tableName))
+      : `INSERT INTO ${this.wrapTable(this.tableName)} (${columns.map((c) => this.grammar.wrap(c)).join(", ")}) VALUES ${values.join(", ")}`;
 
     const driver = this.connection.getDriverName();
     if (driver === "postgres" || driver === "sqlite") {
@@ -3167,7 +3209,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       let result: any;
       for (const _record of records) {
         result = await this.connection.run(
-          this.grammar.compileInsertOrIgnore(this.grammar.wrap(this.tableName), [], [])
+          this.grammar.compileInsertOrIgnore(this.wrapTable(this.tableName), [], [])
         );
       }
       return result;
@@ -3181,7 +3223,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     });
 
     const sql = this.grammar.compileInsertOrIgnore(
-      this.grammar.wrap(this.tableName),
+      this.wrapTable(this.tableName),
       columns,
       values
     );
@@ -3206,7 +3248,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     const updateCols = updateColumns ?? columns.filter((c) => !uniqueCols.includes(c));
 
     const sql = this.grammar.compileUpsert(
-      this.grammar.wrap(this.tableName),
+      this.wrapTable(this.tableName),
       columns,
       values,
       uniqueCols,
@@ -3263,10 +3305,10 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     const whereSql = this.compileWheres();
     this.parameterize = false;
     const sql = this.grammar.compileUpdate(
-      this.grammar.wrap(this.tableName),
+      this.wrapTable(this.tableName),
       sets,
       whereSql,
-      this.updateJoins
+      this.compileJoins(this.updateJoins)
     );
     return await this.connection.run(sql, this.bindings);
   }
@@ -3316,9 +3358,9 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     const whereSql = this.compileWheres();
     this.parameterize = false;
     const sql = this.grammar.compileDelete(
-      this.grammar.wrap(this.tableName),
+      this.wrapTable(this.tableName),
       whereSql,
-      this.updateJoins,
+      this.compileJoins(this.updateJoins),
       this.limitValue
     );
     return await this.connection.run(sql, this.bindings);
@@ -3402,7 +3444,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     }
     const whereSql = this.compileWheres();
     this.parameterize = false;
-    const sql = `UPDATE ${this.grammar.wrap(this.tableName)} SET ${sets.join(", ")} ${whereSql}`;
+    const sql = `UPDATE ${this.wrapTable(this.tableName)} SET ${sets.join(", ")} ${whereSql}`;
     return await this.connection.run(sql.trim(), this.bindings);
   }
 
@@ -3434,7 +3476,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     const from = query.compileFrom();
     // Joins were missing here, so a where against a joined table compiled to
     // SQL referencing a table that was never in the FROM clause.
-    const joins = query.joins.length > 0 ? ` ${query.joins.join(" ")}` : "";
+    const joins = query.joins.length > 0 ? ` ${query.compileJoins().join(" ")}` : "";
     const whereSql = query.compileWheres();
     query.parameterize = false;
     const sql = `SELECT 1 FROM ${from}${joins}${whereSql ? " " + whereSql : ""} LIMIT 1`;

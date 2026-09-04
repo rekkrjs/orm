@@ -2,23 +2,12 @@ import { Builder } from "./Builder.js";
 import { Connection } from "../connection/Connection.js";
 import { ConnectionManager } from "../connection/ConnectionManager.js";
 import { TenantContext } from "../connection/TenantContext.js";
-import { TransactionContext } from "../connection/TransactionContext.js";
+import { resolveConnection } from "../connection/ExecutionContext.js";
 
-function resolveDefaultConnection(): Connection {
-  const trx = TransactionContext.current();
-  if (trx) return trx;
-  const tenant = TenantContext.current()?.connection;
-  if (tenant) return tenant;
-  const fallback = ConnectionManager.getDefault();
-  if (!fallback) {
-    throw new Error("No default connection set. Call Model.setConnection() or ConnectionManager.setDefault() first.");
-  }
-  return fallback;
-}
 
 export const DB = {
   table<T extends Record<string, any> = Record<string, any>>(name: string): Builder<T> {
-    return new Builder<T>(resolveDefaultConnection(), name);
+    return new Builder<T>(resolveConnection(), name);
   },
 
   connection(name: string) {
@@ -37,10 +26,14 @@ export const DB = {
   transaction<T>(callback: (connection: Connection) => T | Promise<T>): Promise<T> {
     // Connection.transaction() installs the ambient context for every branch,
     // so unbound Model/DB queries inside the callback resolve to it.
-    return resolveDefaultConnection().transaction(callback);
+    return resolveConnection().transaction(callback);
+  },
+
+  afterCommit(callback: () => unknown | Promise<unknown>): Promise<void> {
+    return resolveConnection().afterCommit(callback);
   },
 
   raw<T = any>(sql: string, bindings: any[] = []): Promise<T[]> {
-    return resolveDefaultConnection().query(sql, bindings) as Promise<T[]>;
+    return resolveConnection().query(sql, bindings) as Promise<T[]>;
   },
 };

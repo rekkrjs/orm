@@ -43,3 +43,14 @@ describe("policies", () => {
     });
   });
 });
+
+
+test("policy methods retain their instance receiver", async () => {
+  class OwnedPolicy {
+    private owner = 7;
+    update(user: { id: number }) { return user.id === this.owner; }
+  }
+  registerPolicy(Announcement, OwnedPolicy);
+  expect(await can({ id: 7 }, "update", new Announcement(7))).toBe(true);
+  expect(await can({ id: 8 }, "update", new Announcement(7))).toBe(false);
+});

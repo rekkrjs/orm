@@ -1,5 +1,5 @@
 import { Connection } from "../../connection/Connection.js";
-import { ConnectionManager } from "../../connection/ConnectionManager.js";
+import { resolveConnection } from "../../connection/ExecutionContext.js";
 import type {
   FacetDistribution,
   SearchEngine,
@@ -94,12 +94,8 @@ export class PostgresFTSEngine implements SearchEngine {
   }
 
   private connection(): Connection {
-    if (this.explicitConnection) return this.explicitConnection;
-    if (this.shared) {
-      const def = ConnectionManager.getDefault();
-      if (!def) throw new Error("PostgresFTSEngine: shared mode requires a default ORM connection.");
-      return def;
-    }
+    if (this.explicitConnection) return resolveConnection(this.explicitConnection, undefined, true);
+    if (this.shared) return resolveConnection();
     throw new Error("PostgresFTSEngine: no active connection configured.");
   }
 

@@ -15,7 +15,7 @@ import { Queue } from "../queue/Queue.js";
 import { DatabaseQueueDriver } from "../queue/DatabaseQueueDriver.js";
 import { RedisQueueDriver, resolveQueueRedisClient } from "../queue/RedisQueueDriver.js";
 import type { QueueDriver } from "../queue/QueueDriver.js";
-import { Search } from "../search/SearchManager.js";
+import { Search, resolveSearchEngine } from "../search/SearchManager.js";
 import type { SearchConfig } from "../search/SearchManager.js";
 
 export interface ModelsPath {
@@ -110,27 +110,93 @@ function resolveMigrationPath(config: OrmConfig, scope: "landlord" | "tenant"): 
   throw new Error(`No migration path configured for scope "${scope}".`);
 }
 
-export function configureOrm(config: OrmConfig): ConfiguredOrm {
-  // Snapshot the previous default BEFORE we touch anything else, so we can
-  // tear it down AFTER the new defaults are installed. Calling closeAll() up
-  // front would synchronously clear defaultConnection and tenantResolver
-  // before the new ones are set — a tiny window where any concurrent request
-  // would fail with "No connection set on model X". Order matters here.
-  const previousDefault = ConnectionManager.getDefault();
+let configuredConnection: Connection | undefined;
+let reconfiguring = false;
+let cleanupOwned: Array<() => unknown | Promise<unknown>> = [];
 
-  const connection = new Connection(config.connection);
-  ConnectionManager.setDefault(connection);
+function prepare(config: OrmConfig) {
+  const owned: Connection[] = [];
+  const cleanup: typeof cleanupOwned = [];
+  try {
+    const connection = new Connection(config.connection);
+    owned.push(connection);
+    let queue: QueueDriver | undefined;
+    if (config.queue) {
+      if (config.queue.driver === "redis") {
+        const client = resolveQueueRedisClient(config.queue.redis?.url);
+        if (config.queue.redis?.url) cleanup.push(() => (client as any).close());
+        queue = new RedisQueueDriver(client, { prefix: config.cache?.prefix ? `${config.cache.prefix}queue:` : undefined });
+      } else if (!config.queue.driver || config.queue.driver === "db") {
+        const db = config.queue.connection ? new Connection(config.queue.connection) : connection;
+        if (db !== connection) owned.push(db);
+        queue = new DatabaseQueueDriver(db, { table: config.queue.table, failedTable: config.queue.failedTable });
+      } else queue = config.queue.driver;
+    }
+    let search: SearchConfig | undefined;
+    if (config.search) {
+      const input = { ...config.search };
+      if ("connection" in input && input.connection && !(input.connection instanceof Connection)) {
+        const db = new Connection(input.connection);
+        owned.push(db);
+        input.connection = db;
+      }
+      const engine = resolveSearchEngine(input);
+      const { connection: _, host: _host, apiKey: _key, ...rest } = input as any;
+      search = { ...rest, engine, listTenants: input.listTenants ?? config.tenancy?.listTenants };
+    }
+    return { connection, owned, cleanup, queue, search };
+  } catch (error) {
+    void Promise.allSettled([...owned.map(connection => connection.close()), ...cleanup.map(fn => Promise.resolve().then(fn))]);
+    throw error;
+  }
+}
+
+export function configureOrm(config: OrmConfig): ConfiguredOrm {
+  if (reconfiguring || ConnectionManager.hasTenantState() || (configuredConnection && !configuredConnection.isRetired())) {
+    throw new Error("ORM is already configured. Await reconfigureOrm(config) to replace it.");
+  }
+  return install(config, prepare(config));
+}
+
+export async function reconfigureOrm(config: OrmConfig): Promise<ConfiguredOrm> {
+  if (reconfiguring) throw new Error("ORM reconfiguration is already in progress.");
+  if (Connection.hasActiveScope()) throw new Error("Reconfigure outside active ORM scopes.");
+  const prepared = prepare(config); // Validation leaves the current state intact on failure.
+  reconfiguring = true;
+  try {
+    await ConnectionManager.closeAll({ beforeClose: () => Search.flushPending() });
+    const results = await Promise.allSettled(cleanupOwned.map(fn => Promise.resolve().then(fn)));
+    const errors = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (errors.length) throw new AggregateError(errors.map(r => r.reason), "ORM resource cleanup failed; retry reconfigureOrm().");
+    cleanupOwned = [];
+    configuredConnection = undefined;
+    return install(config, prepared);
+  } catch (error) {
+    await Promise.allSettled([...prepared.owned.map(connection => connection.close()), ...prepared.cleanup.map(fn => Promise.resolve().then(fn))]);
+    throw error;
+  } finally { reconfiguring = false; }
+}
+
+function install(config: OrmConfig, prepared: ReturnType<typeof prepare>): ConfiguredOrm {
+  const { connection } = prepared;
+  Cache.reset();
+  Queue.reset();
+  Search.reset(true);
+  ConnectionManager.disableTenantSweep();
+  for (const [index, owned] of prepared.owned.entries()) ConnectionManager.add(`orm:owned:${index}`, owned, { owned: true });
+  configuredConnection = connection;
+  cleanupOwned = prepared.cleanup;
+  ConnectionManager.setDefault(connection, { owned: true });
   Model.setConnection(connection);
   Schema.setConnection(connection);
 
+  // install() only runs after initial-state validation or a completed shutdown.
+  void ConnectionManager.setTenantResolver(config.tenancy?.resolveTenant);
+  ConnectionManager.defaultTenantTtl = config.tenancy?.idleTimeoutMs ?? 300_000;
   if (config.tenancy?.resolveTenant) {
-    ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
 
     // Defaults applied only when tenancy is in use: idle per-tenant pools
     // are reclaimed unless the app explicitly opts out.
-    ConnectionManager.defaultTenantTtl =
-      config.tenancy.idleTimeoutMs ?? 300_000;
-
     const sweep = config.tenancy.sweep ?? true;
     if (sweep !== false && sweep !== 0) {
       ConnectionManager.enableTenantSweep(typeof sweep === "number" ? sweep : 60_000);
@@ -173,46 +239,8 @@ export function configureOrm(config: OrmConfig): ConfiguredOrm {
     });
   }
 
-  if (config.queue) {
-    let driver: QueueDriver;
-    if (config.queue.driver === "db" || config.queue.driver === "redis") {
-      if (config.queue.driver === "db") {
-        const dbConnection = config.queue.connection
-          ? new Connection(config.queue.connection)
-          : connection;
-        driver = new DatabaseQueueDriver(dbConnection, {
-          table: config.queue.table,
-          failedTable: config.queue.failedTable,
-        });
-      } else {
-        driver = new RedisQueueDriver(resolveQueueRedisClient(config.queue.redis?.url), {
-          prefix: config.cache?.prefix ? `${config.cache.prefix}queue:` : undefined,
-        });
-      }
-    } else {
-      driver = config.queue.driver ?? new DatabaseQueueDriver(connection, {
-        table: config.queue.table,
-        failedTable: config.queue.failedTable,
-      });
-    }
-    Queue.configure(driver, config.queue.defaultQueue ?? "default");
-  }
-
-  if (config.search) {
-    Search.configure({
-      ...config.search,
-      // Pull tenant lister from search-specific config, otherwise inherit the
-      // global tenancy lister so `search:list-indexes --all-tenants` works
-      // without duplicating config.
-      listTenants: config.search.listTenants ?? config.tenancy?.listTenants,
-    });
-  }
-
-  // Tear down the previous default in the background — new defaults are
-  // already live, so no request can see a missing connection.
-  if (previousDefault && previousDefault !== connection) {
-    void previousDefault.close().catch(() => {});
-  }
+  if (prepared.queue) Queue.configure(prepared.queue, config.queue?.defaultQueue ?? "default");
+  if (prepared.search) Search.configure(prepared.search);
 
   const buildMigrator = (scope: "landlord" | "tenant" = "landlord", overrides: MigratorOptions = {}) => {
     const path = resolveMigrationPath(config, scope);

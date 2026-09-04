@@ -1,5 +1,53 @@
 # Changelog
 
+## 3.0.0 — Unreleased
+
+### Behavior and compatibility
+
+- Bound models/builders/connections join compatible transactions and reject
+  conflicting tenant, resource or transaction contexts. FROM/JOIN/write targets
+  use the effective schema without qualifying CTE names.
+- Query cache keys/tags and IdentityMap respect tenant/resource/schema isolation.
+  Query invalidation uses `Cache.forgetQuery()` / `forgetQueryTag()`; generic
+  cache APIs remain global. Redis cache needs a fresh prefix on upgrade.
+- Queue/search effects wait for root commit and capture payload and tenant.
+  `afterCommit()` supports savepoints and manual transactions; delivery errors
+  report `AfterCommitError.committed === true` without undoing committed data.
+- `configureOrm()` initializes once; await `reconfigureOrm()` and
+  `ConnectionManager.setTenantResolver()` for changes. Active work holds leases,
+  TTL measures inactivity, and borrowed connections remain caller-owned.
+- QueueDriver reservations use tokens and heartbeat. Migrate existing job tables
+  and stop all old workers before starting v3 workers.
+- SvelteKit validation values require `includeValues: true`. Policies preserve
+  their receiver and enriched users are assigned back to locals.
+
+### Fixes and additions
+
+- Added composable `sql` fragments for raw Builder clauses and an additive
+  `Connection.affectedRows(result)` helper; existing write results are preserved.
+- Native search resolves the active connection. Failed search_path restoration
+  discards the reserved session; search batches retain failed records and newer
+  concurrent changes. Redis tags update atomically and built-in caches retain null.
+- Documented standalone-only Redis support and MySQL DDL recovery limits.
+- Bounded cast metadata reuse removes repeated parsing while retaining mutable
+  public cast maps, overrides, relations, dirty tracking and Proxy behavior.
+  The final 20,000-row model JSON benchmark uses 31.9949 ms versus 38.0315 ms
+  (15.9% less time). Smaller, eager and network workloads plus isolation/queue
+  costs are recorded separately; no universal speedup is claimed.
+- Bun minimum is 1.4.1. Updated the development dependency lock and cookie
+  override; no runtime dependency added. Added CI with required SQL/Redis services.
+
+### Verification
+
+- Build and 1,694 functional tests pass (5,590 assertions), with real SQLite,
+  PostgreSQL, MySQL and Redis integrations. Strict script typechecks pass;
+  `bun audit` reports no vulnerabilities.
+- Retained benchmark history, cast profiles, isolated hydration checks, memory
+  runs and contention percentiles. Revalidated all three Bun/Elysia workarounds
+  and an isolated real Elysia consumer. Remote CI has not yet run.
+- [Migration guide](docs/upgrade-3.0.md) and
+  [verification with measured tradeoffs](benchmarks/v3-verification.md).
+
 ## 2.5.0 - 2026-08-29
 
 ### Added

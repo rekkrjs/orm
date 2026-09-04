@@ -440,3 +440,12 @@ generates types when given type-generator options. See
 - [Configuration](./configuration.md#migrationspath-vs-migrations) — how `migrationsPath` and `migrations.{landlord,tenant}` are resolved.
 - [Library Usage](./library-usage.md) — running migrations from app code with the `configureOrm()` facade.
 - [Type Generation](./type-generation.md) — generating declarations after migrations.
+
+## MySQL DDL recovery
+
+MySQL DDL may implicitly commit. A migration batch is not atomic merely because
+its runner uses a transaction, and rollback cannot undo DDL already committed by
+the server. After a failure, inspect the actual schema and migration ledger,
+repair or complete the partial migration, and rerun only after reconciling them.
+Write explicit `down()` operations and keep backups for destructive changes.
+`--pretend` previews SQL; it does not prove transactional reversibility.

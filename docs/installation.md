@@ -4,7 +4,7 @@ ORM is a **Bun-only package**. It links directly against `bun:sql`, so it cannot
 
 ## Requirements
 
-- [Bun](https://bun.com) `1.4.0` or newer (declared in `engines.bun`).
+- [Bun](https://bun.com) `1.4.1` or newer (declared in `engines.bun`).
 - A supported database driver — SQLite (bundled with Bun), PostgreSQL, or MySQL.
 
 Verify your Bun version:

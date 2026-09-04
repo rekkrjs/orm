@@ -6,9 +6,10 @@
 > [Retiring the workaround](#retiring-the-workaround).
 
 - **Status:** active workaround
-- **Last reviewed:** 2026-08-21
+- **Last reviewed:** 2026-09-04
 - **Affects:** MySQL only. SQLite and PostgreSQL are unaffected.
-- **Verified with:** Bun 1.4.0 (`34cbb9a40`), MySQL 9.7.1, macOS arm64
+- **Verified with:** Bun 1.4.1 (`4661e494f`) and 1.4.0 (`34cbb9a40`),
+  MySQL 9.7.1, macOS arm64
 - **Upstream:** [oven-sh/bun#27362](https://github.com/oven-sh/bun/issues/27362)
   documents the same timer workaround but for sequential remote queries and is
   closed as a duplicate; [oven-sh/bun#27102](https://github.com/oven-sh/bun/issues/27102)
@@ -84,12 +85,12 @@ main().catch(console.error);   // no output, exit 0
 The observed triggers do not all become reliable at once, which matters for
 deciding when the workaround can go:
 
-| Trigger | Bun 1.4.0 |
-|---|---|
-| `reserve()` → `release()` → query | truncates every time |
-| `begin()` → query | truncates every time |
-| second `new SQL()` → query on the first | truncates every time |
-| two concurrent queries → a third | **flaky** — resolved 2 runs out of 6 |
+| Trigger | Bun 1.4.0 | Bun 1.4.1 |
+|---|---|---|
+| `reserve()` → `release()` → query | truncates every time | truncates every time |
+| `begin()` → query | truncates every time | truncates every time |
+| second `new SQL()` → query on the first | truncates every time | truncates every time |
+| two concurrent queries → a third | **flaky** — resolved 2/6 | **flaky** — resolved 3/20 |
 
 The last row is the shape of #26235 and it is the dangerous one to test with:
 on a lucky run it looks fixed. The first three are what the ORM leans on —
@@ -174,11 +175,11 @@ manual probe reasonably quick while making that outcome negligible:
 
 ```console
 $ bun scripts/bun-mysql-eventloop-probe.ts mysql://root@127.0.0.1:3306/test
-bun 1.4.0 (34cbb9a40)
+bun 1.4.1 (4661e494f)
   reserve/release   0/20 resolved  TRUNCATED
   transaction       0/20 resolved  TRUNCATED
   second client     0/20 resolved  TRUNCATED
-  pooled queries    8/20 resolved  TRUNCATED
+  pooled queries    3/20 resolved  TRUNCATED
 
 STILL BROKEN — 4 of 4 triggers truncate.
 ```
@@ -222,3 +223,9 @@ it is unaffected by `Connection.keepMysqlEventLoopAlive`.
 
    If it fails after the removal, Bun is not fixed after all — restore the
    workaround and re-check the probe.
+
+## v3 revalidation (2026-09-04)
+
+`scripts/bun-mysql-eventloop-probe.ts` was rerun on Bun 1.4.1 (`4661e494f`).
+All four triggers (reserve/release, transaction, second client and pooled queries)
+resolved 0/20 attempts. The reference-holding workaround remains enabled.

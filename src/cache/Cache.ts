@@ -1,4 +1,6 @@
 import type { CacheRememberOptions, CacheStore } from "./CacheStore.js";
+import type { Connection } from "../connection/Connection.js";
+import { resolveConnection } from "../connection/ExecutionContext.js";
 
 export interface CacheConfig {
   store: CacheStore;
@@ -6,7 +8,34 @@ export interface CacheConfig {
   defaultTtl?: number;
 }
 
+// Separate in-memory databases are not a shared logical resource, even with identical URLs.
+const memoryNamespaces = new WeakMap<Connection, string>();
+
 export class Cache {
+  /** The same stable namespace used by Builder.remember() and its tags. */
+  static queryKey(key: string, connection: Connection = resolveConnection()): string {
+    const config = connection.getConfig();
+    const sqliteMemory = connection.getDriverName() === "sqlite" && ("url" in config
+      ? config.url === "sqlite://:memory:" : !(config.filename || config.database) || (config.filename ?? config.database) === ":memory:");
+    let memoryId: string | undefined;
+    if (sqliteMemory) {
+      const root = connection.resourceConnection();
+      memoryId = memoryNamespaces.get(root);
+      if (!memoryId) { memoryId = crypto.randomUUID(); memoryNamespaces.set(root, memoryId); }
+    }
+    const scope = JSON.stringify([connection.getTenantId() ?? null, connection.getDriverName(), config, connection.getSchema() ?? null, memoryId],
+      (_, value) => value && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value);
+    return `orm:query:${new Bun.CryptoHasher("sha256").update(scope).digest("hex")}:${key}`;
+  }
+
+  static forgetQuery(key: string, connection?: Connection): Promise<void> {
+    return this.forget(this.queryKey(key, connection));
+  }
+
+  static forgetQueryTag(tag: string, connection?: Connection): Promise<void> {
+    return this.forgetTag(this.queryKey(tag, connection));
+  }
   private static store?: CacheStore;
   private static prefix = "";
   private static defaultTtl?: number;
@@ -16,6 +45,8 @@ export class Cache {
     this.prefix = config.prefix ?? "";
     this.defaultTtl = config.defaultTtl;
   }
+
+  static reset(): void { this.store = undefined; this.prefix = ""; this.defaultTtl = undefined; }
 
   static getStore(): CacheStore {
     if (!this.store) {
@@ -54,8 +85,14 @@ export class Cache {
     ttlOrOptions?: number | CacheRememberOptions
   ): Promise<T> {
     const normalized = typeof ttlOrOptions === "number" ? { ttl: ttlOrOptions } : ttlOrOptions ?? {};
-    const cached = await this.get<T>(key);
-    if (cached !== null) return cached;
+    const store = this.getStore();
+    if (store.lookup) {
+      const cached = await store.lookup<T>(this.prefixKey(key));
+      if (cached.hit) return cached.value as T;
+    } else {
+      const cached = await this.get<T>(key);
+      if (cached !== null) return cached;
+    }
     const value = await (typeof valueOrResolver === "function"
       ? (valueOrResolver as () => T | Promise<T>)()
       : valueOrResolver);

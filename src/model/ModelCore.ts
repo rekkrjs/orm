@@ -3,11 +3,12 @@ import { Builder } from "../query/Builder.js";
 import { Schema } from "../schema/Schema.js";
 import { ConnectionManager } from "../connection/ConnectionManager.js";
 import { TenantContext } from "../connection/TenantContext.js";
-import { TransactionContext } from "../connection/TransactionContext.js";
+import { resolveConnection } from "../connection/ExecutionContext.js";
 import { IdentityMap } from "./IdentityMap.js";
 import { ModelSchemaBuilder } from "./ModelSchemaBuilder.js";
 import {
   getModelTarget,
+  getModelClass,
   modelProxyHandler,
   getGlobalScopes,
   globalScopes,
@@ -30,7 +31,7 @@ import {
   isBackedEnumDefinition,
   type BackedEnumDefinition,
 } from "./BackedEnum.js";
-import { assertSupportedStringCast, castBuiltInAttribute, implicitDateCasts } from "./ModelJsonRow.js";
+import { assertSupportedStringCast, castBuiltInAttribute, castMetadata, implicitDateCasts } from "./ModelJsonRow.js";
 
 function dateCastKeys(casts: Record<string, any>): string[] {
   const keys: string[] = [];
@@ -346,20 +347,14 @@ export class ModelCore<T extends Record<string, any> = any> {
   }
 
   static getConnection(): Connection {
-    const transactionConnection = TransactionContext.current();
-    if (transactionConnection) return transactionConnection;
-    const tenantConnection = TenantContext.current()?.connection;
-    const ownConnection = Object.prototype.hasOwnProperty.call(this, "connection") ? this.connection : undefined;
-    const connection = tenantConnection || ownConnection || this.connection || ConnectionManager.getDefault();
-    if (!connection) {
-      throw new Error(`No connection set on model ${this.name}`);
-    }
-    return connection;
+    const base = getModelClass();
+    const explicit = this !== base && (Object.prototype.hasOwnProperty.call(this, "connection") || this.connection !== base?.connection);
+    return explicit ? resolveConnection(this.connection) : resolveConnection(undefined, this.connection);
   }
 
   static setConnection(connection: Connection): void {
-    this.connection = connection;
     ConnectionManager.setDefault(connection);
+    this.connection = connection;
   }
 
   static useIdentityMap<T>(callback: () => T | Promise<T>): Promise<T> {
@@ -463,7 +458,7 @@ export class ModelCore<T extends Record<string, any> = any> {
   }
 
   getConnection(): Connection {
-    return this.$connection || (this.getModelConstructor() as typeof ModelCore).getConnection();
+    return this.$connection ? resolveConnection(this.$connection) : (this.getModelConstructor() as typeof ModelCore).getConnection();
   }
 
   getModelConstructor(): typeof ModelCore {
@@ -574,7 +569,7 @@ export class ModelCore<T extends Record<string, any> = any> {
     if (value === undefined) return value;
     const custom = this.resolveCustomCast(cast);
     if (custom) return custom.set(this, key, value, this.$attributes);
-    const [type, argument] = String(cast).split(":");
+    const { type, decimalScale } = castMetadata(cast);
 
     switch (type) {
       case "boolean":
@@ -587,7 +582,7 @@ export class ModelCore<T extends Record<string, any> = any> {
       case "double":
         return Number(value);
       case "decimal":
-        return formatDecimal(value, Number(argument || 2));
+        return formatDecimal(value, decimalScale!);
       case "string":
         return String(value);
       case "date": {

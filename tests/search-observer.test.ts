@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach } from "bun:test";
-import { Collection, Model, Schema } from "../src/index.js";
+import { Collection, DB, Model, Schema } from "../src/index.js";
 import { Search } from "../src/search/index.js";
 import type { SearchEngine, SearchableRecord, SearchHit, SearchPage, SearchQuery } from "../src/search/index.js";
 import { setupTestDb } from "./helpers.js";
@@ -167,4 +167,41 @@ describe("Search observer + builder", () => {
     expect(engine.deletes.some((r) => r.id === p.getAttribute("id" as any))).toBe(true);
     (Post as any).shouldBeSearchable = () => true;
   });
+});
+
+test("search effects wait for commit, snapshot values and discard rollback", async () => {
+  const engine = await setup();
+  await expect(DB.transaction(async () => {
+    await Post.create({ title: "rolled back", body: "x" });
+    expect(engine.updates).toHaveLength(0);
+    throw new Error("abort");
+  })).rejects.toThrow("abort");
+  expect(engine.updates).toHaveLength(0);
+  await DB.transaction(async () => {
+    const post = await Post.create({ title: "saved", body: "x" });
+    post.title = "not saved";
+    expect(engine.updates).toHaveLength(0);
+  });
+  expect(engine.updates.map(r => r.data.title)).toEqual(["saved"]);
+  Search.reset();
+});
+
+test("failed search batches retain deletes and preserve newer concurrent updates", async () => {
+  const engine = await setup();
+  Search.configure({ engine, batch: { maxItems: 100, maxMs: 60_000 } });
+  let reject!: (error: Error) => void;
+  const original = engine.update.bind(engine);
+  engine.update = () => new Promise((_, fail) => { reject = fail; });
+  Search.enqueueUpdate({ index: "posts", id: 1, data: { title: "old" } });
+  Search.enqueueDelete({ index: "posts", id: 2, data: {} });
+  const flush = Search.flushPending();
+  Search.enqueueUpdate({ index: "posts", id: 1, data: { title: "new" } });
+  reject(new Error("offline"));
+  await expect(flush).rejects.toThrow("batch delivery failed");
+  expect(engine.deletes.map(r => r.id)).toEqual([2]);
+  engine.update = original;
+  await Search.flushPending();
+  expect(engine.updates.map(r => r.data.title)).toEqual(["new"]);
+  expect(engine.deletes).toHaveLength(1);
+  Search.reset();
 });

@@ -923,3 +923,16 @@ await fts.createIndex("posts_fts");
 - Other engines (Algolia, Typesense, FlexSearch, MySQL `MATCH AGAINST`) — interface is ready, implementations are not.
 - Task completion polling (Meilisearch async operations return task UIDs; the current implementation does not wait).
 - Native tokenizer-backed matches-position passthrough for PostgreSQL and SQLite FTS. Current implementation computes best-effort character offsets from returned field text.
+
+## Transaction and batch behavior in v3
+
+Search observers capture each record and its tenant at write time, then deliver
+only after root commit. Rollbacks discard delivery. Native engines resolve the
+current connection per operation; explicit connections must be compatible with
+the active resource. Use tenant schemas/databases or explicit tenant index names
+where isolation is required; RLS policies remain the application's responsibility.
+
+Batches retain their captured engine/tenant, swap the active buffer when flushing,
+and retry failed groups without overwriting newer updates. Background flush errors
+are reported and retained in memory for retry. Await `Search.flushPending()` during
+shutdown. This buffer and afterCommit are not a durable outbox.

@@ -39,12 +39,12 @@ for (const driver of ["mysql", "postgres"] as const) {
         expect(jobs[0]?.jobClass).toBe("OnlyOnce");
         expect(jobs[0]?.attempts).toBe(1);
 
-        await firstWorker.release(jobs[0]!.id, 0);
+        await firstWorker.release(jobs[0]!.id, jobs[0]!.reservationToken, 0);
         const retried = await secondWorker.reserve("critical", 90);
         expect(retried?.id).toBe(jobs[0]?.id);
         expect(retried?.attempts).toBe(2);
 
-        await secondWorker.fail(retried!.id, "expected failure");
+        await secondWorker.fail(retried!.id, retried!.reservationToken, "expected failure");
         expect(await firstWorker.size("critical")).toBe(0);
         const failed = await context.connection.query("SELECT exception FROM failed_jobs");
         expect(failed[0]?.exception).toBe("expected failure");

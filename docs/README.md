@@ -57,3 +57,5 @@ If you are new here, start with [Installation](./installation.md), then walk thr
 | [Events](./events.md) | Application-level events with function listeners, class handlers, and temporary subscriptions. |
 | [Library Usage](./library-usage.md) | Run migrations and seeders programmatically from app code using the `configureOrm()` facade. |
 | [Testing](./testing.md) | In-memory SQLite, transactional test isolation, integration patterns. |
+
+- [Upgrading to v3](./upgrade-3.0.md) — breaking contracts, migration and deployment.

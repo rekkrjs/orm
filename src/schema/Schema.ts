@@ -6,7 +6,7 @@ import { MySqlGrammar } from "./grammars/MySqlGrammar.js";
 import { PostgresGrammar } from "./grammars/PostgresGrammar.js";
 import { ConnectionManager } from "../connection/ConnectionManager.js";
 import { TenantContext } from "../connection/TenantContext.js";
-import { TransactionContext } from "../connection/TransactionContext.js";
+import { resolveConnection } from "../connection/ExecutionContext.js";
 import { declaredColumnLength } from "../utils.js";
 import { SchemaRawExpression } from "./RawExpression.js";
 
@@ -80,13 +80,7 @@ export class Schema {
   }
 
   static getConnection(): Connection {
-    const transactionConnection = TransactionContext.current();
-    const tenantConnection = TenantContext.current()?.connection;
-    const connection = transactionConnection || tenantConnection || this.connection || ConnectionManager.getDefault();
-    if (!connection) {
-      throw new Error("No database connection set.");
-    }
-    return connection;
+    return resolveConnection(undefined, this.connection);
   }
 
   /**

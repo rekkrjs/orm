@@ -1,10 +1,12 @@
 # `Collection` reports `Array` as its constructor name
 
 - Status: active
-- Last reviewed: 2026-08-21
-- Verified with: `elysia@1.4.29` (observed in `prueba`), `bun@1.4.0`
+- Last reviewed: 2026-09-04
+- Verified with: `elysia@1.4.29` (observed in `prueba`), `bun@1.4.1` (`4661e494f`)
 
 Upstream: [elysiajs/elysia#1842](https://github.com/elysiajs/elysia/issues/1842)
+— still open as of 2026-09-04. This one is Elysia's, not Bun's: upgrading Bun
+does not retire it, and the 2026-09-04 implementation re-tested a real consumer and a controller.
 
 Counterpart record: `prueba/tmp_hacks/elysia-1.4-array-subclass-response-headers.md`,
 which documents the same upstream bug worked around on the consuming side.
@@ -87,3 +89,16 @@ bun test tests/collection.test.ts
 bunx tsc --noEmit
 bun run test
 ```
+
+## v3 revalidation (2026-09-04)
+
+Run `bun scripts/elysia-consumer-probe.ts /path/to/orm_bench_elysia`.
+The script copies the consumer entry point into ignored `tmp/`, links this ORM
+and the consumer's installed Elysia, and uses synthetic SQLite data. The legacy
+v0.8 `getArray()` call is migrated to `get()` in that copy only. The real `/elysia`
+route, explicit reconfiguration, and a Collection controller all pass.
+
+On Elysia 1.4.29/Bun 1.4.1 the Collection controller preserves status 207,
+request ID, security header and cookie. Temporarily restoring the original
+constructor name in the isolated process reproduces status 200 and missing
+headers/cookie. The workaround remains necessary; the consumer is unchanged.

@@ -1312,3 +1312,23 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `tap(fn)` | Mutate and return |
 | `clone()` | Copy builder state |
 | `toSql() / toRawSql() / dump() / dd() / explain()` | SQL compilation and debugging |
+
+## Composable SQL fragments (v3)
+
+```ts
+import { DB, sql } from "@rekkr/orm";
+const predicate = sql`metadata ? ${"enabled"}`;
+const query = DB.table("documents").whereRaw(sql`${predicate} AND owner_id = ${ownerId}`);
+```
+
+`sql` preserves literal SQL and interpolated values separately, then numbers
+bindings with the target grammar. It supports nested fragments and Builder
+subqueries in whereRaw, selectRaw, orderByRaw, groupByRaw, havingRaw and EXISTS.
+Interpolations bind values; they do not insert identifiers or executable SQL.
+Literal question marks, comments and PostgreSQL JSON operators remain intact.
+Existing string/bindings overloads remain, including their ambiguity around `?`.
+
+Write methods retain their existing driver result. For a portable metadata read,
+use `connection.affectedRows(result)`. MySQL counts changed rows (zero for a no-op
+UPDATE); PostgreSQL/SQLite count matched rows. This helper does not change those
+server semantics.

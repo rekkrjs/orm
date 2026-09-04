@@ -89,6 +89,25 @@ export class Worker {
   }
 
   private async processJob(job: JobRecord): Promise<void> {
+    let stopped = false;
+    let lost = false;
+    let pending: Promise<void> | undefined;
+    const timer = setInterval(() => {
+      if (stopped || pending) return;
+      pending = this.driver.heartbeat(job.id, job.reservationToken).then(owned => {
+        if (!owned) { lost = true; clearInterval(timer); }
+      }).catch(error => {
+        lost = true;
+        clearInterval(timer);
+        console.error(`[Queue] heartbeat failed for job ${job.id}; reservation may be lost:`, error);
+      }).finally(() => { pending = undefined; });
+    }, Math.max(10, this.retryAfterSeconds * 1000 / 3));
+    timer.unref?.();
+    try { await this.handleReservedJob(job, () => lost); }
+    finally { stopped = true; clearInterval(timer); await pending; }
+  }
+
+  private async handleReservedJob(job: JobRecord, leaseLost: () => boolean): Promise<void> {
     const JobClass = resolveJob(job.jobClass);
 
     if (!JobClass) {
@@ -101,10 +120,10 @@ export class Worker {
 
       if (job.attempts < job.maxAttempts) {
         console.warn(`[Queue] ${message} Retrying (attempt ${job.attempts}/${job.maxAttempts}).`);
-        await this.guarded(() => this.driver.release(job.id, unknownClassRetryDelay(job.attempts)));
+        await this.guarded(() => this.driver.release(job.id, job.reservationToken, unknownClassRetryDelay(job.attempts)));
       } else {
         console.error(`[Queue] ${message}`);
-        await this.guarded(() => this.driver.fail(job.id, new Error(message).stack ?? message));
+        await this.guarded(() => this.driver.fail(job.id, job.reservationToken, new Error(message).stack ?? message));
       }
       return;
     }
@@ -113,7 +132,7 @@ export class Worker {
     try {
       payload = JSON.parse(job.payload);
     } catch {
-      await this.guarded(() => this.driver.fail(job.id, `Invalid payload JSON for job ${job.jobClass}`));
+      await this.guarded(() => this.driver.fail(job.id, job.reservationToken, `Invalid payload JSON for job ${job.jobClass}`));
       return;
     }
 
@@ -124,6 +143,7 @@ export class Worker {
       const run = () => instance.handle();
       await (payload.tenantId ? TenantContext.run(payload.tenantId, run) : run());
     } catch (err: unknown) {
+      if (leaseLost()) return;
       const asError = err instanceof Error ? err : undefined;
       const message = asError?.stack ?? String(err);
       const shortMessage = asError?.message ?? String(err);
@@ -131,10 +151,10 @@ export class Worker {
       const maxAttempts = job.maxAttempts;
 
       if (attempts >= maxAttempts) {
-        await this.guarded(() => this.driver.fail(job.id, message));
+        await this.guarded(() => this.driver.fail(job.id, job.reservationToken, message));
         console.error(`[Queue] Failed ${job.jobClass} (id=${job.id}) after ${attempts} attempt(s): ${shortMessage}`);
       } else {
-        await this.guarded(() => this.driver.release(job.id, this.retryDelaySeconds));
+        await this.guarded(() => this.driver.release(job.id, job.reservationToken, this.retryDelaySeconds));
         console.warn(`[Queue] Retrying ${job.jobClass} (id=${job.id}) attempt ${attempts}/${maxAttempts}: ${shortMessage}`);
       }
       return;
@@ -145,7 +165,10 @@ export class Worker {
     // that already happened or bury a job that actually worked. Let the
     // visibility timeout decide, and say so loudly.
     try {
-      await this.driver.complete(job.id);
+      if (leaseLost() || !await this.driver.complete(job.id, job.reservationToken)) {
+        console.warn(`[Queue] Lost reservation for job ${job.id}; outcome was not acknowledged.`);
+        return;
+      }
       console.log(`[Queue] Processed ${job.jobClass} (id=${job.id})`);
     } catch (err) {
       console.error(
@@ -161,7 +184,7 @@ export class Worker {
    * error must not mask the primary one — if release/fail cannot be persisted
    * the visibility timeout will redeliver the job, which is the safe default.
    */
-  private async guarded(fn: () => Promise<void>): Promise<void> {
+  private async guarded(fn: () => Promise<unknown>): Promise<void> {
     try {
       await fn();
     } catch (secondary) {

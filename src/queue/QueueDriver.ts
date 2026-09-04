@@ -1,5 +1,6 @@
 export interface JobRecord {
   id: number;
+  reservationToken: string;
   queue: string;
   jobClass: string;
   payload: string;
@@ -14,8 +15,9 @@ export interface QueueDriver {
   migrate(): Promise<void>;
   dispatch(queue: string, jobClass: string, payload: string, delaySeconds: number, maxAttempts: number): Promise<void>;
   reserve(queue: string, retryAfterSeconds: number): Promise<JobRecord | null>;
-  complete(id: number): Promise<void>;
-  fail(id: number, exception: string): Promise<void>;
-  release(id: number, delaySeconds: number): Promise<void>;
+  complete(id: number, token: string): Promise<boolean>;
+  fail(id: number, token: string, exception: string): Promise<boolean>;
+  release(id: number, token: string, delaySeconds: number): Promise<boolean>;
+  heartbeat(id: number, token: string): Promise<boolean>;
   size(queue?: string): Promise<number>;
 }

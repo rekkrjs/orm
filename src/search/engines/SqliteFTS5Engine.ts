@@ -1,5 +1,5 @@
 import { Connection } from "../../connection/Connection.js";
-import { ConnectionManager } from "../../connection/ConnectionManager.js";
+import { resolveConnection } from "../../connection/ExecutionContext.js";
 import type {
   FacetDistribution,
   SearchEngine,
@@ -134,12 +134,8 @@ export class SqliteFTS5Engine implements SearchEngine {
   }
 
   private connection(): Connection {
-    if (this.explicitConnection) return this.explicitConnection;
-    if (this.shared) {
-      const def = ConnectionManager.getDefault();
-      if (!def) throw new Error("SqliteFTS5Engine: shared mode requires a default ORM connection (call configureOrm first).");
-      return def;
-    }
+    if (this.explicitConnection) return resolveConnection(this.explicitConnection, undefined, true);
+    if (this.shared) return resolveConnection();
     throw new Error("SqliteFTS5Engine: no connection. Pass `{ connection }` or `{ shared: true }`.");
   }
 

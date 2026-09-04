@@ -37,3 +37,38 @@ The workload covers 1/25/200/20,000 rows and cast/proxy call counts. It does not
 measure concurrent throughput, per-request p95/p99, peak memory or networked
 PostgreSQL/MySQL. Extend the workload when refactoring those paths. Run the
 recorder's small check with `bun test tests/bench-history-script.test.ts`.
+
+## v3 runtime workloads
+
+```sh
+bun run bench:runtime
+# Same harness against an isolated v2 source snapshot:
+BENCH_ORM_SOURCE=tmp/runtime-baseline/src BENCH_SOURCE_LABEL=v2.5.0 bun run bench:runtime
+```
+
+The snapshot in the second command is extracted from commit `683373b` with
+`git archive 683373b src | tar -x -C tmp/runtime-baseline` after creating that
+directory. It changes no checkout or consumer. Required services:
+`POSTGRES_TEST_URL`, `MYSQL_TEST_URL`, `REDIS_TEST_URL`; missing services fail.
+
+`orm-runtime-v2` records three repetitions per driver, 200 operations per metric
+(30 for batches of 25 writes), actual server versions, pool max 4, source/harness
+hashes and machine/runtime. It covers point/tenant/transaction reads, contention
+with 8 concurrent callers, create/save/delete with and without observers, bulk
+writes, heterogeneous casts, overrides, partial columns, eager relations, and
+queue reserve/complete contention. Observer work is an in-memory counter, not
+network delivery. Queue timings exclude dispatch and job handling/heartbeat.
+
+Every repetition stores throughput and median/p95/p99 of individual operations.
+Compare only equal protocol/harness/runtime/server/pool/machine settings. Earlier
+`orm-runtime-v1` records remain historical evidence; adding cast/eager workloads
+changed warmup conditions, so v1 and v2 must not be compared as equivalent runs.
+
+Memory runs in three fresh subprocesses (2,000 rows × 30 rounds after warmup),
+recording heap/RSS before/after forced GC, observed heap peak, process RSS peak,
+and explicit GC duration. These are finite workload measurements, not a proof of
+absence of leaks or a production GC latency distribution. Connection URLs and
+credentials are never included in records.
+
+See [v3 verification and measured tradeoffs](./v3-verification.md),
+[runtime records](./runtime/) and [cast profiles](./profiles/).

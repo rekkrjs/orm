@@ -1,6 +1,6 @@
 import { describe, test, expect, afterEach } from "bun:test";
 import { Connection, ConnectionManager } from "../src/index.js";
-import { configureOrm } from "../src/config/OrmConfig.js";
+import { reconfigureOrm } from "../src/config/OrmConfig.js";
 
 const base = { connection: { url: "sqlite://:memory:" } } as any;
 
@@ -12,37 +12,37 @@ afterEach(async () => {
   Connection.logToConsole = true;
 });
 
-describe("query logging configuration", () => {
-  test("bindings are hidden unless asked for", () => {
-    configureOrm({ ...base, log: { console: true } });
+describe("query logging configuration", async () => {
+  test("bindings are hidden unless asked for", async () => {
+    await reconfigureOrm({ ...base, log: { console: true } });
     expect(Connection.logBindings).toBe(false);
 
-    configureOrm({ ...base, log: { console: true, bindings: true } });
+    await reconfigureOrm({ ...base, log: { console: true, bindings: true } });
     expect(Connection.logBindings).toBe(true);
   });
 
-  test("a later configuration cannot inherit bindings: true", () => {
+  test("a later configuration cannot inherit bindings: true", async () => {
     // Logging state lives on statics; leaving a field untouched let a previous
     // opt-in survive into a config that never asked for it and quietly resume
     // writing credentials to the log.
-    configureOrm({ ...base, log: { console: true, bindings: true, file: "/tmp/orm-log-test" } });
+    await reconfigureOrm({ ...base, log: { console: true, bindings: true, file: "/tmp/orm-log-test" } });
     expect(Connection.logBindings).toBe(true);
 
-    configureOrm({ ...base, log: true });
+    await reconfigureOrm({ ...base, log: true });
     expect(Connection.logBindings).toBe(false);
     expect(Connection.queryLogFile).toBeUndefined();
   });
 
-  test("omitting log entirely turns logging off rather than keeping the old state", () => {
-    configureOrm({ ...base, log: { console: true, bindings: true } });
-    configureOrm({ ...base });
+  test("omitting log entirely turns logging off rather than keeping the old state", async () => {
+    await reconfigureOrm({ ...base, log: { console: true, bindings: true } });
+    await reconfigureOrm({ ...base });
     expect(Connection.logQueries).toBe(false);
     expect(Connection.logBindings).toBe(false);
   });
 
-  test("log: false turns logging off", () => {
-    configureOrm({ ...base, log: true });
-    configureOrm({ ...base, log: false });
+  test("log: false turns logging off", async () => {
+    await reconfigureOrm({ ...base, log: true });
+    await reconfigureOrm({ ...base, log: false });
     expect(Connection.logQueries).toBe(false);
     expect(Connection.logBindings).toBe(false);
   });
@@ -52,7 +52,7 @@ describe("query logging configuration", () => {
     const original = console.log;
     console.log = (...args: unknown[]) => { lines.push(args.map(String).join(" ")); };
     try {
-      configureOrm({ ...base, log: { console: true } });
+      await reconfigureOrm({ ...base, log: { console: true } });
       const conn = new Connection({ url: "sqlite://:memory:" });
       conn.logQueries = true;
       await conn.run("CREATE TABLE secrets (id INTEGER PRIMARY KEY, token TEXT)");
@@ -73,7 +73,7 @@ describe("query logging configuration", () => {
     const original = console.log;
     console.log = (...args: unknown[]) => { lines.push(args.map(String).join(" ")); };
     try {
-      configureOrm({ ...base, log: { console: true, bindings: true } });
+      await reconfigureOrm({ ...base, log: { console: true, bindings: true } });
       const conn = new Connection({ url: "sqlite://:memory:" });
       conn.logQueries = true;
       await conn.run("CREATE TABLE secrets2 (id INTEGER PRIMARY KEY, token TEXT)");

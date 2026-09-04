@@ -1,3 +1,5 @@
+import { TenantContext } from "../connection/TenantContext.js";
+import { TransactionContext } from "../connection/TransactionContext.js";
 import type { ModelConstructor } from "../model/Model.js";
 import { Connection } from "../connection/Connection.js";
 import type { ConnectionConfig } from "../types/index.js";
@@ -89,49 +91,80 @@ let currentConfig: ResolvedSearchConfig | null = null;
 const observed = new Set<ModelConstructor>();
 const pending = new Set<ModelConstructor>();
 
-// Batch coalescing state — opt-in via `SearchConfig.batch`.
-const pendingUpdates = new Map<string, SearchableRecord>();
-const pendingDeletes = new Map<string, SearchableRecord>();
+// Records carry their destination; timer callbacks must not inherit another tenant.
+type BufferedRecord = { record: SearchableRecord; tenantId?: string; engine: SearchEngine; operation: "update" | "delete" };
+let buffer = new Map<string, BufferedRecord>();
+let flushing: Promise<void> | undefined;
+let batchGeneration = 0;
 let batchTimer: ReturnType<typeof setTimeout> | null = null;
 let exitHookInstalled = false;
-
-function recordKey(r: SearchableRecord): string {
-  return `${r.index}:${r.id}`;
-}
 
 function batchingEnabled(): boolean {
   return Boolean(currentConfig?.batch && !currentConfig.queue);
 }
 
-function scheduleFlush(): void {
-  if (batchTimer || !currentConfig?.batch) return;
-  const maxMs = currentConfig.batch.maxMs ?? 500;
-  batchTimer = setTimeout(() => { void flushPending(); }, maxMs);
+function backgroundFlush(): void {
+  void flushPending().catch(error => {
+    console.error("Search batch delivery failed; records retained for retry:", error);
+    if (buffer.size) scheduleFlush();
+  });
 }
 
-function totalBuffered(): number {
-  return pendingUpdates.size + pendingDeletes.size;
+function scheduleFlush(): void {
+  if (batchTimer || !currentConfig?.batch) return;
+  batchTimer = setTimeout(backgroundFlush, currentConfig.batch.maxMs ?? 500);
+  batchTimer.unref?.();
 }
 
 function installExitHook(): void {
   if (exitHookInstalled) return;
   exitHookInstalled = true;
-  if (typeof process !== "undefined" && typeof process.once === "function") {
-    process.once("beforeExit", () => { void flushPending().catch(() => {}); });
-  }
+  process.once("beforeExit", () => { void flushPending().catch(error => console.error("Search final flush failed:", error)); });
+}
+
+function enqueue(record: SearchableRecord, operation: "update" | "delete"): boolean {
+  if (!batchingEnabled()) return false;
+  const tenantId = TenantContext.current()?.tenantId;
+  const key = JSON.stringify([tenantId, record.index, record.id]);
+  buffer.set(key, { record: structuredClone(record), tenantId, engine: currentConfig!.engine, operation });
+  if (buffer.size >= (currentConfig?.batch?.maxItems ?? 100)) backgroundFlush();
+  else scheduleFlush();
+  return true;
 }
 
 async function flushPending(): Promise<void> {
+  if (flushing) await flushing;
   if (batchTimer) { clearTimeout(batchTimer); batchTimer = null; }
-  if (pendingUpdates.size === 0 && pendingDeletes.size === 0) return;
-  const updates = [...pendingUpdates.values()];
-  const deletes = [...pendingDeletes.values()];
-  pendingUpdates.clear();
-  pendingDeletes.clear();
-  const engine = currentConfig?.engine;
-  if (!engine) return;
-  if (updates.length > 0) await engine.update(updates);
-  if (deletes.length > 0) await engine.delete(deletes);
+  if (!buffer.size) return;
+  const batch = buffer;
+  buffer = new Map();
+  const generation = batchGeneration;
+  const deliver = async () => {
+    // ponytail: default batches hold 100 records; use keyed groups if large
+    // multi-tenant batches make this linear group search a measured cost.
+    const groups: Array<Array<[string, BufferedRecord]>> = [];
+    for (const entry of batch) {
+      const item = entry[1];
+      const group = groups.find(g => g[0]![1].engine === item.engine && g[0]![1].tenantId === item.tenantId && g[0]![1].operation === item.operation);
+      if (group) group.push(entry); else groups.push([entry]);
+    }
+    const errors: unknown[] = [];
+    for (const group of groups) {
+      const first = group[0]![1];
+      const run = () => first.engine[first.operation](group.map(([, item]) => item.record));
+      try {
+        await TransactionContext.without(() => TenantContext.asLandlord(() => first.tenantId === undefined ? run() : TenantContext.run(first.tenantId, run)));
+      } catch (error) {
+        errors.push(error);
+        if (generation === batchGeneration) for (const [key, item] of group) {
+          if (!buffer.has(key)) buffer.set(key, item);
+        }
+      }
+    }
+    if (errors.length) throw new AggregateError(errors, "Search batch delivery failed");
+  };
+  flushing = deliver();
+  try { await flushing; } finally { flushing = undefined; }
 }
 
 function attachIfReady(modelClass: ModelConstructor): void {
@@ -172,7 +205,7 @@ function resolveConnection(connection: Connection | ConnectionConfig | undefined
   return connection instanceof Connection ? connection : new Connection(connection);
 }
 
-function resolveSearchEngine(config: SearchConfig): SearchEngine {
+export function resolveSearchEngine(config: SearchConfig): SearchEngine {
   const { engine } = config;
   if (typeof engine !== "string") {
     if (
@@ -251,32 +284,12 @@ export const Search = {
 
   /** Queue a record for batched update. Returns true if buffered, false if caller should dispatch immediately. */
   enqueueUpdate(record: SearchableRecord): boolean {
-    if (!batchingEnabled()) return false;
-    const key = recordKey(record);
-    pendingDeletes.delete(key);
-    pendingUpdates.set(key, record);
-    const max = currentConfig?.batch?.maxItems ?? 100;
-    if (totalBuffered() >= max) {
-      void flushPending();
-    } else {
-      scheduleFlush();
-    }
-    return true;
+    return enqueue(record, "update");
   },
 
   /** Queue a record for batched delete. */
   enqueueDelete(record: SearchableRecord): boolean {
-    if (!batchingEnabled()) return false;
-    const key = recordKey(record);
-    pendingUpdates.delete(key);
-    pendingDeletes.set(key, record);
-    const max = currentConfig?.batch?.maxItems ?? 100;
-    if (totalBuffered() >= max) {
-      void flushPending();
-    } else {
-      scheduleFlush();
-    }
-    return true;
+    return enqueue(record, "delete");
   },
 
   /** Manually flush the batch buffer (also called on process beforeExit). */
@@ -401,14 +414,16 @@ export const Search = {
     return results;
   },
 
-  reset(): void {
+  reset(keepRegistrations = false): void {
+    const models = keepRegistrations ? [...observed, ...pending] : [];
     for (const m of observed) detachSearchObservers(m);
     observed.clear();
     pending.clear();
     if (batchTimer) { clearTimeout(batchTimer); batchTimer = null; }
-    pendingUpdates.clear();
-    pendingDeletes.clear();
+    batchGeneration++;
+    buffer.clear();
     currentConfig = null;
+    for (const model of models) pending.add(model);
   },
 };
 

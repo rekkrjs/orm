@@ -528,6 +528,10 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
 
   // Instance persistence methods
   async save(options: SaveOptions = {}): Promise<this> {
+    return this.getConnection().use(() => this.saveRecord(options));
+  }
+
+  private async saveRecord(options: SaveOptions): Promise<this> {
     const constructor = this.getModelConstructor() as typeof ModelPersistence;
     const events = options.events !== false;
 
@@ -727,6 +731,10 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
   }
 
   async delete(): Promise<boolean> {
+    return this.getConnection().use(() => this.deleteRecord());
+  }
+
+  private async deleteRecord(): Promise<boolean> {
     const constructor = this.getModelConstructor() as typeof ModelPersistence;
     const pk = this.getAttribute(constructor.primaryKey);
     if (!pk) return false;
@@ -789,6 +797,10 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
   }
 
   async restore(): Promise<boolean> {
+    return this.getConnection().use(() => this.restoreRecord());
+  }
+
+  private async restoreRecord(): Promise<boolean> {
     const constructor = this.getModelConstructor() as typeof ModelPersistence;
     if (!constructor.softDeletes) return false;
     const pk = this.getAttribute(constructor.primaryKey);
@@ -809,6 +821,10 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
   }
 
   async forceDelete(): Promise<boolean> {
+    return this.getConnection().use(() => this.forceDeleteRecord());
+  }
+
+  private async forceDeleteRecord(): Promise<boolean> {
     const constructor = this.getModelConstructor() as typeof ModelPersistence;
     const pk = this.getAttribute(constructor.primaryKey);
     if (!pk) return false;

@@ -1,3 +1,4 @@
+import type { SqlFragment } from "../query/SqlFragment.js";
 import { Builder, type LikeOptions } from "../query/Builder.js";
 import type { FullTextOptions } from "../fulltext.js";
 import { Collection } from "../support/Collection.js";
@@ -55,11 +56,11 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().orderBy(column, direction);
   }
 
-  static orderByRaw<M extends ModelConstructor>(this: M, sql: string, bindings: readonly unknown[] = []): Builder<InstanceType<M>> {
+  static orderByRaw<M extends ModelConstructor>(this: M, sql: string | SqlFragment, bindings: readonly unknown[] = []): Builder<InstanceType<M>> {
     return (this as any).query().orderByRaw(sql, bindings);
   }
 
-  static groupByRaw<M extends ModelConstructor>(this: M, sql: string, bindings: readonly unknown[] = []): Builder<InstanceType<M>> {
+  static groupByRaw<M extends ModelConstructor>(this: M, sql: string | SqlFragment, bindings: readonly unknown[] = []): Builder<InstanceType<M>> {
     return (this as any).query().groupByRaw(sql, bindings);
   }
 
@@ -87,11 +88,11 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().orHaving(column, operator, value);
   }
 
-  static havingRaw<M extends ModelConstructor>(this: M, sql: string, bindings: readonly unknown[] = []): Builder<InstanceType<M>> {
+  static havingRaw<M extends ModelConstructor>(this: M, sql: string | SqlFragment, bindings: readonly unknown[] = []): Builder<InstanceType<M>> {
     return (this as any).query().havingRaw(sql, bindings);
   }
 
-  static orHavingRaw<M extends ModelConstructor>(this: M, sql: string, bindings: readonly unknown[] = []): Builder<InstanceType<M>> {
+  static orHavingRaw<M extends ModelConstructor>(this: M, sql: string | SqlFragment, bindings: readonly unknown[] = []): Builder<InstanceType<M>> {
     return (this as any).query().orHavingRaw(sql, bindings);
   }
 
@@ -119,7 +120,7 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().addSelect(...columns);
   }
 
-  static selectRaw<M extends ModelConstructor>(this: M, sql: string, bindings: readonly unknown[] = []): Builder<InstanceType<M>> {
+  static selectRaw<M extends ModelConstructor>(this: M, sql: string | SqlFragment, bindings: readonly unknown[] = []): Builder<InstanceType<M>> {
     return (this as any).query().selectRaw(sql, bindings);
   }
 
@@ -252,7 +253,7 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().whereNotBetweenColumns(column, values);
   }
 
-  static whereRaw<M extends ModelConstructor>(this: M, sql: string, bindings: readonly unknown[] = []): Builder<InstanceType<M>> {
+  static whereRaw<M extends ModelConstructor>(this: M, sql: string | SqlFragment, bindings: readonly unknown[] = []): Builder<InstanceType<M>> {
     return (this as any).query().whereRaw(sql, bindings);
   }
 
@@ -260,11 +261,11 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().whereColumn(first, operator, second);
   }
 
-  static whereExists<M extends ModelConstructor>(this: M, sql: string): Builder<InstanceType<M>> {
+  static whereExists<M extends ModelConstructor>(this: M, sql: string | SqlFragment): Builder<InstanceType<M>> {
     return (this as any).query().whereExists(sql);
   }
 
-  static whereNotExists<M extends ModelConstructor>(this: M, sql: string): Builder<InstanceType<M>> {
+  static whereNotExists<M extends ModelConstructor>(this: M, sql: string | SqlFragment): Builder<InstanceType<M>> {
     return (this as any).query().whereNotExists(sql);
   }
 
@@ -312,7 +313,7 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().orWhereNotBetweenColumns(column, values);
   }
 
-  static orWhereRaw<M extends ModelConstructor>(this: M, sql: string): Builder<InstanceType<M>> {
+  static orWhereRaw<M extends ModelConstructor>(this: M, sql: string | SqlFragment): Builder<InstanceType<M>> {
     return (this as any).query().orWhereRaw(sql);
   }
 
@@ -320,11 +321,11 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().orWhereColumn(first, operator, second);
   }
 
-  static orWhereExists<M extends ModelConstructor>(this: M, sql: string): Builder<InstanceType<M>> {
+  static orWhereExists<M extends ModelConstructor>(this: M, sql: string | SqlFragment): Builder<InstanceType<M>> {
     return (this as any).query().orWhereExists(sql);
   }
 
-  static orWhereNotExists<M extends ModelConstructor>(this: M, sql: string): Builder<InstanceType<M>> {
+  static orWhereNotExists<M extends ModelConstructor>(this: M, sql: string | SqlFragment): Builder<InstanceType<M>> {
     return (this as any).query().orWhereNotExists(sql);
   }
 

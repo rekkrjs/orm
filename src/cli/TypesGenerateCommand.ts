@@ -71,7 +71,7 @@ export function makeTypesGenerateCommand(config: OrmConfig, connection: Connecti
         if (!config.tenancy?.resolveTenant) {
           throw new Error("Tenant type generation requires tenancy.resolveTenant() in orm.config.ts.");
         }
-        ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
+        await ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
 
         const tenantId = target.scope === "tenant"
           ? target.tenantId

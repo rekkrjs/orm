@@ -371,7 +371,7 @@ async function runConfiguredMigrationCommandWithoutSqlLogging(
       if (!config.tenancy?.resolveTenant) {
         throw new Error("Tenant migrations require tenancy.resolveTenant() in orm.config.ts.");
       }
-      ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
+      await ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
       if (target.scope === "tenant") {
         return mergeResult(result, await runTenantMigrationCommand(command, config, defaultPath, target.tenantId, options));
       }
@@ -397,7 +397,7 @@ async function runConfiguredMigrationCommandWithoutSqlLogging(
     if (!config.tenancy?.resolveTenant) {
       throw new Error("Tenant migrations require tenancy.resolveTenant() in orm.config.ts.");
     }
-    ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
+    await ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
     for (const tenantId of await getTenantIds(config)) {
       mergeResult(result, await runTenantMigrationCommand(command, config, tenantPath, tenantId, options));
     }
@@ -410,7 +410,7 @@ async function runConfiguredMigrationCommandWithoutSqlLogging(
     if (!config.tenancy?.resolveTenant) {
       throw new Error("Tenant migrations require tenancy.resolveTenant() in orm.config.ts.");
     }
-    ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
+    await ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
     return mergeResult(result, await runTenantMigrationCommand(command, config, tenantPath, target.tenantId, options));
   }
 
@@ -444,7 +444,7 @@ export async function runSeederCommand(
   if (!config.tenancy?.resolveTenant) {
     throw new Error("Tenant seeding requires tenancy.resolveTenant() in orm.config.ts.");
   }
-  ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
+  await ConnectionManager.setTenantResolver(config.tenancy.resolveTenant);
 
   if (scope.scope === "tenant") {
     await TenantContext.run(scope.tenantId, runDefault);

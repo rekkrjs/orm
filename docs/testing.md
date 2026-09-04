@@ -226,3 +226,12 @@ on machines that only have SQLite available.
 - [Seeders](./seeders.md) — factories and reusable fixture seeders.
 - [Transactions](./transactions.md) — callback transactions, manual control,
   and the savepoints available to nested callback transactions.
+
+## Required integration services
+
+CI uses Bun 1.4.1 with SQLite, PostgreSQL 16, MySQL 8.4 and Redis 7. Run
+`bun scripts/verify-services.ts` before `bun run build && bun run test`, with
+`POSTGRES_TEST_URL`, `MYSQL_TEST_URL` and `REDIS_TEST_URL` set to dedicated test
+services. Missing/unreachable required services fail preparation. `bun audit`
+checks the development dependency graph too. Benchmarks run separately, without
+the concurrent test suite competing for resources; see [history](../benchmarks/README.md).

@@ -7,6 +7,10 @@ import { PostgresGrammar } from "../query/grammars/PostgresGrammar.js";
 import { UniqueConstraintViolationError } from "./UniqueConstraintViolationError.js";
 import { TransactionContext } from "./TransactionContext.js";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { resolveConnection } from "./ExecutionContext.js";
+import { TenantContext } from "./TenantContext.js";
+import { ConnectionManager } from "./ConnectionManager.js";
+import { AfterCommitError } from "./AfterCommitError.js";
 
 export interface PretendStatement {
   sql: string;
@@ -16,6 +20,8 @@ export interface PretendStatement {
 interface PretendContext {
   statements: PretendStatement[];
 }
+
+const resourceScopes = new AsyncLocalStorage<ReadonlySet<Connection>>();
 
 const pretendContext = new AsyncLocalStorage<PretendContext>();
 
@@ -56,6 +62,18 @@ export class Connection {
   private savepointId = 0;
   private dedicated = false;
   private reservedDriver?: SQL & { release?: () => void };
+  private resource?: Connection;
+  private session?: Connection;
+  private parent?: Connection;
+  private tenantId?: string;
+  private transactionFinished = false;
+  private requiresTenantScope = false;
+  private commitEffects: Array<Array<() => unknown | Promise<unknown>>> = [];
+  private activeLeases = 0;
+  private retired = false;
+  private closing?: Promise<void>;
+  private idleWaiters: Array<() => void> = [];
+  private manualLease?: () => void;
   private abandonedTimer?: ReturnType<typeof setTimeout>;
   private sqliteDefaultsApplied = false;
   private sqliteDefaultsPromise?: Promise<void>;
@@ -143,6 +161,49 @@ export class Connection {
       options.sqliteDefaultsApplied === true;
   }
 
+  /** Shared physical pool owner, independent of tenant and session views. */
+  resourceConnection(): Connection { return this.resource ?? this; }
+
+  isBusy(): boolean { return this.resourceConnection().activeLeases > 0; }
+  isRetired(): boolean { return this.resourceConnection().retired; }
+  static hasActiveScope(): boolean { return !!resourceScopes.getStore()?.size; }
+  static async finishDraining<T>(connections: Iterable<Connection>, callback: () => Promise<T>): Promise<T> {
+    return resourceScopes.run(new Set(connections), callback);
+  }
+  retire(): void { this.resourceConnection().retired = true; }
+  async waitForIdle(): Promise<void> {
+    const root = this.resourceConnection();
+    if (root.activeLeases) await new Promise<void>(resolve => root.idleWaiters.push(resolve));
+  }
+
+  private acquireLease(): () => void {
+    const root = this.resourceConnection();
+    if (root.retired && !resourceScopes.getStore()?.size && !this.isInTransaction()) {
+      throw new Error("Connection is retired or closed; resolve a current connection before starting new work.");
+    }
+    root.activeLeases++;
+    ConnectionManager.touchTenant(this.tenantId, root);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      ConnectionManager.touchTenant(this.tenantId, root);
+      if (--root.activeLeases === 0) for (const resolve of root.idleWaiters.splice(0)) resolve();
+    };
+  }
+
+  /** Hold a resource for a scope; nested operations can finish while it drains. */
+  async use<T>(callback: () => T | Promise<T>): Promise<T> {
+    const release = this.acquireLease();
+    const active = resourceScopes.getStore();
+    try {
+      if (active?.has(this.resourceConnection())) return await callback();
+      const scopes = new Set(active);
+      scopes.add(this.resourceConnection());
+      return await resourceScopes.run(scopes, callback);
+    } finally { release(); }
+  }
+
   /** Resolve the driver from a validated database URL scheme. */
   private static driverFromUrl(url: string): "sqlite" | "mysql" | "postgres" {
     const separator = url.indexOf(":");
@@ -224,16 +285,74 @@ export class Connection {
   withSchema(schema: string): Connection {
     Connection.assertSafeIdentifier(schema, "schema name");
     if (this.schema === schema) return this;
-    const conn = new Connection(this.config, { driver: this.driver, schema, ownsDriver: false, sqliteDefaultsApplied: this.sqliteDefaultsApplied });
-    conn.logQueries = this.logQueries;
-    return conn;
+    return this.view(schema, this.tenantId);
   }
 
   withoutSchema(): Connection {
     if (!this.schema) return this;
-    const conn = new Connection(this.config, { driver: this.driver, ownsDriver: false, sqliteDefaultsApplied: this.sqliteDefaultsApplied });
-    conn.logQueries = this.logQueries;
-    return conn;
+    return this.view(undefined, this.tenantId);
+  }
+
+  private view(schema: string | undefined, tenantId: string | undefined): Connection {
+    const connection = new Connection(this.config, { driver: this.driver, ownsDriver: false, sqliteDefaultsApplied: this.sqliteDefaultsApplied });
+    connection.schema = schema;
+    connection.tenantId = tenantId;
+    connection.resource = this.resource ?? this;
+    connection.parent = this;
+    connection.session = this.session ?? ((this.isInTransaction() || this.dedicated) ? this : undefined);
+    connection.dedicated = this.dedicated;
+    connection.requiresTenantScope = this.requiresTenantScope;
+    connection.logQueries = this.logQueries;
+    return connection;
+  }
+
+  withTenantId(tenantId: string): Connection {
+    return this.tenantId === tenantId ? this : this.view(this.schema, tenantId);
+  }
+
+  getTenantId(): string | undefined { return this.tenantId; }
+
+  sharesResource(other: Connection): boolean {
+    return (this.resource ?? this).driver === (other.resource ?? other).driver;
+  }
+
+  reusableConnection(): Connection {
+    if ((this.transactionFinished || this.session?.transactionFinished) && this.parent) {
+      const active = TenantContext.current()?.connection ?? TransactionContext.current();
+      if ((this.requiresTenantScope || this.session?.requiresTenantScope) && (!active || active.getTenantId() !== this.tenantId)) {
+        throw new Error(`Reenter tenant "${this.tenantId ?? "scoped session"}" before reusing an object from a finished RLS/search_path scope.`);
+      }
+      let parent = this.parent.reusableConnection();
+      if (this.tenantId !== undefined) parent = parent.withTenantId(this.tenantId);
+      return this.schema ? parent.withSchema(this.schema) : parent;
+    }
+    return this;
+  }
+
+  async afterCommit(callback: () => unknown | Promise<unknown>): Promise<void> {
+    return resolveConnection(this).registerCommitEffect(callback);
+  }
+
+  private async registerCommitEffect(callback: () => unknown | Promise<unknown>): Promise<void> {
+    if (this.session) return this.session.registerCommitEffect(callback);
+    if (this.isInTransaction()) {
+      (this.commitEffects.at(-1) ?? (this.commitEffects[0] = [])).push(callback);
+    } else {
+      await callback();
+    }
+  }
+
+  private async drainCommitEffects(): Promise<void> {
+    const effects = this.commitEffects.flat();
+    this.commitEffects = [];
+    if (!effects.length) return;
+    const errors: unknown[] = [];
+    await TransactionContext.without(() => TenantContext.asLandlord(async () => {
+      for (const effect of effects) {
+        try { await effect(); } catch (error) { errors.push(error); }
+      }
+    }));
+    if (errors.length) throw new AfterCommitError(errors);
   }
 
   qualifyTable(table: string): string {
@@ -251,7 +370,7 @@ export class Connection {
   }
 
   private getDriver(): SQL {
-    return this.reservedDriver || this.driver;
+    return this.session?.getDriver() ?? this.reservedDriver ?? this.driver;
   }
 
   // ---------------------------------------------------------------------------
@@ -384,16 +503,30 @@ export class Connection {
     }
   }
 
+  /** Driver metadata only: MySQL reports changed rows; other drivers may count matched rows. */
+  affectedRows(result: any): number {
+    // WORKAROUND(bun-sql-write-count): see .tmp_hacks/bun-sql-write-count.md.
+    return Number((this.driverName === "mysql" ? result?.affectedRows : result?.count) ?? 0);
+  }
+
   async query(sqlString: string, bindings?: any[]): Promise<any[]> {
-    return (await this.execute(sqlString, bindings)) as any[];
+    const connection = resolveConnection(this);
+    return await connection.use(() => connection.execute(sqlString, bindings));
   }
 
   async run(sqlString: string, bindings?: any[]): Promise<any> {
-    return await this.execute(sqlString, bindings);
+    const connection = resolveConnection(this);
+    return await connection.use(() => connection.execute(sqlString, bindings));
   }
 
   /** MySQL's result metadata rounds large AUTO_INCREMENT ids; read the exact id on the same session. */
   async runAndGetMysqlInsertId(sqlString: string, bindings?: any[]): Promise<any> {
+    const effective = resolveConnection(this);
+    if (effective !== this) return effective.runAndGetMysqlInsertId(sqlString, bindings);
+    return this.use(() => this.mysqlInsertId(sqlString, bindings));
+  }
+
+  private async mysqlInsertId(sqlString: string, bindings?: any[]): Promise<any> {
     if (this.driverName !== "mysql") {
       throw new Error("runAndGetMysqlInsertId() is only supported on MySQL connections.");
     }
@@ -549,11 +682,17 @@ export class Connection {
   }
 
   async beginTransaction(): Promise<void> {
+    return resolveConnection(this).beginTransactionBody();
+  }
+
+  private async beginTransactionBody(): Promise<void> {
+    if (this.session) return this.session.beginTransactionBody();
     if (this.isPretending()) return;
-    await this.ensureSqliteDefaults();
     if (this.transactionDepth === 0 && !this.transactionActive) {
-      await this.reserveRootTransaction();
+      this.manualLease = this.acquireLease();
       try {
+        await this.ensureSqliteDefaults();
+        await this.reserveRootTransaction();
         await this.keepEventLoopAlive(() => this.getDriver().unsafe("BEGIN"));
       } catch (error) {
         this.releaseReservedDriver();
@@ -562,16 +701,20 @@ export class Connection {
       this.transactionActive = true;
       this.transactionRoot = true;
       this.transactionDepth = 1;
+      this.commitEffects = [[]];
       this.armAbandonedTimer();
       return;
     }
 
     await this.keepEventLoopAlive(() => this.getDriver().unsafe(`SAVEPOINT orm_trans_${++this.savepointId}`));
     this.transactionDepth++;
+    this.commitEffects.push([]);
   }
 
   private releaseReservedDriver(): void {
     this.clearAbandonedTimer();
+    this.manualLease?.();
+    this.manualLease = undefined;
     this.reservedDriver?.release?.();
     this.reservedDriver = undefined;
     this.mysqlUtcChecked = false;
@@ -591,6 +734,7 @@ export class Connection {
           this.transactionDepth = 0;
           this.transactionActive = false;
           this.transactionRoot = false;
+          this.commitEffects = [];
           this.releaseReservedDriver();
         });
     }, ms);
@@ -606,12 +750,19 @@ export class Connection {
   }
 
   async commit(): Promise<void> {
+    const connection = resolveConnection(this);
+    return connection.use(() => connection.commitTransaction());
+  }
+
+  private async commitTransaction(): Promise<void> {
+    if (this.session) return this.session.commitTransaction();
     if (this.isPretending()) return;
     if (this.transactionDepth <= 0) return;
     if (this.transactionDepth === 1 && this.transactionRoot) {
       try {
         await this.keepEventLoopAlive(() => this.getDriver().unsafe("COMMIT"));
       } catch (error) {
+        this.commitEffects = [];
         await this.keepEventLoopAlive(() => this.getDriver().unsafe("ROLLBACK")).catch(() => null);
         throw this.normalizeDriverError(error);
       } finally {
@@ -620,13 +771,21 @@ export class Connection {
         this.transactionRoot = false;
         this.releaseReservedDriver();
       }
+      await this.drainCommitEffects();
     } else {
       await this.keepEventLoopAlive(() => this.getDriver().unsafe(`RELEASE SAVEPOINT orm_trans_${this.savepointId--}`));
       this.transactionDepth--;
+      const effects = this.commitEffects.pop() ?? [];
+      (this.commitEffects.at(-1) ?? (this.commitEffects[0] = [])).push(...effects);
     }
   }
 
   async rollback(): Promise<void> {
+    return resolveConnection(this).rollbackTransaction();
+  }
+
+  private async rollbackTransaction(): Promise<void> {
+    if (this.session) return this.session.rollbackTransaction();
     if (this.isPretending()) return;
     if (this.transactionDepth <= 0) return;
     if (this.transactionDepth === 1 && this.transactionRoot) {
@@ -636,103 +795,114 @@ export class Connection {
         this.transactionDepth = 0;
         this.transactionActive = false;
         this.transactionRoot = false;
+        this.commitEffects = [];
         this.releaseReservedDriver();
       }
     } else {
       await this.keepEventLoopAlive(() => this.getDriver().unsafe(`ROLLBACK TO SAVEPOINT orm_trans_${this.savepointId}`));
       await this.keepEventLoopAlive(() => this.getDriver().unsafe(`RELEASE SAVEPOINT orm_trans_${this.savepointId--}`));
       this.transactionDepth--;
+      this.commitEffects.pop();
     }
+  }
+
+  transactionConnection(): Connection | undefined {
+    return this.session?.transactionConnection() ?? (this.transactionActive || this.transactionDepth > 0 ? this : undefined);
   }
 
   isInTransaction(): boolean {
-    return this.transactionActive || this.transactionDepth > 0;
+    return this.session?.isInTransaction() ?? (this.transactionActive || this.transactionDepth > 0);
   }
 
   async transaction<T>(callback: (connection: Connection) => T | Promise<T>): Promise<T> {
-    if (this.isPretending()) {
-      return await TransactionContext.run(this, () => callback(this));
-    }
+    const effective = resolveConnection(this);
+    return effective.use(() => effective.runTransaction(callback));
+  }
+
+  private async runTransaction<T>(callback: (connection: Connection) => T | Promise<T>): Promise<T> {
+    if (this.session) return TenantContext.withConnection(this.session, () => this.session!.transaction(tx => {
+      const scoped = tx.view(this.schema, this.tenantId);
+      return TenantContext.withConnection(scoped, () => callback(scoped));
+    }));
+    if (this.isPretending()) return await TransactionContext.run(this, () => callback(this));
     await this.ensureSqliteDefaults();
-    if (!this.ownsDriver) {
-      // A borrowed connection can be either transaction-rooted already or
-      // still outside any transaction. Track that separately from nesting
-      // depth so a root transaction starts with BEGIN and nested calls use
-      // SAVEPOINTs.
-      if (!this.transactionActive) {
-        await this.reserveRootTransaction();
-        try {
-          await this.keepEventLoopAlive(() => this.getDriver().unsafe("BEGIN"));
-        } catch (error) {
-          this.releaseReservedDriver();
-          throw error;
-        }
-        this.transactionActive = true;
-        this.transactionRoot = true;
-        this.transactionDepth = 1;
-        try {
-          const result = await TransactionContext.run(this, () => callback(this));
-          await this.keepEventLoopAlive(() => this.getDriver().unsafe("COMMIT"));
-          return result;
-        } catch (error) {
-          await this.keepEventLoopAlive(() => this.getDriver().unsafe("ROLLBACK")).catch(() => null);
-          throw this.normalizeDriverError(error);
-        } finally {
-          this.transactionDepth = 0;
-          this.transactionActive = false;
-          this.transactionRoot = false;
-          this.releaseReservedDriver();
-        }
+    if (this.isInTransaction()) {
+      if (this.ownsDriver && this.transactionRoot) {
+        throw new Error("transaction() was called while a manual beginTransaction() is still open on this connection. Commit or roll back first.");
       }
       const savepointName = `orm_trans_${++this.savepointId}`;
-      await this.keepEventLoopAlive(() => this.getDriver().unsafe(`SAVEPOINT ${savepointName}`));
+      const driver = this.getDriver() as SQL & { savepoint?: <R>(fn: () => Promise<R>) => Promise<R> };
       this.transactionDepth++;
+      this.commitEffects.push([]);
       try {
-        const result = await TransactionContext.run(this, () => callback(this));
-        await this.keepEventLoopAlive(() => this.getDriver().unsafe(`RELEASE SAVEPOINT ${savepointName}`));
+        let result: T;
+        if (typeof driver.savepoint === "function") {
+          result = await this.keepEventLoopAlive(() => driver.savepoint!(() => TransactionContext.run(this, () => callback(this))));
+        } else {
+          await this.executeStatement(driver, `SAVEPOINT ${savepointName}`);
+          try {
+            result = await TransactionContext.run(this, () => callback(this));
+            await this.executeStatement(driver, `RELEASE SAVEPOINT ${savepointName}`);
+          } catch (error) {
+            await this.executeStatement(driver, `ROLLBACK TO SAVEPOINT ${savepointName}`).catch(() => null);
+            await this.executeStatement(driver, `RELEASE SAVEPOINT ${savepointName}`).catch(() => null);
+            throw error;
+          }
+        }
+        const effects = this.commitEffects.pop()!;
+        (this.commitEffects.at(-1) ?? (this.commitEffects[0] = [])).push(...effects);
         return result;
       } catch (error) {
-        await this.keepEventLoopAlive(() => this.getDriver().unsafe(`ROLLBACK TO SAVEPOINT ${savepointName}`)).catch(() => null);
-        await this.keepEventLoopAlive(() => this.getDriver().unsafe(`RELEASE SAVEPOINT ${savepointName}`)).catch(() => null);
-        this.savepointId--;
+        this.commitEffects.pop();
         throw this.normalizeDriverError(error);
       } finally {
         this.transactionDepth--;
+        this.savepointId--;
       }
     }
-    // Owned connection, root transaction. Only a manual beginTransaction() can
-    // have marked this connection active here (a nested transaction() runs on
-    // the borrowed connection handed to the callback, which uses savepoints).
-    // driver.begin() would issue BEGIN inside the open BEGIN, so refuse rather
-    // than emit a statement the server will reject or silently flatten.
-    if (this.transactionActive || this.transactionDepth > 0) {
-      throw new Error(
-        "transaction() was called while a manual beginTransaction() is still open on this connection. " +
-        "Commit or roll back first, or run the work through the connection the callback receives.",
-      );
+
+    // Native callbacks own their transaction handle. Cached schema views must
+    // not hold mutable transaction state shared by concurrent requests.
+    if (!this.dedicated && typeof this.driver.begin === "function") {
+      let transaction: Connection | undefined;
+      let result: T;
+      try {
+        result = await this.keepEventLoopAlive(() => this.driver.begin(async sql => {
+          const connection = new Connection(this.config, { driver: sql as unknown as SQL, schema: this.schema, ownsDriver: false, sqliteDefaultsApplied: true });
+          transaction = connection;
+          connection.resource = this.resource ?? this;
+          connection.parent = this;
+          connection.tenantId = this.tenantId;
+          connection.logQueries = this.logQueries;
+          connection.transactionActive = true;
+          connection.dedicated = true;
+          connection.commitEffects = [[]];
+          return await TransactionContext.run(connection, () => TenantContext.withConnection(connection, () => callback(connection)));
+        }));
+      } catch (error) {
+        if (transaction) transaction.commitEffects = [];
+        throw this.normalizeDriverError(error);
+      } finally {
+        if (transaction) {
+          transaction.transactionActive = false;
+          transaction.transactionFinished = true;
+        }
+      }
+      await transaction?.drainCommitEffects();
+      return result;
     }
 
+    // Dedicated reserved sessions (and test/custom drivers without begin()).
+    await this.beginTransaction();
+    let result: T;
     try {
-      return await this.keepEventLoopAlive(() => this.driver.begin(async (sql) => {
-        const connection = new Connection(this.config, {
-          driver: sql as unknown as SQL,
-          schema: this.schema,
-          ownsDriver: false,
-          sqliteDefaultsApplied: true,
-        });
-        connection.logQueries = this.logQueries;
-        connection.transactionActive = true;
-        connection.transactionRoot = false;
-        connection.dedicated = true;
-        try {
-          return await TransactionContext.run(connection, () => callback(connection));
-        } finally {
-          connection.transactionActive = false;
-        }
-      }));
+      result = await TransactionContext.run(this, () => TenantContext.withConnection(this, () => callback(this)));
     } catch (error) {
+      await this.rollback().catch(() => null);
       throw this.normalizeDriverError(error);
     }
+    await this.commit();
+    return result;
   }
 
   async withTenant<T>(
@@ -751,6 +921,8 @@ export class Connection {
       Connection.assertSafeIdentifier(role, "role name");
     }
     return await this.transaction(async (connection) => {
+      connection.tenantId ??= tenantId;
+      connection.requiresTenantScope = true;
       if (role) {
         await connection.run(`SET LOCAL ROLE ${connection.quoteIdentifier(role)}`);
       }
@@ -760,6 +932,10 @@ export class Connection {
   }
 
   async withSearchPath<T>(schema: string, callback: (connection: Connection) => T | Promise<T>): Promise<T> {
+    return this.use(() => this.runWithSearchPath(schema, callback));
+  }
+
+  private async runWithSearchPath<T>(schema: string, callback: (connection: Connection) => T | Promise<T>): Promise<T> {
     if (this.driverName !== "postgres") {
       throw new Error("search_path schema switching is only supported for PostgreSQL connections.");
     }
@@ -778,21 +954,48 @@ export class Connection {
       schema,
       ownsDriver: false,
     });
+    connection.resource = this.resource ?? this;
+    connection.parent = this;
+    connection.tenantId = this.tenantId;
     connection.logQueries = this.logQueries;
     connection.dedicated = true;
-    try {
-      await connection.run(`SET search_path TO ${connection.quoteIdentifier(schema)}`);
-      return await callback(connection);
-    } finally {
-      await connection.run("RESET search_path").catch(() => null);
-      reserved.release?.();
-    }
+    connection.requiresTenantScope = true;
+    return await TenantContext.withConnection(connection, async () => {
+      try {
+        await connection.run(`SET search_path TO ${connection.quoteIdentifier(schema)}`);
+        return await callback(connection);
+      } finally {
+        try {
+          if (connection.isInTransaction()) throw new Error("search_path scope exited with an open transaction; session discarded.");
+          await connection.run("RESET search_path");
+        } catch (error) {
+          // Bun ReservedSQL.close() closes this physical session, not its pool.
+          // Never release a session whose state could not be restored.
+          await reserved.close({ timeout: 0 });
+          connection.clearAbandonedTimer();
+          connection.manualLease?.();
+          connection.manualLease = undefined;
+          connection.commitEffects = [];
+          connection.transactionActive = false;
+          connection.transactionDepth = 0;
+          connection.transactionFinished = true;
+          throw error;
+        }
+        await reserved.release?.();
+        connection.transactionFinished = true;
+      }
+    });
   }
 
   async close(): Promise<void> {
-    this.releaseReservedDriver();
-    if (this.ownsDriver) {
+    if (!this.ownsDriver) return;
+    if (this.closing) return this.closing;
+    this.retired = true;
+    this.closing = (async () => {
+      if (this.activeLeases) await new Promise<void>(resolve => this.idleWaiters.push(resolve));
+      this.releaseReservedDriver();
       await this.keepEventLoopAlive(() => this.driver.close());
-    }
+    })();
+    try { await this.closing; } catch (error) { this.closing = undefined; throw error; }
   }
 }

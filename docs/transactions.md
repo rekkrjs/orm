@@ -4,7 +4,7 @@ A transaction groups a series of database operations so they either all succeed 
 
 ORM exposes transactions through the `DB` facade and directly on a
 `Connection`. Both install the transaction in the current async context, so
-unbound model and `DB` queries inside the callback share it automatically.
+compatible bound models, builders, connections and `DB` queries inside the callback share it automatically.
 
 ## The callback form (recommended)
 
@@ -56,32 +56,25 @@ await connection.transaction(async (tx) => {
 });
 ```
 
-Binding explicitly with `Model.on(tx)` still works and is still the right tool
-when a query must target a specific connection regardless of context.
+`Model.on(tx)` binds explicitly and validates compatibility with the active
+context. An incompatible resource or active transaction throws.
 
-A package that is handed a `Connection` and never sees the caller's `tx` handle
-reads the context directly, resolving per call rather than capturing at
-construction:
+A package can keep its original Connection and rely on the same per-operation
+resolution as DB and models:
 
 ```ts
-import { TransactionContext, type Connection } from "@rekkr/orm";
+import { Builder, type Connection } from "@rekkr/orm";
 
 class ReportStore {
   constructor(private readonly connection: Connection) {}
-
-  private resolve(): Connection {
-    return TransactionContext.current() ?? this.connection;
-  }
-
   save(row: ReportRow) {
-    return new Builder(this.resolve(), "reports").insert(row);
+    return new Builder(this.connection, "reports").insert(row);
   }
 }
 ```
 
-Without `resolve()`, the store writes on the pooled connection and its rows
-survive the caller's rollback on MySQL and PostgreSQL — while appearing correct
-on SQLite, where a single connection hides the difference.
+The bound connection joins a compatible ambient transaction on all three engines.
+It cannot silently escape rollback or redirect an explicit different database.
 
 ## Nested transactions (savepoints)
 
@@ -191,3 +184,39 @@ For the schema-qualify strategy, all tables are in the same physical database, s
 - [Query Builder — Locking](./query-builder.md#locking) — `lockForUpdate`, `sharedLock`, `skipLocked`, `noWait`.
 - [Models](./models.md#crud) — `save()`, `delete()`, and bulk operations inside transactions.
 - [Multi-tenant scope](./query-builder.md#multi-tenant-scope) — how tenant context selects the active connection.
+
+## Effects after commit
+
+```ts
+import { DB, AfterCommitError } from "@rekkr/orm";
+
+try {
+  await DB.transaction(async () => {
+    await User.create({ name: "Ada" });
+    await DB.afterCommit(() => notifyDirectory());
+  });
+} catch (error) {
+  if (error instanceof AfterCommitError) {
+    // error.committed === true: retry delivery, never the confirmed write.
+    console.error(error.errors);
+  } else throw error;
+}
+```
+
+`connection.afterCommit(cb)` and the exported `afterCommit(cb)` share this contract,
+including manual transactions. Outside a transaction, they await the callback
+immediately. Root COMMIT must finish first. Savepoint release merges callbacks;
+savepoint/root rollback discards them. Callbacks run in registration order outside
+the transaction/tenant context, all are attempted, and failures are aggregated in
+`AfterCommitError` with `committed: true`.
+
+Queue dispatch and search observers capture payload, destination and tenant at
+registration and use this mechanism automatically. Validation and transformation
+hooks still run with the write. This is in-process delivery, without a durable
+outbox or crash recovery guarantee.
+
+Switching tenants inside a transaction rejects, except schema/qualify scopes on
+the same physical transaction. Connections bound to a different resource or active
+transaction reject too. Raw SQL uses the effective connection but requires explicit
+schema names under qualify. Objects from finished RLS/search_path scopes require
+reentering their tenant before reuse. See [migration examples](./upgrade-3.0.md).

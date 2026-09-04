@@ -74,7 +74,7 @@ export const load: PageServerLoad = route()
 When validation fails, it returns:
 
 ```ts
-fail(422, { issues, values });
+fail(422, { issues });
 ```
 
 `issues` is normalized to a flat bag shape:
@@ -146,8 +146,7 @@ When validation fails in `.request()`, it returns HTTP `422` JSON:
 
 ```ts
 {
-  issues: { field: ["..."] },
-  values: { ...inputValues }
+  issues: { field: ["..."] }
 }
 ```
 
@@ -282,3 +281,14 @@ export const load: PageServerLoad = route()
 ```
 
 If the resolver returns `null`/`undefined`, a 404 is thrown automatically.
+
+## Validation values and locals in v3
+
+Validation errors omit input values by default, including custom formatters and
+problem+json. Opt in with `.request(handler, { includeValues: true })` or
+`.action(handler, { includeValues: true })` when returning submitted fields is
+appropriate. The optional `values` member is then included as before.
+
+Policy methods preserve the policy receiver (`this`). Attaching policy methods
+reassigns `event.locals.user` to the returned user so frozen authentication
+objects work too. Continue reading the enriched user from locals.

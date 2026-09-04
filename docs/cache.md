@@ -310,7 +310,7 @@ const periods = await EnrollmentPeriod
   .get();
 ```
 
-The first read queries `enrollment_periods` and the eager-loaded relations. Later reads for the same cache key rehydrate the parent models and their loaded relations from cache. After `Cache.forgetTag("admission_periods")`, the next read queries and refreshes the whole graph.
+The first read queries `enrollment_periods` and the eager-loaded relations. Later reads for the same cache key rehydrate the parent models and their loaded relations from cache. After `Cache.forgetQueryTag("admission_periods")`, the next read queries and refreshes the whole graph.
 
 Use multiple tags when a query result depends on more than one concept:
 
@@ -330,7 +330,7 @@ const subjects = await Subject
 ORM intentionally keeps query caching narrow:
 
 - Queries are cached only after an explicit `remember(key, ttl?)`.
-- Cache keys are application-defined.
+- Query keys and tags combine the application key with tenant, logical resource and schema.
 - Cache is bypassed inside active transactions.
 - Locked queries are not cached.
 - Random-order queries are not cached.
@@ -353,10 +353,33 @@ await Cache.set("subjects", [], { tags: ["subjects"] });
 // Stored as key "school:subjects" and tag "school:subjects".
 ```
 
-`RedisCacheStore` also has its own namespace prefix for Redis keys. By default it writes values and tag sets under a `orm:` namespace:
+`RedisCacheStore` also has its own namespace prefix for Redis keys. By default it writes values and tag indexes under a `orm:` namespace:
 
 ```ts
 new RedisCacheStore(redis, { prefix: "orm:" });
 ```
 
 In most applications, use the facade prefix for app or tenant namespacing and leave the Redis store prefix as the package namespace.
+
+## Query isolation and v3 Redis migration
+
+`remember("users")` derives a namespace from the effective tenant, database
+configuration and schema, including eager graphs and rawJson. Network/file
+namespaces are stable between processes; separate SQLite `:memory:` databases
+have distinct process-local namespaces because they are different databases.
+
+Invalidate inside the same tenant with `await Cache.forgetQuery("users")` or
+`await Cache.forgetQueryTag("users")`. Generic `Cache.get/set/remember/forgetTag`
+keep their application-wide namespace; include a tenant key explicitly when
+using those APIs for tenant data. Writes do not automatically invalidate queries.
+
+Built-in stores distinguish cached null from misses. Custom stores can implement
+`lookup<T>(key): Promise<{ hit: boolean; value: T | null }>` for that behavior;
+the existing `get()` interface remains valid.
+
+Redis tag associations and replacement/invalidation are atomic Lua operations.
+The v3 layout uses sorted tag indexes and per-key reverse associations. Choose a
+fresh RedisCacheStore prefix on upgrade (for example `orm:v3:`), or stop all
+writers and remove the previous namespace first. Do not run old and new writers
+against one prefix. Old query keys are unreachable and can expire or be removed.
+Redis Cluster is not supported. See [migration details](./upgrade-3.0.md).

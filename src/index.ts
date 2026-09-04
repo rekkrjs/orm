@@ -5,7 +5,7 @@ export type { TenantCachePolicy, TenantResolution, TenantResolver } from "./conn
 export { TransactionContext } from "./connection/TransactionContext.js";
 export { TenantContext } from "./connection/TenantContext.js";
 export type { ActiveTenantContext } from "./connection/TenantContext.js";
-export { configureOrm } from "./config/OrmConfig.js";
+export { configureOrm, reconfigureOrm } from "./config/OrmConfig.js";
 export type { OrmConfig, ConfiguredOrm } from "./config/OrmConfig.js";
 export type { ConnectionConfig } from "./types/index.js";
 export type { FullTextOptions, PostgresFullTextLanguage } from "./fulltext.js";
@@ -104,3 +104,8 @@ export type {
 // Validation lives at the `@rekkr/orm/validation` subpath import only —
 // keeping it out of the main entry trims the surface and makes the dependency
 // boundary explicit.
+
+export { resolveConnection } from "./connection/ExecutionContext.js";
+export { AfterCommitError } from "./connection/AfterCommitError.js";
+
+export { sql, SqlFragment } from "./query/SqlFragment.js";

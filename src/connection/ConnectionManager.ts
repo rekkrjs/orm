@@ -19,9 +19,13 @@ export type TenantResolver = (tenantId: string) => TenantResolution | Promise<Te
 export class ConnectionManager {
   private static defaultConnection?: Connection;
   private static connections = new Map<string, Connection>();
+  private static ownedConnections = new Set<Connection>();
+  private static shuttingDown = false;
+  private static retiring?: Promise<void>;
   private static tenantResolver?: TenantResolver;
   private static tenantCache = new Map<string, ActiveTenantContext>();
   /** In-flight resolutions, so concurrent callers share one connection. */
+  private static tenantClosing = new Map<string, Promise<void>>();
   private static tenantInflight = new Map<string, Promise<ActiveTenantContext>>();
   /** Bumped by closeAll(); a resolution that spans a bump discards its result. */
   private static shutdownGeneration = 0;
@@ -55,8 +59,10 @@ export class ConnectionManager {
     }
   }
 
-  static setDefault(connection: Connection): void {
+  static setDefault(connection: Connection, options: { owned?: boolean } = {}): void {
+    this.assertAcceptingConfiguration();
     this.defaultConnection = connection;
+    if (options.owned) this.ownedConnections.add(connection.resourceConnection());
   }
 
   static getDefault(): Connection | undefined {
@@ -67,14 +73,27 @@ export class ConnectionManager {
     this.defaultConnection = undefined;
   }
 
-  static add(name: string, connection: Connection | ConnectionConfig): Connection {
+  static add(name: string, connection: Connection | ConnectionConfig, options: { owned?: boolean } = {}): Connection {
+    this.assertAcceptingConfiguration();
     const resolved = connection instanceof Connection ? connection : new Connection(connection);
     this.connections.set(name, resolved);
+    if (options.owned ?? !(connection instanceof Connection)) this.ownedConnections.add(resolved.resourceConnection());
     return resolved;
   }
 
   static get(name: string): Connection | undefined {
     return this.connections.get(name);
+  }
+
+  static hasTenantState(): boolean { return !!(this.tenantCache.size || this.tenantInflight.size || this.retiring || this.shuttingDown); }
+
+  private static assertAcceptingConfiguration(): void {
+    if (this.retiring || this.shuttingDown) throw new Error("Connection manager is reconfiguring; await the pending change.");
+  }
+
+  static nameOf(connection: Connection): string {
+    for (const [name, candidate] of this.connections) if (candidate.sharesResource(connection)) return name;
+    return this.defaultConnection?.sharesResource(connection) ? "default" : connection.getDriverName();
   }
 
   static require(name: string): Connection {
@@ -85,19 +104,41 @@ export class ConnectionManager {
     return connection;
   }
 
-  static setTenantResolver(resolver: TenantResolver): void {
-    this.tenantResolver = resolver;
-    this.tenantCache.clear();
+  static async setTenantResolver(resolver?: TenantResolver): Promise<void> {
+    if (this.retiring || this.shuttingDown) throw new Error("Connection manager is reconfiguring; await the pending change.");
+    if (Connection.hasActiveScope()) throw new Error("Change the tenant resolver outside active ORM scopes.");
+    this.shutdownGeneration++;
+    this.tenantInflight.clear();
+    if (!this.tenantCache.size) { this.tenantResolver = resolver; return; }
+    const ids = [...this.tenantCache.keys()];
+    this.retiring = (async () => { for (const id of ids) await this.closeTenant(id); })();
+    try { await this.retiring; this.tenantResolver = resolver; } finally { this.retiring = undefined; }
+  }
+
+  static touchTenant(tenantId: string | undefined, root: Connection): void {
+    if (tenantId === undefined) return;
+    const context = this.tenantCache.get(tenantId);
+    if (!context || context.connection.resourceConnection() !== root) return;
+    context.lastUsedAt = Date.now();
+    context.expiresAt = context.ttl ? context.lastUsedAt + context.ttl : undefined;
+  }
+
+  private static expired(context: ActiveTenantContext): boolean {
+    return !!context.expiresAt && context.expiresAt <= Date.now() && !context.connection.isBusy();
   }
 
   static async resolveTenant(tenantId: string): Promise<ActiveTenantContext> {
+    if ((this.retiring || this.shuttingDown || this.tenantClosing.has(tenantId)) && !Connection.hasActiveScope()) throw new Error("Connection manager is reconfiguring; await the pending change.");
     const cached = this.tenantCache.get(tenantId);
     if (cached) {
-      if (!cached.expiresAt || cached.expiresAt > Date.now()) return cached;
+      if (!this.expired(cached)) {
+        this.touchTenant(tenantId, cached.connection.resourceConnection());
+        return cached;
+      }
       await this.closeTenant(tenantId);
     }
-    if (!this.tenantResolver) {
-      throw new Error("No tenant resolver configured.");
+    if (!this.tenantResolver || this.shuttingDown) {
+      throw new Error("No tenant resolver configured or connection manager is shutting down.");
     }
 
     // Single-flight: two concurrent requests for the same cold tenant would
@@ -111,7 +152,7 @@ export class ConnectionManager {
     try {
       return await promise;
     } finally {
-      this.tenantInflight.delete(tenantId);
+      if (this.tenantInflight.get(tenantId) === promise) this.tenantInflight.delete(tenantId);
     }
   }
 
@@ -121,6 +162,7 @@ export class ConnectionManager {
     }
 
     const resolution = await this.tenantResolver(tenantId);
+    if (generation !== this.shutdownGeneration) throw new Error(`Connection manager was closed while resolving tenant "${tenantId}".`);
     const resolvedAt = Date.now();
     const schema = resolution.strategy === "schema" ? resolution.schema : undefined;
     const schemaMode = resolution.strategy === "schema" ? resolution.mode || "qualify" : undefined;
@@ -146,6 +188,7 @@ export class ConnectionManager {
       connection = new Connection(config, { schema });
       this.connections.set(resolution.name, connection);
       ownsConnection = true;
+      this.ownedConnections.add(connection);
     } else if (schema && schemaMode === "qualify") {
       connection = connection.withSchema(schema);
     }
@@ -154,10 +197,12 @@ export class ConnectionManager {
 
     const context: ActiveTenantContext = {
       tenantId,
-      connection,
+      connection: connection.withTenantId(tenantId),
       connectionName: resolution.name,
       strategy: resolution.strategy,
       resolvedAt,
+      lastUsedAt: resolvedAt,
+      ttl: effectiveTtl,
       expiresAt: effectiveTtl ? resolvedAt + effectiveTtl : undefined,
       closeOnPurge: resolution.closeOnPurge ?? ownsConnection,
       ownsConnection,
@@ -186,16 +231,16 @@ export class ConnectionManager {
 
   static getResolvedTenant(tenantId: string): ActiveTenantContext | undefined {
     const context = this.tenantCache.get(tenantId);
-    if (!context || !context.expiresAt || context.expiresAt > Date.now()) return context;
-    this.tenantCache.delete(tenantId);
-    return undefined;
+    // Retain expired entries so a later sweep still owns their resources.
+    if (!context || this.expired(context) || (this.tenantClosing.has(tenantId) && !Connection.hasActiveScope())) return undefined;
+    this.touchTenant(tenantId, context.connection.resourceConnection());
+    return context;
   }
 
   static async purgeExpiredTenants(options: { close?: boolean } = {}): Promise<string[]> {
-    const now = Date.now();
     const purged: string[] = [];
     for (const [tenantId, context] of [...this.tenantCache.entries()]) {
-      if (!context.expiresAt || context.expiresAt > now) continue;
+      if (!this.expired(context)) continue;
       purged.push(tenantId);
       if (options.close ?? context.closeOnPurge) {
         await this.closeTenant(tenantId);
@@ -207,37 +252,54 @@ export class ConnectionManager {
   }
 
   static async closeTenant(tenantId: string): Promise<void> {
+    const existing = this.tenantClosing.get(tenantId);
+    if (existing) return existing;
     const context = this.tenantCache.get(tenantId);
     if (!context) return;
-    this.tenantCache.delete(tenantId);
-    if (!context.closeOnPurge) return;
-
-    const storedConnection = this.connections.get(context.connectionName);
-    if (storedConnection) {
-      this.connections.delete(context.connectionName);
-      await storedConnection.close();
-    }
-    if (context.ownsConnection && context.connection !== storedConnection) {
-      await context.connection.close();
-    }
+    if (Connection.hasActiveScope()) throw new Error("Close tenants outside active ORM scopes.");
+    const root = context.connection.resourceConnection();
+    const close = (async () => {
+      const shared = [...this.tenantCache.values()].some(other => other !== context && other.connection.resourceConnection() === root);
+      if (context.closeOnPurge && this.ownedConnections.has(root) && !shared && this.defaultConnection?.resourceConnection() !== root) {
+        await root.close();
+        this.ownedConnections.delete(root);
+        for (const [name, connection] of this.connections) {
+          if (connection.resourceConnection() === root) this.connections.delete(name);
+        }
+      } else await root.waitForIdle();
+      if (this.tenantCache.get(tenantId) === context) this.tenantCache.delete(tenantId);
+    })();
+    this.tenantClosing.set(tenantId, close);
+    try { await close; } finally { this.tenantClosing.delete(tenantId); }
   }
 
-  static async closeAll(): Promise<void> {
-    const connections = new Set<Connection>(this.connections.values());
-    if (this.defaultConnection) connections.add(this.defaultConnection);
-
+  static async closeAll(options: { beforeClose?: () => Promise<void> } = {}): Promise<void> {
+    if (Connection.hasActiveScope()) throw new Error("Cannot shut down connections from an active ORM scope; finish the scope first.");
+    if (this.retiring) await this.retiring;
+    const connections = [...this.ownedConnections];
     this.disableTenantSweep();
     // Invalidate resolutions still awaiting their resolver, and stop new
     // callers from joining one.
     this.shutdownGeneration++;
     this.tenantInflight.clear();
+    this.shuttingDown = true;
+    const all = new Set([...connections, ...this.connections.values(), ...(this.defaultConnection ? [this.defaultConnection] : [])].map(c => c.resourceConnection()));
+    for (const connection of connections) connection.retire();
+    while ([...all].some(connection => connection.isBusy())) {
+      await Promise.all([...all].map(connection => connection.waitForIdle()));
+    }
+    if (options.beforeClose) await Connection.finishDraining(all, options.beforeClose);
     this.connections.clear();
     this.tenantCache.clear();
     this.defaultConnection = undefined;
     this.tenantResolver = undefined;
 
-    for (const connection of connections) {
+    const results = await Promise.allSettled(connections.map(async connection => {
       await connection.close();
-    }
+      this.ownedConnections.delete(connection);
+    }));
+    this.shuttingDown = false;
+    const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failures.length) throw new AggregateError(failures.map(result => result.reason), "Connection shutdown failed; retry closeAll().");
   }
 }

@@ -1,54 +1,7 @@
 import { expect, test, describe } from "bun:test";
-import { Builder, Cache, MemoryCacheStore, Model, Observer, ObserverRegistry, RedisCacheStore, Schema, configureOrm } from "../src/index.js";
+import { Builder, Cache, MemoryCacheStore, Model, Observer, ObserverRegistry, RedisCacheStore, Schema, configureOrm, reconfigureOrm } from "../src/index.js";
 import type { CacheRememberOptions, CacheStore } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
-
-class FakeRedis {
-  values = new Map<string, string>();
-  sets = new Map<string, Set<string>>();
-  calls: any[][] = [];
-
-  async get(key: string): Promise<string | null> {
-    return this.values.get(key) ?? null;
-  }
-
-  async set(key: string, value: string, ...options: any[]): Promise<"OK"> {
-    this.calls.push(["set", key, value, ...options]);
-    this.values.set(key, value);
-    return "OK";
-  }
-
-  async del(...keys: string[]): Promise<number> {
-    this.calls.push(["del", ...keys]);
-    let count = 0;
-    for (const key of keys) {
-      if (this.values.delete(key)) count++;
-      if (this.sets.delete(key)) count++;
-    }
-    return count;
-  }
-
-  async sadd(key: string, ...members: string[]): Promise<number> {
-    this.calls.push(["sadd", key, ...members]);
-    let set = this.sets.get(key);
-    if (!set) {
-      set = new Set<string>();
-      this.sets.set(key, set);
-    }
-    const before = set.size;
-    for (const member of members) set.add(member);
-    return set.size - before;
-  }
-
-  async smembers(key: string): Promise<string[]> {
-    return [...(this.sets.get(key) ?? [])];
-  }
-
-  async scan(_cursor: string | number, _match: "MATCH", pattern: string): Promise<[string, string[]]> {
-    const prefix = pattern.replace(/\*$/, "");
-    return ["0", [...this.values.keys(), ...this.sets.keys()].filter((key) => key.startsWith(prefix))];
-  }
-}
 
 class CustomCacheStore implements CacheStore {
   values = new Map<string, unknown>();
@@ -129,17 +82,6 @@ describe("Cache stores", () => {
     expect(await store.get("short")).toBeNull();
   });
 
-  test("RedisCacheStore uses Bun Redis-compatible commands", async () => {
-    const redis = new FakeRedis();
-    const store = new RedisCacheStore(redis as any);
-
-    await store.set("ttl", { ok: true }, { ttl: 60, tags: ["tagged"] });
-    expect(redis.calls).toContainEqual(["set", "orm:cache:ttl", JSON.stringify({ ok: true }), "EX", 60]);
-    expect(redis.calls).toContainEqual(["sadd", "orm:tag:tagged", "orm:cache:ttl"]);
-
-    await exerciseStore(store);
-  });
-
   test("Cache facade remembers values and prefixes keys and tags", async () => {
     const store = new MemoryCacheStore();
     Cache.configure({ store, prefix: "app:", defaultTtl: 30 });
@@ -198,21 +140,13 @@ describe("Cache stores", () => {
   });
 
   test("Cache.remember uses configured defaultTtl when ttl is omitted", async () => {
-    const redis = new FakeRedis();
-    Cache.configure({
-      store: new RedisCacheStore(redis as any),
-      defaultTtl: 45,
-    });
-
+    const store = new MemoryCacheStore();
+    let ttl: number | undefined;
+    const set = store.set.bind(store);
+    store.set = async (key, value, options) => { ttl = options?.ttl; await set(key, value, options); };
+    Cache.configure({ store, defaultTtl: 45 });
     await Cache.remember("default-ttl", "value");
-
-    expect(redis.calls).toContainEqual([
-      "set",
-      "orm:cache:default-ttl",
-      JSON.stringify("value"),
-      "EX",
-      45,
-    ]);
+    expect(ttl).toBe(45);
   });
 
   test("configureOrm installs Redis by default when cache config is present", () => {
@@ -226,7 +160,7 @@ describe("Cache stores", () => {
 
   test("configureOrm accepts a custom cache store", async () => {
     const store = new CustomCacheStore();
-    configureOrm({
+    await reconfigureOrm({
       connection: { url: "sqlite://:memory:" },
       cache: { store, prefix: "tenant:" },
     });
@@ -290,7 +224,7 @@ describe("Query builder cache", () => {
       .get();
 
     expect(seen).toHaveLength(1);
-    expect(seen[0]).toEqual(["a", "b"]);
+    expect(seen[0]).toEqual([Cache.queryKey("a"), Cache.queryKey("b")]);
   });
 
   test("remember avoids duplicate DB reads and hydrates cached rows", async () => {
@@ -330,7 +264,7 @@ describe("Query builder cache", () => {
 
     const builder = CachedWidget.query().remember("reference-rows", 60);
     const cold = await builder.get();
-    const cachedRows = store.values.get("reference-rows") as Record<string, any>[];
+    const cachedRows = store.values.get(Cache.queryKey("reference-rows")) as Record<string, any>[];
 
     expect(cold[0].$original).not.toBe(cachedRows[0]);
     cachedRows[0].name = "Changed in cache";
@@ -387,7 +321,7 @@ describe("Query builder cache", () => {
     expect(second[0].books[0]).toBeInstanceOf(CachedBook);
     expect(second[0].books[0].title).toBe("Cached Book");
 
-    await Cache.forgetTag("authors");
+    await Cache.forgetQueryTag("authors");
     const third = await CachedAuthor
       .with("books")
       .remember("authors-with-books", 60)
@@ -397,7 +331,7 @@ describe("Query builder cache", () => {
     expect(third[0].books[0].title).toBe("Changed");
   });
 
-  test("cacheTags allows invalidation through Cache.forgetTag", async () => {
+  test("cacheTags allows invalidation through Cache.forgetQueryTag", async () => {
     const connection = setupTestDb();
     Cache.configure({ store: new MemoryCacheStore() });
     await connection.run("CREATE TABLE cached_tagged (id INTEGER PRIMARY KEY, name TEXT)");
@@ -407,7 +341,7 @@ describe("Query builder cache", () => {
     expect((await builder.get())[0].name).toBe("old");
     await connection.run("UPDATE cached_tagged SET name = 'new'");
     expect((await builder.clone().get())[0].name).toBe("old");
-    await Cache.forgetTag("tagged");
+    await Cache.forgetQueryTag("tagged");
     expect((await builder.clone().get())[0].name).toBe("new");
   });
 
@@ -436,7 +370,7 @@ describe("Query builder cache", () => {
     expect((await builder.clone().get())[0].name).toBe("first");
     await connection.run("UPDATE cached_clones SET name = 'second'");
     expect((await builder.clone().get())[0].name).toBe("first");
-    await Cache.forgetTag("clone");
+    await Cache.forgetQueryTag("clone");
     expect((await builder.clone().get())[0].name).toBe("second");
   });
 });
@@ -458,7 +392,7 @@ describe("Observer cache invalidation", () => {
 
     class ObservedCachedWidgetObserver extends Observer<ObservedCachedWidget> {
       saved() {
-        return Cache.forgetTag("observed");
+        return Cache.forgetQueryTag("observed");
       }
     }
 

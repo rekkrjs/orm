@@ -63,10 +63,11 @@ type BindOptions<M extends ModelConstructor<any>> = { with?: BindWithArg<M> };
 type PolicyCheck = { ability: string; alias?: string };
 type RequestValidationErrorPayload = {
   issues: Record<string, string[]>;
-  values: Record<string, unknown>;
+  values?: Record<string, unknown>;
 };
 type RequestValidationErrorMode = "default" | "problem+json";
 type RequestOptions = {
+  includeValues?: boolean;
   validationError?: RequestValidationErrorMode | ((payload: RequestValidationErrorPayload) => Response);
 };
 type KitErrorFn = (status: number, body: { message: string }) => never;
@@ -250,7 +251,7 @@ export function flash(
 export function extendLocalsUser<T extends { locals?: { user?: unknown } }>(event: T): T {
   const rawUser = (event as any)?.locals?.user;
   if (rawUser && typeof rawUser === "object") {
-    attachPolicyMethods(rawUser as Record<string, unknown>);
+    (event as any).locals.user = attachPolicyMethods(rawUser as Record<string, unknown>);
   }
   return event;
 }
@@ -404,7 +405,7 @@ class RouteBuilder<
   private attachLocalsUserPolicyMethods(event: RequestEvent | ServerLoadEvent): unknown {
     const rawUser = (event as any)?.locals?.user;
     if (!rawUser || typeof rawUser !== "object") return rawUser;
-    return attachPolicyMethods(rawUser as Record<string, unknown>);
+    return ((event as any).locals.user = attachPolicyMethods(rawUser as Record<string, unknown>));
   }
 
   private async resolveBindings(event: RequestEventLike): Promise<TBindings> {
@@ -450,6 +451,7 @@ class RouteBuilder<
 
   action<TResult>(
     handler: RouteHandler<RequestEvent, TBindings, TSchema extends undefined ? undefined : SchemaOutput<TSchema>, ActionExtras, TResult>,
+    options: { includeValues?: boolean } = {},
   ): (event: RequestEvent) => Promise<TResult> {
     return async (event: RequestEvent): Promise<TResult> => {
       this.attachLocalsUserPolicyMethods(event);
@@ -461,7 +463,7 @@ class RouteBuilder<
         if (!parsed.success) {
           return this.failFn(422, {
             issues: Validator.flatten(parsed.issues),
-            values: await requestValues(event.request),
+            ...(options.includeValues ? { values: await requestValues(event.request) } : {}),
           }) as TResult;
         } else {
           data = parsed.output;
@@ -489,7 +491,7 @@ class RouteBuilder<
         if (!parsed.success) {
           const payload = {
             issues: Validator.flatten(parsed.issues),
-            values: await requestValues(event.request),
+            ...(options.includeValues ? { values: await requestValues(event.request) } : {}),
           };
           if (typeof options.validationError === "function") {
             return options.validationError(payload);
@@ -501,7 +503,7 @@ class RouteBuilder<
               status: 422,
               detail: "One or more fields are invalid.",
               errors: payload.issues,
-              values: payload.values,
+              ...(options.includeValues ? { values: payload.values } : {}),
             }), {
               status: 422,
               headers: { "content-type": "application/problem+json" },
@@ -542,6 +544,7 @@ class RouteBuilder<
 
   handle<TResult>(
     handler: RouteHandler<RequestEvent, TBindings, TSchema extends undefined ? undefined : SchemaOutput<TSchema>, ActionExtras, TResult>,
+    options: { includeValues?: boolean } = {},
   ): (event: RequestEvent) => Promise<TResult> {
     return this.action(handler);
   }

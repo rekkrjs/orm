@@ -34,6 +34,7 @@ export function resolveQueueRedisClient(url?: string): RedisQueueLike {
 }
 
 interface StoredJob {
+  reservationToken: string;
   queue: string;
   jobClass: string;
   payload: string;
@@ -44,7 +45,7 @@ interface StoredJob {
 }
 
 // ── Lua scripts ──────────────────────────────────────────────────────────────
-// KEYS are always passed explicitly so the scripts stay Cluster-compatible.
+// Multi-key scripts require a standalone Redis server; Redis Cluster is unsupported.
 
 /**
  * Publish a job: write its hash, register the queue, and make it visible on
@@ -83,6 +84,7 @@ for _, id in ipairs(ids) do
     if ARGV[2] == 'r' then
       redis.call('RPUSH', KEYS[2], id)
     else
+      redis.call('HDEL', ARGV[3] .. id, 'reservationToken')
       redis.call('LPUSH', KEYS[2], id)
     end
     moved = moved + 1
@@ -110,6 +112,7 @@ while true do
   local jobKey = ARGV[1] .. id
   local fields = redis.call('HGETALL', jobKey)
   if #fields > 0 then
+    redis.call('HSET', jobKey, 'reservationToken', ARGV[3])
     local attempts = redis.call('HINCRBY', jobKey, 'attempts', 1)
     redis.call('ZADD', KEYS[2], ARGV[2], id)
     local result = {id, attempts}
@@ -127,7 +130,8 @@ end
  * ARGV: id, availableAt, delayed
  */
 const RELEASE_LUA = `
-if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+if redis.call('HGET', KEYS[1], 'reservationToken') ~= ARGV[4] then return 0 end
+redis.call('HDEL', KEYS[1], 'reservationToken')
 redis.call('ZREM', KEYS[2], ARGV[1])
 redis.call('HSET', KEYS[1], 'availableAt', ARGV[2])
 if ARGV[3] == '1' then
@@ -145,6 +149,7 @@ return 1
  * ARGV: id
  */
 const COMPLETE_LUA = `
+if redis.call('HGET', KEYS[1], 'reservationToken') ~= ARGV[2] then return 0 end
 redis.call('ZREM', KEYS[2], ARGV[1])
 return redis.call('DEL', KEYS[1])
 `;
@@ -157,6 +162,7 @@ return redis.call('DEL', KEYS[1])
  * ARGV: id, exception, failedAt
  */
 const FAIL_LUA = `
+if redis.call('HGET', KEYS[1], 'reservationToken') ~= ARGV[4] then return 0 end
 local fields = redis.call('HGETALL', KEYS[1])
 if #fields == 0 then return 0 end
 local job = {}
@@ -209,10 +215,11 @@ export class RedisQueueDriver implements QueueDriver {
     await this.migrateDelayed(queue, now);
     await this.requeueTimedOut(queue, now, retryAfterSeconds);
 
+    const token = crypto.randomUUID();
     const result = (await this.eval(
       RESERVE_LUA,
       [this.pendingKey(queue), this.reservedKey(queue)],
-      [this.jobKeyPrefix(), now],
+      [this.jobKeyPrefix(), now, token],
     )) as unknown[] | null;
 
     if (!result || result.length === 0) return null;
@@ -222,39 +229,48 @@ export class RedisQueueDriver implements QueueDriver {
     const fields = flattenedHashToObject(result.slice(2)) as unknown as StoredJob;
     if (!fields.jobClass) return null;
 
-    return this.toJobRecord(id, fields, attempts);
+    return this.toJobRecord(id, { ...fields, reservationToken: token }, attempts);
   }
 
-  async complete(id: number): Promise<void> {
+  async complete(id: number, token: string): Promise<boolean> {
     const fields = (await this.client.hgetall(this.jobKey(id))) as unknown as StoredJob | undefined;
-    await this.eval(
+    return Number(await this.eval(
       COMPLETE_LUA,
       [this.jobKey(id), this.reservedKey(fields?.queue ?? "default")],
-      [id],
-    );
+      [id, token],
+    )) > 0;
   }
 
-  async fail(id: number, exception: string): Promise<void> {
+  async fail(id: number, token: string, exception: string): Promise<boolean> {
     const fields = (await this.client.hgetall(this.jobKey(id))) as unknown as StoredJob | undefined;
-    if (!fields?.jobClass) return;
+    if (!fields?.jobClass) return false;
 
-    await this.eval(
+    return Number(await this.eval(
       FAIL_LUA,
       [this.jobKey(id), this.reservedKey(fields.queue), this.key("failed")],
-      [id, exception, Math.floor(Date.now() / 1000)],
-    );
+      [id, exception, Math.floor(Date.now() / 1000), token],
+    )) > 0;
   }
 
-  async release(id: number, delaySeconds: number): Promise<void> {
+  async release(id: number, token: string, delaySeconds: number): Promise<boolean> {
     const fields = (await this.client.hgetall(this.jobKey(id))) as unknown as StoredJob | undefined;
-    if (!fields?.queue) return;
+    if (!fields?.queue) return false;
 
     const availableAt = Math.floor(Date.now() / 1000) + delaySeconds;
-    await this.eval(
+    return Number(await this.eval(
       RELEASE_LUA,
       [this.jobKey(id), this.reservedKey(fields.queue), this.pendingKey(fields.queue), this.delayedKey(fields.queue)],
-      [id, availableAt, delaySeconds > 0 ? 1 : 0],
-    );
+      [id, availableAt, delaySeconds > 0 ? 1 : 0, token],
+    )) > 0;
+  }
+
+  async heartbeat(id: number, token: string): Promise<boolean> {
+    const fields = await this.client.hgetall(this.jobKey(id)) as unknown as StoredJob;
+    if (!fields?.queue) return false;
+    return Number(await this.eval(`
+      if redis.call('HGET', KEYS[1], 'reservationToken') ~= ARGV[2] or not redis.call('ZSCORE', KEYS[2], ARGV[1]) then return 0 end
+      redis.call('ZADD', KEYS[2], ARGV[3], ARGV[1])
+      return 1`, [this.jobKey(id), this.reservedKey(fields.queue)], [id, token, Math.floor(Date.now() / 1000)])) > 0;
   }
 
   async size(queue?: string): Promise<number> {
@@ -282,12 +298,13 @@ export class RedisQueueDriver implements QueueDriver {
 
   private async requeueTimedOut(queue: string, now: number, retryAfterSeconds: number): Promise<void> {
     const cutoff = now - retryAfterSeconds;
-    await this.eval(MIGRATE_LUA, [this.reservedKey(queue), this.pendingKey(queue)], [cutoff, "l"]);
+    await this.eval(MIGRATE_LUA, [this.reservedKey(queue), this.pendingKey(queue)], [cutoff, "l", this.jobKeyPrefix()]);
   }
 
   private toJobRecord(id: number, fields: StoredJob, attempts: number): JobRecord {
     return {
       id,
+      reservationToken: fields.reservationToken,
       queue: fields.queue,
       jobClass: fields.jobClass,
       payload: fields.payload,

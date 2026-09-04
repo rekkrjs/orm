@@ -26,7 +26,7 @@ export class IdentityMap {
   }
 
   private static cacheKey(table: string, key: string | number, connection: Connection): string {
-    return `${this.connectionId(connection)}\0${table}:${String(key)}`;
+    return `${this.connectionId(connection)}\0${connection.getTenantId() ?? ""}\0${connection.getSchema() ?? ""}\0${table}:${String(key)}`;
   }
 
   static get(table: string, key: string | number, connection: Connection): Model | undefined {
@@ -50,7 +50,7 @@ export class IdentityMap {
   static clearTable(table: string, connection: Connection): void {
     const map = this.current();
     if (!map) return;
-    const prefix = `${this.connectionId(connection)}\0${table}:`;
+    const prefix = `${this.connectionId(connection)}\0${connection.getTenantId() ?? ""}\0${connection.getSchema() ?? ""}\0${table}:`;
     for (const key of map.keys()) {
       if (key.startsWith(prefix)) map.delete(key);
     }

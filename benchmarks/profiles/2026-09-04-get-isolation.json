@@ -1,0 +1,40 @@
+{
+  "recordedAt": "2026-09-04T20:11:30.337Z",
+  "bun": "1.4.1",
+  "revision": "4661e494f052c83c80dade1318e5710238340be6",
+  "scenario": "current runtime with only P1 reversed vs enabled; 20 warmups, 41 measured get rounds, 20000 rows; alternating fresh processes",
+  "harnessSha256": "3b6d71b729e0b20d63fc7640e98db97bc4f648fb9f344c1c0a8b4a8ed3dbb4c6",
+  "harnessSource": "import assert from \"node:assert/strict\";\nconst setup: Function[] = [], teardown: Function[] = [], cases: Function[] = [];\nconst beforeAll = (cb: Function) => setup.push(cb);\nconst afterAll = (cb: Function) => teardown.push(cb);\nconst describe = (_: string, cb: Function) => cb();\nconst test = (_: string, cb: Function, ...rest: unknown[]) => cases.push(cb);\nconst expect = (actual: any) => ({ toEqual: (expected: any) => assert.deepEqual(actual, expected), toBeGreaterThan: (n: number) => assert(actual > n) });\nconst { Connection, Model } = await import(`${process.env.GET_SOURCE}/index.ts`);\nconst { modelProxyHandler } = await import(`${process.env.GET_SOURCE}/model/ModelBase.ts`);\n\nclass PipelinePost extends Model {\n  static override table = \"benchmark_pipeline_posts\";\n  static override casts = {\n    views: \"integer\",\n    score: \"number\",\n    published: \"boolean\",\n    metadata: \"json\",\n  };\n}\n\nconst sizes = [20_000] as const;\nlet consumed = 0;\n\nfunction median(samples: number[]): number {\n  const sorted = [...samples].sort((left, right) => left - right);\n  return sorted[Math.floor(sorted.length / 2)]!;\n}\n\nasync function measure(callback: () => unknown | Promise<unknown>, size: number): Promise<number> {\n  const warmups = 20;\n  const rounds = 41;\n  for (let index = 0; index < warmups; index++) await callback();\n\n  const samples: number[] = [];\n  for (let index = 0; index < rounds; index++) {\n    const start = performance.now();\n    const value: any = await callback();\n    samples.push(performance.now() - start);\n    consumed += typeof value === \"string\" ? value.length : Number(value?.length ?? 0);\n  }\n  return median(samples);\n}\n\nasync function countTraps(\n  label: string,\n  rows: number,\n  callback: () => unknown | Promise<unknown>,\n): Promise<void> {\n  const original = modelProxyHandler.get!;\n  const perProperty = new Map<string, number>();\n  let total = 0;\n  modelProxyHandler.get = function (target, property, receiver) {\n    total++;\n    if (typeof property === \"string\") {\n      perProperty.set(property, (perProperty.get(property) ?? 0) + 1);\n    }\n    return original.call(this, target, property, receiver);\n  };\n  try {\n    await callback();\n  } finally {\n    modelProxyHandler.get = original;\n  }\n\n  const top = [...perProperty]\n    .sort((left, right) => right[1] - left[1])\n    .slice(0, 12)\n    .map(([property, count]) => `${property}:${(count / rows).toFixed(2)}`)\n    .join(\",\");\n  console.log(`PIPELINE_TRAPS phase=${label} rows=${rows} total=${total} perRow=${(total / rows).toFixed(2)} top=${top}`);\n}\n\ndescribe(\"Benchmark: query to model JSON pipeline\", () => {\n  const connection = new Connection({ url: \"sqlite://:memory:\" });\n\n  const modelQuery = (limit: number) => PipelinePost.query().orderBy(\"id\").limit(limit);\n  const rawSql = (limit: number) => `\n    SELECT id, title, body, author, views, score, published, metadata, created_at, updated_at\n    FROM benchmark_pipeline_posts ORDER BY id LIMIT ${limit}\n  `;\n\n  beforeAll(async () => {\n    Model.setConnection(connection);\n    await connection.run(`\n      CREATE TABLE benchmark_pipeline_posts (\n        id INTEGER PRIMARY KEY,\n        title TEXT NOT NULL,\n        body TEXT NOT NULL,\n        author TEXT NOT NULL,\n        views INTEGER NOT NULL,\n        score REAL NOT NULL,\n        published INTEGER NOT NULL,\n        metadata TEXT NOT NULL,\n        created_at TEXT NOT NULL,\n        updated_at TEXT NOT NULL\n      )\n    `);\n    await connection.run(`\n      WITH RECURSIVE sequence(value) AS (\n        SELECT 1\n        UNION ALL\n        SELECT value + 1 FROM sequence WHERE value < 20000\n      )\n      INSERT INTO benchmark_pipeline_posts\n        (id, title, body, author, views, score, published, metadata, created_at, updated_at)\n      SELECT\n        value,\n        'Post ' || value,\n        'Body ' || value,\n        'Author ' || (value % 100),\n        value * 3,\n        value / 10.0,\n        value % 2,\n        '{\"index\":' || value || '}',\n        '2026-01-02 03:04:05',\n        '2026-01-03 04:05:06'\n      FROM sequence\n    `);\n  });\n\n  afterAll(async () => {\n    expect(consumed).toBeGreaterThan(0);\n    await connection.close();\n  });\n\n  test(\"prints median phase timings and proxy traps\", async () => {\n    const expected = (await modelQuery(200).get()).toJSON();\n    expect(await modelQuery(200).rawJson()).toEqual(expected);\n\n    for (const size of sizes) {\n      const hydrated = await modelQuery(size).get();\n      const direct = await modelQuery(size).rawJson();\n      const driver = 0;\n      const get = await measure(() => modelQuery(size).get(), size);\n      const serialize = 0;\n      const getJson = 0;\n      const rawJson = 0;\n      const stringify = 0;\n\n      console.log([\n        `PIPELINE rows=${size}`,\n        `driver_ms=${driver.toFixed(4)}`,\n        `get_ms=${get.toFixed(4)}`,\n        `serialize_ms=${serialize.toFixed(4)}`,\n        `getJson_ms=${getJson.toFixed(4)}`,\n        `rawJson_ms=${rawJson.toFixed(4)}`,\n        `stringify_ms=${stringify.toFixed(4)}`,\n      ].join(\" \"));\n    }\n\n    const rows = 20_000;\n    await countTraps(\"get\", rows, () => modelQuery(rows).get());\n    const hydrated = await modelQuery(rows).get();\n    await countTraps(\"toJSON\", rows, () => hydrated.toJSON());\n  }, 30_000);\n});\n\nfor (const callback of [...setup, ...cases, ...teardown]) await callback();\n",
+  "runs": [
+    {
+      "stage": "before",
+      "getMs": 9.2664,
+      "stdout": "PIPELINE rows=20000 driver_ms=0.0000 get_ms=9.2664 serialize_ms=0.0000 getJson_ms=0.0000 rawJson_ms=0.0000 stringify_ms=0.0000\nPIPELINE_TRAPS phase=get rows=20000 total=20000 perRow=1.00 top=\nPIPELINE_TRAPS phase=toJSON rows=20000 total=60000 perRow=3.00 top=toJSON:2.00\n"
+    },
+    {
+      "stage": "after",
+      "getMs": 9.2397,
+      "stdout": "PIPELINE rows=20000 driver_ms=0.0000 get_ms=9.2397 serialize_ms=0.0000 getJson_ms=0.0000 rawJson_ms=0.0000 stringify_ms=0.0000\nPIPELINE_TRAPS phase=get rows=20000 total=20000 perRow=1.00 top=\nPIPELINE_TRAPS phase=toJSON rows=20000 total=60000 perRow=3.00 top=toJSON:2.00\n"
+    },
+    {
+      "stage": "before",
+      "getMs": 8.8155,
+      "stdout": "PIPELINE rows=20000 driver_ms=0.0000 get_ms=8.8155 serialize_ms=0.0000 getJson_ms=0.0000 rawJson_ms=0.0000 stringify_ms=0.0000\nPIPELINE_TRAPS phase=get rows=20000 total=20000 perRow=1.00 top=\nPIPELINE_TRAPS phase=toJSON rows=20000 total=60000 perRow=3.00 top=toJSON:2.00\n"
+    },
+    {
+      "stage": "after",
+      "getMs": 8.5713,
+      "stdout": "PIPELINE rows=20000 driver_ms=0.0000 get_ms=8.5713 serialize_ms=0.0000 getJson_ms=0.0000 rawJson_ms=0.0000 stringify_ms=0.0000\nPIPELINE_TRAPS phase=get rows=20000 total=20000 perRow=1.00 top=\nPIPELINE_TRAPS phase=toJSON rows=20000 total=60000 perRow=3.00 top=toJSON:2.00\n"
+    },
+    {
+      "stage": "before",
+      "getMs": 11.8361,
+      "stdout": "PIPELINE rows=20000 driver_ms=0.0000 get_ms=11.8361 serialize_ms=0.0000 getJson_ms=0.0000 rawJson_ms=0.0000 stringify_ms=0.0000\nPIPELINE_TRAPS phase=get rows=20000 total=20000 perRow=1.00 top=\nPIPELINE_TRAPS phase=toJSON rows=20000 total=60000 perRow=3.00 top=toJSON:2.00\n"
+    },
+    {
+      "stage": "after",
+      "getMs": 11.4958,
+      "stdout": "PIPELINE rows=20000 driver_ms=0.0000 get_ms=11.4958 serialize_ms=0.0000 getJson_ms=0.0000 rawJson_ms=0.0000 stringify_ms=0.0000\nPIPELINE_TRAPS phase=get rows=20000 total=20000 perRow=1.00 top=\nPIPELINE_TRAPS phase=toJSON rows=20000 total=60000 perRow=3.00 top=toJSON:2.00\n"
+    }
+  ]
+}

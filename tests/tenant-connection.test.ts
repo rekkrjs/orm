@@ -106,7 +106,7 @@ describe("tenant connection switching", () => {
     expect(user?.getAttribute("name")).toBe("Acme User");
   });
 
-  test("loaded models save using their original tenant connection", async () => {
+  test("loaded models reject conflicting scopes and retain their original connection", async () => {
     const acme = await createTenantDb("Acme");
     const beta = await createTenantDb("Beta");
     ConnectionManager.setTenantResolver((tenantId) => ({
@@ -120,9 +120,10 @@ describe("tenant connection switching", () => {
     const acmeUser = await TenantContext.run("acme", () => TenantUser.find(1));
     await TenantContext.run("beta", async () => {
       acmeUser!.setAttribute("name", "Acme Updated");
-      await acmeUser!.save();
+      await expect(acmeUser!.save()).rejects.toThrow(/context conflict/);
     });
 
+    await acmeUser!.save();
     const acmeRows = await acme.query("SELECT name FROM tenant_users WHERE id = 1");
     const betaRows = await beta.query("SELECT name FROM tenant_users WHERE id = 1");
 
@@ -161,7 +162,7 @@ describe("tenant connection switching", () => {
 
     const context = await ConnectionManager.resolveTenant("acme");
 
-    expect(context.connection).toBe(connection);
+    expect(context.connection.sharesResource(connection)).toBe(true);
     expect(context.schema).toBe("tenant_acme");
     expect(context.schemaMode).toBe("search_path");
     expect(context.connection.getSchema()).toBeUndefined();
@@ -179,7 +180,7 @@ describe("tenant connection switching", () => {
 
     const context = await ConnectionManager.resolveTenant("acme");
 
-    expect(context.connection).toBe(connection);
+    expect(context.connection.sharesResource(connection)).toBe(true);
     expect(context.strategy).toBe("rls");
     expect(context.rlsTenantId).toBe("uuid-for-acme");
     expect(context.rlsSetting).toBe("app.current_tenant_id");

@@ -26,6 +26,7 @@ export default class ${className} extends Migration {
       table.smallInteger("max_attempts").unsigned();
       table.integer("available_at").unsigned();
       table.integer("reserved_at").unsigned().nullable();
+      table.string("reservation_token", 64).nullable();
       table.integer("created_at").unsigned();
     });
 
@@ -66,6 +67,7 @@ interface JobAttributes {
   max_attempts: number;
   available_at: number;
   reserved_at: number | null;
+  reservation_token: string | null;
   created_at: number;
 }
 

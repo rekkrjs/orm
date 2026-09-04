@@ -23,18 +23,22 @@ export class MemoryCacheStore implements CacheStore {
   private writesSincePurge = 0;
 
   async get<T = unknown>(key: string): Promise<T | null> {
+    return (await this.lookup<T>(key)).value;
+  }
+
+  async lookup<T = unknown>(key: string): Promise<{ hit: boolean; value: T | null }> {
     const entry = this.entries.get(key);
-    if (!entry) return null;
+    if (!entry) return { hit: false, value: null };
     if (entry.expiresAt !== undefined && entry.expiresAt <= Date.now()) {
       await this.forget(key);
-      return null;
+      return { hit: false, value: null };
     }
     try {
-      return JSON.parse(entry.value) as T;
+      return { hit: true, value: JSON.parse(entry.value) as T };
     } catch {
       // Treat a corrupted entry as a miss and remove it so reads can recover.
       await this.forget(key);
-      return null;
+      return { hit: false, value: null };
     }
   }
 
