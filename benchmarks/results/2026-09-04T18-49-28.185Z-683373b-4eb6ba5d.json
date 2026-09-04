@@ -1,0 +1,404 @@
+{
+  "protocol": "sqlite-json-v2",
+  "recordedAt": "2026-09-04T18:49:28.185Z",
+  "revision": "683373b032fe1cee76492a0b1f88b81c38910eda",
+  "worktree": " M .tmp_hacks/bun-mysql-event-loop.md\n M .tmp_hacks/bun-sql-write-count.md\n M .tmp_hacks/elysia-1.4-collection-constructor-name.md\n M package.json\n?? benchmarks/\n?? scripts/benchmark-history.ts\n?? tests/bench-history-script.test.ts\n?? tests/benchmark-hydration-plan.baseline.txt\n?? tests/benchmark-hydration-plan.test.ts\n?? tests/tenant-transaction-matrix.test.ts\n",
+  "sourceHash": "b2d9cdcb41956efdb1960597054f2d6e4b8c4ae14239b8a2675bfca871f8d700",
+  "harnessHash": "e5dd52c2434cec0a596ccd6fc86be89f5f1c493a4ae8002267484f01dfa9a5c8",
+  "environment": {
+    "bun": "1.4.1",
+    "bunRevision": "4661e494f052c83c80dade1318e5710238340be6",
+    "os": "darwin",
+    "osRelease": "24.6.0",
+    "arch": "arm64",
+    "cpu": "Apple M4",
+    "cpuCount": 10,
+    "memoryBytes": 34359738368,
+    "timezone": "UTC"
+  },
+  "repetitions": 3,
+  "suites": [
+    "tests/benchmark-pipeline.test.ts",
+    "tests/benchmark-hydration-plan.test.ts"
+  ],
+  "runs": [
+    {
+      "repetition": 1,
+      "suite": "tests/benchmark-pipeline.test.ts",
+      "metrics": {
+        "PIPELINE rows=1 driver_ms": 0.0172,
+        "PIPELINE rows=1 get_ms": 0.0199,
+        "PIPELINE rows=1 serialize_ms": 0.0012,
+        "PIPELINE rows=1 getJson_ms": 0.0173,
+        "PIPELINE rows=1 rawJson_ms": 0.0184,
+        "PIPELINE rows=1 stringify_ms": 0.0009,
+        "PIPELINE rows=25 driver_ms": 0.0145,
+        "PIPELINE rows=25 get_ms": 0.0318,
+        "PIPELINE rows=25 serialize_ms": 0.0177,
+        "PIPELINE rows=25 getJson_ms": 0.0541,
+        "PIPELINE rows=25 rawJson_ms": 0.0302,
+        "PIPELINE rows=25 stringify_ms": 0.0132,
+        "PIPELINE rows=200 driver_ms": 0.0505,
+        "PIPELINE rows=200 get_ms": 0.128,
+        "PIPELINE rows=200 serialize_ms": 0.0733,
+        "PIPELINE rows=200 getJson_ms": 0.2752,
+        "PIPELINE rows=200 rawJson_ms": 0.1239,
+        "PIPELINE rows=200 stringify_ms": 0.1148,
+        "PIPELINE rows=20000 driver_ms": 4.3261,
+        "PIPELINE rows=20000 get_ms": 11.0594,
+        "PIPELINE rows=20000 serialize_ms": 6.1752,
+        "PIPELINE rows=20000 getJson_ms": 26.1385,
+        "PIPELINE rows=20000 rawJson_ms": 9.243,
+        "PIPELINE rows=20000 stringify_ms": 11.574,
+        "PIPELINE_TRAPS phase=get rows=20000 total": 20000,
+        "PIPELINE_TRAPS phase=get rows=20000 perRow": 1,
+        "PIPELINE_TRAPS phase=toJSON rows=20000 total": 60000,
+        "PIPELINE_TRAPS phase=toJSON rows=20000 perRow": 3
+      },
+      "stdout": "bun test v1.4.1 (4661e494f)\nPIPELINE rows=1 driver_ms=0.0172 get_ms=0.0199 serialize_ms=0.0012 getJson_ms=0.0173 rawJson_ms=0.0184 stringify_ms=0.0009\nPIPELINE rows=25 driver_ms=0.0145 get_ms=0.0318 serialize_ms=0.0177 getJson_ms=0.0541 rawJson_ms=0.0302 stringify_ms=0.0132\nPIPELINE rows=200 driver_ms=0.0505 get_ms=0.1280 serialize_ms=0.0733 getJson_ms=0.2752 rawJson_ms=0.1239 stringify_ms=0.1148\nPIPELINE rows=20000 driver_ms=4.3261 get_ms=11.0594 serialize_ms=6.1752 getJson_ms=26.1385 rawJson_ms=9.2430 stringify_ms=11.5740\nPIPELINE_TRAPS phase=get rows=20000 total=20000 perRow=1.00 top=\nPIPELINE_TRAPS phase=toJSON rows=20000 total=60000 perRow=3.00 top=toJSON:2.00\n",
+      "stderr": "\ntests/benchmark-pipeline.test.ts:\n(pass) Benchmark: query to model JSON pipeline > prints median phase timings and proxy traps [959.01ms]\n\n 1 pass\n 0 fail\n 1 expect() calls\nRan 1 test across 1 file. [983.00ms]\n"
+    },
+    {
+      "repetition": 1,
+      "suite": "tests/benchmark-hydration-plan.test.ts",
+      "metrics": {
+        "CEILING rows=20000 driver_ms": 4.4237,
+        "CEILING rows=20000 stringify_ms": 5.4827,
+        "CEILING rows=20000 ceiling_ms": 9.6896,
+        "CEILING rows=20000 model_ms": 40.5463,
+        "CEILING rows=20000 rawJson_ms": 20.7302,
+        "CEILING rows=20000 model_factor": 4.18,
+        "CEILING rows=20000 rawJson_factor": 2.14,
+        "CASTPLAN phase=get rows=20000 getCastDefinition": 0,
+        "CASTPLAN phase=get rows=20000 castAttribute": 0,
+        "CASTPLAN phase=get rows=20000 getAttributeFromTarget": 0,
+        "CASTPLAN phase=toJSON rows=20000 getCastDefinition": 8,
+        "CASTPLAN phase=toJSON rows=20000 castAttribute": 0,
+        "CASTPLAN phase=toJSON rows=20000 getAttributeFromTarget": 4
+      },
+      "stdout": "bun test v1.4.1 (4661e494f)\nCEILING rows=20000 driver_ms=4.4237 stringify_ms=5.4827 ceiling_ms=9.6896 model_ms=40.5463 rawJson_ms=20.7302 model_factor=4.18 rawJson_factor=2.14\nCASTPLAN phase=get rows=20000 getCastDefinition=0.00/row castAttribute=0.00/row getAttributeFromTarget=0.00/row\nCASTPLAN phase=toJSON rows=20000 getCastDefinition=8.00/row castAttribute=0.00/row getAttributeFromTarget=4.00/row\n",
+      "stderr": "\ntests/benchmark-hydration-plan.test.ts:\n(pass) Benchmark: hydration plan (3.0.0 §6) > model path as a factor over the raw-row ceiling [1073.86ms]\n(pass) Benchmark: hydration plan (3.0.0 §6) > per-row cast work during hydration and serialization [44.17ms]\n\n 2 pass\n 0 fail\n 9 expect() calls\nRan 2 tests across 1 file. [1141.00ms]\n"
+    },
+    {
+      "repetition": 2,
+      "suite": "tests/benchmark-pipeline.test.ts",
+      "metrics": {
+        "PIPELINE rows=1 driver_ms": 0.0175,
+        "PIPELINE rows=1 get_ms": 0.0193,
+        "PIPELINE rows=1 serialize_ms": 0.0011,
+        "PIPELINE rows=1 getJson_ms": 0.0195,
+        "PIPELINE rows=1 rawJson_ms": 0.0182,
+        "PIPELINE rows=1 stringify_ms": 0.0009,
+        "PIPELINE rows=25 driver_ms": 0.0147,
+        "PIPELINE rows=25 get_ms": 0.0313,
+        "PIPELINE rows=25 serialize_ms": 0.0175,
+        "PIPELINE rows=25 getJson_ms": 0.0523,
+        "PIPELINE rows=25 rawJson_ms": 0.0307,
+        "PIPELINE rows=25 stringify_ms": 0.0133,
+        "PIPELINE rows=200 driver_ms": 0.0511,
+        "PIPELINE rows=200 get_ms": 0.1314,
+        "PIPELINE rows=200 serialize_ms": 0.0776,
+        "PIPELINE rows=200 getJson_ms": 0.2781,
+        "PIPELINE rows=200 rawJson_ms": 0.1243,
+        "PIPELINE rows=200 stringify_ms": 0.1165,
+        "PIPELINE rows=20000 driver_ms": 4.3546,
+        "PIPELINE rows=20000 get_ms": 11.8074,
+        "PIPELINE rows=20000 serialize_ms": 6.3413,
+        "PIPELINE rows=20000 getJson_ms": 26.8695,
+        "PIPELINE rows=20000 rawJson_ms": 9.4776,
+        "PIPELINE rows=20000 stringify_ms": 11.283,
+        "PIPELINE_TRAPS phase=get rows=20000 total": 20000,
+        "PIPELINE_TRAPS phase=get rows=20000 perRow": 1,
+        "PIPELINE_TRAPS phase=toJSON rows=20000 total": 60000,
+        "PIPELINE_TRAPS phase=toJSON rows=20000 perRow": 3
+      },
+      "stdout": "bun test v1.4.1 (4661e494f)\nPIPELINE rows=1 driver_ms=0.0175 get_ms=0.0193 serialize_ms=0.0011 getJson_ms=0.0195 rawJson_ms=0.0182 stringify_ms=0.0009\nPIPELINE rows=25 driver_ms=0.0147 get_ms=0.0313 serialize_ms=0.0175 getJson_ms=0.0523 rawJson_ms=0.0307 stringify_ms=0.0133\nPIPELINE rows=200 driver_ms=0.0511 get_ms=0.1314 serialize_ms=0.0776 getJson_ms=0.2781 rawJson_ms=0.1243 stringify_ms=0.1165\nPIPELINE rows=20000 driver_ms=4.3546 get_ms=11.8074 serialize_ms=6.3413 getJson_ms=26.8695 rawJson_ms=9.4776 stringify_ms=11.2830\nPIPELINE_TRAPS phase=get rows=20000 total=20000 perRow=1.00 top=\nPIPELINE_TRAPS phase=toJSON rows=20000 total=60000 perRow=3.00 top=toJSON:2.00\n",
+      "stderr": "\ntests/benchmark-pipeline.test.ts:\n(pass) Benchmark: query to model JSON pipeline > prints median phase timings and proxy traps [980.27ms]\n\n 1 pass\n 0 fail\n 1 expect() calls\nRan 1 test across 1 file. [1004.00ms]\n"
+    },
+    {
+      "repetition": 2,
+      "suite": "tests/benchmark-hydration-plan.test.ts",
+      "metrics": {
+        "CEILING rows=20000 driver_ms": 4.2858,
+        "CEILING rows=20000 stringify_ms": 5.2087,
+        "CEILING rows=20000 ceiling_ms": 9.5001,
+        "CEILING rows=20000 model_ms": 37.0658,
+        "CEILING rows=20000 rawJson_ms": 20.6771,
+        "CEILING rows=20000 model_factor": 3.9,
+        "CEILING rows=20000 rawJson_factor": 2.18,
+        "CASTPLAN phase=get rows=20000 getCastDefinition": 0,
+        "CASTPLAN phase=get rows=20000 castAttribute": 0,
+        "CASTPLAN phase=get rows=20000 getAttributeFromTarget": 0,
+        "CASTPLAN phase=toJSON rows=20000 getCastDefinition": 8,
+        "CASTPLAN phase=toJSON rows=20000 castAttribute": 0,
+        "CASTPLAN phase=toJSON rows=20000 getAttributeFromTarget": 4
+      },
+      "stdout": "bun test v1.4.1 (4661e494f)\nCEILING rows=20000 driver_ms=4.2858 stringify_ms=5.2087 ceiling_ms=9.5001 model_ms=37.0658 rawJson_ms=20.6771 model_factor=3.90 rawJson_factor=2.18\nCASTPLAN phase=get rows=20000 getCastDefinition=0.00/row castAttribute=0.00/row getAttributeFromTarget=0.00/row\nCASTPLAN phase=toJSON rows=20000 getCastDefinition=8.00/row castAttribute=0.00/row getAttributeFromTarget=4.00/row\n",
+      "stderr": "\ntests/benchmark-hydration-plan.test.ts:\n(pass) Benchmark: hydration plan (3.0.0 §6) > model path as a factor over the raw-row ceiling [1042.98ms]\n(pass) Benchmark: hydration plan (3.0.0 §6) > per-row cast work during hydration and serialization [39.66ms]\n\n 2 pass\n 0 fail\n 9 expect() calls\nRan 2 tests across 1 file. [1107.00ms]\n"
+    },
+    {
+      "repetition": 3,
+      "suite": "tests/benchmark-pipeline.test.ts",
+      "metrics": {
+        "PIPELINE rows=1 driver_ms": 0.0177,
+        "PIPELINE rows=1 get_ms": 0.0197,
+        "PIPELINE rows=1 serialize_ms": 0.0012,
+        "PIPELINE rows=1 getJson_ms": 0.0189,
+        "PIPELINE rows=1 rawJson_ms": 0.019,
+        "PIPELINE rows=1 stringify_ms": 0.0009,
+        "PIPELINE rows=25 driver_ms": 0.0138,
+        "PIPELINE rows=25 get_ms": 0.0313,
+        "PIPELINE rows=25 serialize_ms": 0.0176,
+        "PIPELINE rows=25 getJson_ms": 0.0533,
+        "PIPELINE rows=25 rawJson_ms": 0.0305,
+        "PIPELINE rows=25 stringify_ms": 0.0129,
+        "PIPELINE rows=200 driver_ms": 0.0484,
+        "PIPELINE rows=200 get_ms": 0.1219,
+        "PIPELINE rows=200 serialize_ms": 0.0735,
+        "PIPELINE rows=200 getJson_ms": 0.2905,
+        "PIPELINE rows=200 rawJson_ms": 0.1215,
+        "PIPELINE rows=200 stringify_ms": 0.1187,
+        "PIPELINE rows=20000 driver_ms": 4.3887,
+        "PIPELINE rows=20000 get_ms": 10.4077,
+        "PIPELINE rows=20000 serialize_ms": 6.1228,
+        "PIPELINE rows=20000 getJson_ms": 24.8418,
+        "PIPELINE rows=20000 rawJson_ms": 9.3447,
+        "PIPELINE rows=20000 stringify_ms": 11.3402,
+        "PIPELINE_TRAPS phase=get rows=20000 total": 20000,
+        "PIPELINE_TRAPS phase=get rows=20000 perRow": 1,
+        "PIPELINE_TRAPS phase=toJSON rows=20000 total": 60000,
+        "PIPELINE_TRAPS phase=toJSON rows=20000 perRow": 3
+      },
+      "stdout": "bun test v1.4.1 (4661e494f)\nPIPELINE rows=1 driver_ms=0.0177 get_ms=0.0197 serialize_ms=0.0012 getJson_ms=0.0189 rawJson_ms=0.0190 stringify_ms=0.0009\nPIPELINE rows=25 driver_ms=0.0138 get_ms=0.0313 serialize_ms=0.0176 getJson_ms=0.0533 rawJson_ms=0.0305 stringify_ms=0.0129\nPIPELINE rows=200 driver_ms=0.0484 get_ms=0.1219 serialize_ms=0.0735 getJson_ms=0.2905 rawJson_ms=0.1215 stringify_ms=0.1187\nPIPELINE rows=20000 driver_ms=4.3887 get_ms=10.4077 serialize_ms=6.1228 getJson_ms=24.8418 rawJson_ms=9.3447 stringify_ms=11.3402\nPIPELINE_TRAPS phase=get rows=20000 total=20000 perRow=1.00 top=\nPIPELINE_TRAPS phase=toJSON rows=20000 total=60000 perRow=3.00 top=toJSON:2.00\n",
+      "stderr": "\ntests/benchmark-pipeline.test.ts:\n(pass) Benchmark: query to model JSON pipeline > prints median phase timings and proxy traps [929.34ms]\n\n 1 pass\n 0 fail\n 1 expect() calls\nRan 1 test across 1 file. [953.00ms]\n"
+    },
+    {
+      "repetition": 3,
+      "suite": "tests/benchmark-hydration-plan.test.ts",
+      "metrics": {
+        "CEILING rows=20000 driver_ms": 4.2888,
+        "CEILING rows=20000 stringify_ms": 5.4102,
+        "CEILING rows=20000 ceiling_ms": 9.5146,
+        "CEILING rows=20000 model_ms": 38.0315,
+        "CEILING rows=20000 rawJson_ms": 21.0577,
+        "CEILING rows=20000 model_factor": 4,
+        "CEILING rows=20000 rawJson_factor": 2.21,
+        "CASTPLAN phase=get rows=20000 getCastDefinition": 0,
+        "CASTPLAN phase=get rows=20000 castAttribute": 0,
+        "CASTPLAN phase=get rows=20000 getAttributeFromTarget": 0,
+        "CASTPLAN phase=toJSON rows=20000 getCastDefinition": 8,
+        "CASTPLAN phase=toJSON rows=20000 castAttribute": 0,
+        "CASTPLAN phase=toJSON rows=20000 getAttributeFromTarget": 4
+      },
+      "stdout": "bun test v1.4.1 (4661e494f)\nCEILING rows=20000 driver_ms=4.2888 stringify_ms=5.4102 ceiling_ms=9.5146 model_ms=38.0315 rawJson_ms=21.0577 model_factor=4.00 rawJson_factor=2.21\nCASTPLAN phase=get rows=20000 getCastDefinition=0.00/row castAttribute=0.00/row getAttributeFromTarget=0.00/row\nCASTPLAN phase=toJSON rows=20000 getCastDefinition=8.00/row castAttribute=0.00/row getAttributeFromTarget=4.00/row\n",
+      "stderr": "\ntests/benchmark-hydration-plan.test.ts:\n(pass) Benchmark: hydration plan (3.0.0 §6) > model path as a factor over the raw-row ceiling [1049.41ms]\n(pass) Benchmark: hydration plan (3.0.0 §6) > per-row cast work during hydration and serialization [37.24ms]\n\n 2 pass\n 0 fail\n 9 expect() calls\nRan 2 tests across 1 file. [1110.00ms]\n"
+    }
+  ],
+  "summary": {
+    "PIPELINE rows=1 driver_ms": {
+      "median": 0.0175,
+      "min": 0.0172,
+      "max": 0.0177
+    },
+    "PIPELINE rows=1 getJson_ms": {
+      "median": 0.0189,
+      "min": 0.0173,
+      "max": 0.0195
+    },
+    "PIPELINE rows=1 get_ms": {
+      "median": 0.0197,
+      "min": 0.0193,
+      "max": 0.0199
+    },
+    "PIPELINE rows=1 rawJson_ms": {
+      "median": 0.0184,
+      "min": 0.0182,
+      "max": 0.019
+    },
+    "PIPELINE rows=1 serialize_ms": {
+      "median": 0.0012,
+      "min": 0.0011,
+      "max": 0.0012
+    },
+    "PIPELINE rows=1 stringify_ms": {
+      "median": 0.0009,
+      "min": 0.0009,
+      "max": 0.0009
+    },
+    "PIPELINE rows=200 driver_ms": {
+      "median": 0.0505,
+      "min": 0.0484,
+      "max": 0.0511
+    },
+    "PIPELINE rows=200 getJson_ms": {
+      "median": 0.2781,
+      "min": 0.2752,
+      "max": 0.2905
+    },
+    "PIPELINE rows=200 get_ms": {
+      "median": 0.128,
+      "min": 0.1219,
+      "max": 0.1314
+    },
+    "PIPELINE rows=200 rawJson_ms": {
+      "median": 0.1239,
+      "min": 0.1215,
+      "max": 0.1243
+    },
+    "PIPELINE rows=200 serialize_ms": {
+      "median": 0.0735,
+      "min": 0.0733,
+      "max": 0.0776
+    },
+    "PIPELINE rows=200 stringify_ms": {
+      "median": 0.1165,
+      "min": 0.1148,
+      "max": 0.1187
+    },
+    "PIPELINE rows=20000 driver_ms": {
+      "median": 4.3546,
+      "min": 4.3261,
+      "max": 4.3887
+    },
+    "PIPELINE rows=20000 getJson_ms": {
+      "median": 26.1385,
+      "min": 24.8418,
+      "max": 26.8695
+    },
+    "PIPELINE rows=20000 get_ms": {
+      "median": 11.0594,
+      "min": 10.4077,
+      "max": 11.8074
+    },
+    "PIPELINE rows=20000 rawJson_ms": {
+      "median": 9.3447,
+      "min": 9.243,
+      "max": 9.4776
+    },
+    "PIPELINE rows=20000 serialize_ms": {
+      "median": 6.1752,
+      "min": 6.1228,
+      "max": 6.3413
+    },
+    "PIPELINE rows=20000 stringify_ms": {
+      "median": 11.3402,
+      "min": 11.283,
+      "max": 11.574
+    },
+    "PIPELINE rows=25 driver_ms": {
+      "median": 0.0145,
+      "min": 0.0138,
+      "max": 0.0147
+    },
+    "PIPELINE rows=25 getJson_ms": {
+      "median": 0.0533,
+      "min": 0.0523,
+      "max": 0.0541
+    },
+    "PIPELINE rows=25 get_ms": {
+      "median": 0.0313,
+      "min": 0.0313,
+      "max": 0.0318
+    },
+    "PIPELINE rows=25 rawJson_ms": {
+      "median": 0.0305,
+      "min": 0.0302,
+      "max": 0.0307
+    },
+    "PIPELINE rows=25 serialize_ms": {
+      "median": 0.0176,
+      "min": 0.0175,
+      "max": 0.0177
+    },
+    "PIPELINE rows=25 stringify_ms": {
+      "median": 0.0132,
+      "min": 0.0129,
+      "max": 0.0133
+    },
+    "PIPELINE_TRAPS phase=get rows=20000 perRow": {
+      "median": 1,
+      "min": 1,
+      "max": 1
+    },
+    "PIPELINE_TRAPS phase=get rows=20000 total": {
+      "median": 20000,
+      "min": 20000,
+      "max": 20000
+    },
+    "PIPELINE_TRAPS phase=toJSON rows=20000 perRow": {
+      "median": 3,
+      "min": 3,
+      "max": 3
+    },
+    "PIPELINE_TRAPS phase=toJSON rows=20000 total": {
+      "median": 60000,
+      "min": 60000,
+      "max": 60000
+    },
+    "CASTPLAN phase=get rows=20000 castAttribute": {
+      "median": 0,
+      "min": 0,
+      "max": 0
+    },
+    "CASTPLAN phase=get rows=20000 getAttributeFromTarget": {
+      "median": 0,
+      "min": 0,
+      "max": 0
+    },
+    "CASTPLAN phase=get rows=20000 getCastDefinition": {
+      "median": 0,
+      "min": 0,
+      "max": 0
+    },
+    "CASTPLAN phase=toJSON rows=20000 castAttribute": {
+      "median": 0,
+      "min": 0,
+      "max": 0
+    },
+    "CASTPLAN phase=toJSON rows=20000 getAttributeFromTarget": {
+      "median": 4,
+      "min": 4,
+      "max": 4
+    },
+    "CASTPLAN phase=toJSON rows=20000 getCastDefinition": {
+      "median": 8,
+      "min": 8,
+      "max": 8
+    },
+    "CEILING rows=20000 ceiling_ms": {
+      "median": 9.5146,
+      "min": 9.5001,
+      "max": 9.6896
+    },
+    "CEILING rows=20000 driver_ms": {
+      "median": 4.2888,
+      "min": 4.2858,
+      "max": 4.4237
+    },
+    "CEILING rows=20000 model_factor": {
+      "median": 4,
+      "min": 3.9,
+      "max": 4.18
+    },
+    "CEILING rows=20000 model_ms": {
+      "median": 38.0315,
+      "min": 37.0658,
+      "max": 40.5463
+    },
+    "CEILING rows=20000 rawJson_factor": {
+      "median": 2.18,
+      "min": 2.14,
+      "max": 2.21
+    },
+    "CEILING rows=20000 rawJson_ms": {
+      "median": 20.7302,
+      "min": 20.6771,
+      "max": 21.0577
+    },
+    "CEILING rows=20000 stringify_ms": {
+      "median": 5.4102,
+      "min": 5.2087,
+      "max": 5.4827
+    }
+  }
+}

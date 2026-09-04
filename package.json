@@ -114,6 +114,7 @@
     "prepack": "bun run build",
     "test": "tsc -p tsconfig.test.json && bun test --parallel --path-ignore-patterns='**/benchmark*'",
     "bench": "bun test tests/benchmark*.test.ts",
+    "bench:record": "bun run scripts/benchmark-history.ts",
     "migrate": "bun run bin/orm.ts migrate",
     "make:migration": "bun run bin/orm.ts make:migration",
     "migrate:rollback": "bun run bin/orm.ts migrate:rollback",
