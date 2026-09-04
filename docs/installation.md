@@ -16,7 +16,7 @@ bun --version
 ## Add the package
 
 ```bash
-bun add github:rekkrjs/orm#v2.4.0
+bun add github:rekkrjs/orm#v3.1.0
 ```
 
 Rekkr ORM is currently distributed from GitHub. The package name and every
@@ -27,7 +27,7 @@ where to install it from. The package ships with **zero runtime dependencies**
 
 The repository is public, so installation needs no GitHub credentials or SSH
 configuration. Do not use `bun add @rekkr/orm` yet: the registry package is not
-the `v2.4.0` release from this repository.
+the `v3.1.0` release from this repository.
 
 ### Other Git revisions
 
@@ -35,7 +35,7 @@ A branch, tag, or commit works the same way — no build step, no `trustedDepend
 
 ```bash
 bun add github:rekkrjs/orm                # default branch
-bun add github:rekkrjs/orm#<tag>          # e.g. v2.4.0
+bun add github:rekkrjs/orm#<tag>          # e.g. v3.1.0
 bun add github:rekkrjs/orm#<commit-sha>   # exact commit
 ```
 
@@ -131,7 +131,7 @@ Then `bun run orm migrate` instead of `bunx orm migrate`.
 repository and tag are reachable:
 
 ```bash
-git ls-remote https://github.com/rekkrjs/orm.git refs/tags/v2.4.0
+git ls-remote https://github.com/rekkrjs/orm.git refs/tags/v3.1.0
 ```
 
 **TypeScript complains about `Bun.SQL`** — install or upgrade `bun-types` (`bun add -d bun-types`) and ensure it is listed in `compilerOptions.types`.

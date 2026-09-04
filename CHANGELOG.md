@@ -1,6 +1,8 @@
 # Changelog
 
-## 3.0.0 — Unreleased
+## 3.1.0 — 2026-09-04
+
+First published 3.x release, including the previously unreleased v3 changes.
 
 ### Behavior and compatibility
 
@@ -34,17 +36,27 @@
   The final 20,000-row model JSON benchmark uses 31.9949 ms versus 38.0315 ms
   (15.9% less time). Smaller, eager and network workloads plus isolation/queue
   costs are recorded separately; no universal speedup is claimed.
+- Redis queue completion now checks ownership, resolves the queue and removes
+  the reservation/job in one Lua call. It removes one remote command per job
+  while retaining reservation tokens and stale-owner protection. This change
+  is confined to Redis queue completion and adds no work to other ORM paths.
+- Added an isolated Redis benchmark with fixed v2/v3 references, current-driver
+  comparisons and immutable records. Six 20,000-job runs with warmup measured
+  39,077 jobs/s versus 33,455 for the initial v3 driver (+16.8%) and 36,039 for
+  v2 (+8.4%). These are local reserve/complete measurements, not application
+  handler throughput. See the [Redis investigation](benchmarks/redis-queue-investigation.md).
 - Bun minimum is 1.4.1. Updated the development dependency lock and cookie
   override; no runtime dependency added. Added CI with required SQL/Redis services.
 
 ### Verification
 
-- Build and 1,694 functional tests pass (5,590 assertions), with real SQLite,
+- Build and 1,695 functional tests pass (5,596 assertions), with real SQLite,
   PostgreSQL, MySQL and Redis integrations. Strict script typechecks pass;
   `bun audit` reports no vulnerabilities.
 - Retained benchmark history, cast profiles, isolated hydration checks, memory
   runs and contention percentiles. Revalidated all three Bun/Elysia workarounds
-  and an isolated real Elysia consumer. Remote CI has not yet run.
+  and an isolated real Elysia consumer. Redis regressions include concurrent
+  completion, named-queue isolation and rejection of stale reservation owners.
 - [Migration guide](docs/upgrade-3.0.md) and
   [verification with measured tradeoffs](benchmarks/v3-verification.md).
 

@@ -1,6 +1,6 @@
 # Verificación v3.0.0 — 2026-09-04
 
-Implementación local sobre `9eff217`, sin commit, push, tag ni publicación. La referencia funcional es v2.5.0 (`683373b`). Los hashes de cada registro identifican el estado medido, incluidas las modificaciones locales.
+Estado al medir: implementación local sobre `9eff217`, todavía sin commit, push, tag ni publicación. La referencia funcional es v2.5.0 (`683373b`). Los hashes de cada registro identifican el estado medido, incluidas las modificaciones locales. Este informe conserva esa verificación previa a la release v3.1.0; la optimización Redis posterior se documenta por separado.
 
 ## Validación funcional
 
@@ -92,6 +92,8 @@ Colas: ocho consumidores concurrentes, sólo reserva + complete, sin tiempo de d
 
 Los tokens/condiciones Lua añaden trabajo (Redis mediana de reserva+complete ≈0,212→0,242 ms en esta pareja). No se promete que todas las colas aceleren. El historial conserva todos los registros y su dispersión; no hay un umbral universal de rendimiento.
 
+**Investigación posterior:** la caída Redis de throughput de esta tabla es −27,7%, pero se midió en ráfagas de sólo 200 jobs. Las nuevas comparaciones largas confirman una regresión sostenida de aproximadamente 6–8%, y aíslan el coste del protocolo y las oportunidades de mejora. Ver [informe Redis](redis-queue-investigation.md); los resultados históricos anteriores se conservan.
+
 ## Memoria en procesos dedicados
 
 Tres procesos por versión; 2.000 filas con JSON/decimal/bool, cinco warmups, treinta serializaciones. La GC explícita se mide aparte y no representa la distribución de pausas naturales.
@@ -121,4 +123,4 @@ El protocolo de despliegue de workers se verifica con tablas v2 sin reservation_
 
 SvelteKit 2.70.3 y las actualizaciones del lock eliminan los hallazgos detectados; override cookie ^0.7.2 cubre su dependencia antigua. [Aviso de SvelteKit](https://github.com/advisories/GHSA-29g2-3rmr-qm68), [nanoid](https://github.com/advisories/GHSA-2v37-7h3g-55p8), [PostCSS](https://github.com/advisories/GHSA-fxqj-rqcc-2cmp). La comprobación actual es bun audit, no la auditoría histórica. No se añaden dependencias de runtime.
 
-afterCommit y los buffers son memoria del proceso, sin outbox durable. Redis Cluster queda sin soporte. MySQL DDL no se hace transaccional. La guía [upgrade-3.0](../docs/upgrade-3.0.md) detalla las rupturas y su migración. Quedan pendientes únicamente la revisión del diff, ejecutar CI remoto y cualquier commit/publicación que el usuario autorice.
+afterCommit y los buffers son memoria del proceso, sin outbox durable. Redis Cluster queda sin soporte. MySQL DDL no se hace transaccional. La guía [upgrade-3.0](../docs/upgrade-3.0.md) detalla las rupturas y su migración. Al cerrar esta verificación previa, quedaban pendientes la revisión del diff, ejecutar CI remoto y el commit/publicación autorizado por el usuario.

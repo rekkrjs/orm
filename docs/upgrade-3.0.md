@@ -1,4 +1,7 @@
-# Upgrading to 3.0
+# Upgrading to 3.x
+
+This guide applies when upgrading from 2.x, including to the first published
+3.x release, v3.1.0.
 
 Use Bun 1.4.1 or newer. This release retains Model, Builder, raw result objects,
 relations, observers, mutable casts, dirty tracking and the manual transaction API.

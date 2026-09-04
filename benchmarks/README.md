@@ -72,3 +72,14 @@ credentials are never included in records.
 
 See [v3 verification and measured tradeoffs](./v3-verification.md),
 [runtime records](./runtime/) and [cast profiles](./profiles/).
+
+## Redis queue investigation
+
+`bun scripts/benchmark-redis-queue.ts` compares v2/v3 in fresh processes with a
+temporary dedicated Redis server, 2,000 warmup jobs and 20,000 measured jobs per
+run. It stores independent records and experimental variants under `redis/`.
+See [the investigation report](./redis-queue-investigation.md) for the measured
+regression, causes, limitations and proposed improvements.
+Historical `v2`/`v3` variants are pinned to their recorded commits. To compare
+the current driver against them, run
+`REDIS_BENCH_VARIANTS=v2,v3,worktree bun scripts/benchmark-redis-queue.ts`.

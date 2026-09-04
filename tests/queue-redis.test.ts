@@ -75,6 +75,25 @@ describe.skipIf(!url)("RedisQueueDriver", () => {
     expect(await client!.send("ZCARD", [`${prefix}reserved:default`])).toBe(0);
   });
 
+  it("concurrent completion acknowledges a named-queue job once and preserves other queues", async () => {
+    await driver.dispatch("emails:urgent", "SendEmail", "{}", 0, 3);
+    await driver.dispatch("reports", "GenReport", "{}", 0, 3);
+    const job = (await driver.reserve("emails:urgent", 90))!;
+    const other = (await driver.reserve("reports", 90))!;
+    const second = new RedisQueueDriver(client!, { prefix });
+
+    const results = await Promise.all([
+      driver.complete(job.id, job.reservationToken),
+      second.complete(job.id, job.reservationToken),
+    ]);
+    expect(results.sort()).toEqual([false, true]);
+    expect(await client!.send("EXISTS", [`${prefix}job:${job.id}`])).toBe(0);
+    expect(await client!.send("ZCARD", [`${prefix}reserved:emails:urgent`])).toBe(0);
+    expect(await client!.send("EXISTS", [`${prefix}job:${other.id}`])).toBe(1);
+    expect(await client!.send("ZSCORE", [`${prefix}reserved:reports`, String(other.id)])).not.toBeNull();
+    expect(await second.complete(other.id, other.reservationToken)).toBe(true);
+  });
+
   it("fail() writes to failed list and removes job", async () => {
     await driver.dispatch("default", "SendEmail", "{}", 0, 3);
     const job = await driver.reserve("default", 90);

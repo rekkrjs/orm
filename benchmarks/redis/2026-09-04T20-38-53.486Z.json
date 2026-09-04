@@ -1,0 +1,2448 @@
+{
+  "protocol": "redis-queue-investigation-v1",
+  "recordedAt": "2026-09-04T20:38:53.486Z",
+  "commit": "654e50827a339316797b29f91514cf9de704822c",
+  "bun": {
+    "version": "1.4.1",
+    "revision": "4661e494f052c83c80dade1318e5710238340be6"
+  },
+  "machine": {
+    "cpu": "Apple M4",
+    "platform": "darwin",
+    "release": "24.6.0"
+  },
+  "dedicatedServer": true,
+  "server": {
+    "redis_version": "8.10.1",
+    "redis_mode": "standalone",
+    "os": "Darwin 24.6.0 arm64",
+    "arch_bits": "64",
+    "hz": "10",
+    "configured_hz": "10",
+    "aof_enabled": "0"
+  },
+  "config": {
+    "save": "",
+    "hash-max-listpack-entries": "512",
+    "appendfsync": "everysec",
+    "appendonly": "no",
+    "hash-max-listpack-value": "64"
+  },
+  "count": 200,
+  "warmup": 0,
+  "concurrency": 8,
+  "repetitions": 12,
+  "harnessSha256": "7f19ba923e87f1e42c4bdf94dc703b7174f1ea151c0f0602327c8ff3c09db803",
+  "variants": {
+    "v2": {
+      "sha256": "1d5b611d76a98cead0148f1129a3655599faa00ab56adc4fc8096012030bbb47",
+      "source": "import { redis, RedisClient } from \"bun\";\nimport type { JobRecord, QueueDriver } from \"./QueueDriver.js\";\n\n/**\n * The client surface the driver needs.\n *\n * `send` is what carries the Lua scripts below. Every state transition a job\n * goes through touches several keys — the job hash, the pending list, the\n * delayed and reserved sorted sets — and issuing those as separate commands\n * leaves windows where a crash strands the job in none of them. Redis has no\n * rollback, so a script (which the server runs to completion, atomically) is the\n * only way to make those transitions all-or-nothing.\n */\ntype RedisQueueLike = Pick<\n  RedisClient,\n  | \"incr\"\n  | \"llen\"\n  | \"hgetall\"\n  | \"zcard\"\n  | \"smembers\"\n  | \"send\"\n>;\n\nexport interface RedisQueueDriverOptions {\n  prefix?: string;\n}\n\n/**\n * Client the Redis queue driver should talk to. Honours `queue.redis.url` when\n * present, otherwise falls back to Bun's default client (driven by `REDIS_URL`).\n */\nexport function resolveQueueRedisClient(url?: string): RedisQueueLike {\n  return url ? new RedisClient(url) : redis;\n}\n\ninterface StoredJob {\n  queue: string;\n  jobClass: string;\n  payload: string;\n  attempts: string;\n  maxAttempts: string;\n  availableAt: string;\n  createdAt: string;\n}\n\n// ── Lua scripts ──────────────────────────────────────────────────────────────\n// KEYS are always passed explicitly so the scripts stay Cluster-compatible.\n\n/**\n * Publish a job: write its hash, register the queue, and make it visible on\n * exactly one of the pending list or the delayed set.\n *\n * KEYS: job, queues, pending, delayed\n * ARGV: id, queue, jobClass, payload, maxAttempts, availableAt, createdAt, delayed\n */\nconst DISPATCH_LUA = `\nredis.call('HSET', KEYS[1],\n  'queue', ARGV[2], 'jobClass', ARGV[3], 'payload', ARGV[4],\n  'attempts', 0, 'maxAttempts', ARGV[5], 'availableAt', ARGV[6], 'createdAt', ARGV[7])\nredis.call('SADD', KEYS[2], ARGV[2])\nif ARGV[8] == '1' then\n  redis.call('ZADD', KEYS[4], ARGV[6], ARGV[1])\nelse\n  redis.call('RPUSH', KEYS[3], ARGV[1])\nend\nreturn 1\n`;\n\n/**\n * Move every due delayed job, and every reservation past its visibility\n * timeout, onto the pending list. ZREM is the arbitration point: with two\n * workers scanning at once, only the one whose ZREM returns 1 may push, so the\n * id cannot land on the list twice and run in parallel.\n *\n * KEYS: source (delayed or reserved), pending\n * ARGV: cutoff score, push side ('r' = RPUSH, 'l' = LPUSH)\n */\nconst MIGRATE_LUA = `\nlocal ids = redis.call('ZRANGEBYSCORE', KEYS[1], 0, ARGV[1])\nlocal moved = 0\nfor _, id in ipairs(ids) do\n  if redis.call('ZREM', KEYS[1], id) == 1 then\n    if ARGV[2] == 'r' then\n      redis.call('RPUSH', KEYS[2], id)\n    else\n      redis.call('LPUSH', KEYS[2], id)\n    end\n    moved = moved + 1\n  end\nend\nreturn moved\n`;\n\n/**\n * Claim the next job: pop it, bump its attempt counter and record the\n * reservation in one step, so a crash can never leave an id off the pending\n * list without a matching reservation to time out and redeliver it.\n *\n * Orphaned ids — a hash evicted or deleted behind the driver's back — are\n * skipped rather than returned, and are already off the list.\n *\n * KEYS: pending, reserved\n * ARGV: prefix for job keys, now\n * Returns: {} when the queue is empty, otherwise {id, attempts, flattened hash}\n */\nconst RESERVE_LUA = `\nwhile true do\n  local id = redis.call('LPOP', KEYS[1])\n  if not id then return {} end\n  local jobKey = ARGV[1] .. id\n  local fields = redis.call('HGETALL', jobKey)\n  if #fields > 0 then\n    local attempts = redis.call('HINCRBY', jobKey, 'attempts', 1)\n    redis.call('ZADD', KEYS[2], ARGV[2], id)\n    local result = {id, attempts}\n    for i = 1, #fields do result[#result + 1] = fields[i] end\n    return result\n  end\nend\n`;\n\n/**\n * Return a job to the queue: clear the reservation and republish it, either\n * immediately or after a delay.\n *\n * KEYS: job, reserved, pending, delayed\n * ARGV: id, availableAt, delayed\n */\nconst RELEASE_LUA = `\nif redis.call('EXISTS', KEYS[1]) == 0 then return 0 end\nredis.call('ZREM', KEYS[2], ARGV[1])\nredis.call('HSET', KEYS[1], 'availableAt', ARGV[2])\nif ARGV[3] == '1' then\n  redis.call('ZADD', KEYS[4], ARGV[2], ARGV[1])\nelse\n  redis.call('LPUSH', KEYS[3], ARGV[1])\nend\nreturn 1\n`;\n\n/**\n * Acknowledge a finished job: drop the reservation and the hash together.\n *\n * KEYS: job, reserved\n * ARGV: id\n */\nconst COMPLETE_LUA = `\nredis.call('ZREM', KEYS[2], ARGV[1])\nreturn redis.call('DEL', KEYS[1])\n`;\n\n/**\n * Bury a job: record it on the failed list and remove it from the queue in one\n * step, so it can never be both failed and still reserved.\n *\n * KEYS: job, reserved, failed\n * ARGV: id, exception, failedAt\n */\nconst FAIL_LUA = `\nlocal fields = redis.call('HGETALL', KEYS[1])\nif #fields == 0 then return 0 end\nlocal job = {}\nfor i = 1, #fields, 2 do job[fields[i]] = fields[i + 1] end\nif not job['jobClass'] then return 0 end\nredis.call('RPUSH', KEYS[3], cjson.encode({\n  queue = job['queue'], jobClass = job['jobClass'], payload = job['payload'],\n  exception = ARGV[2], failedAt = tonumber(ARGV[3]),\n}))\nredis.call('ZREM', KEYS[2], ARGV[1])\nredis.call('DEL', KEYS[1])\nreturn 1\n`;\n\nexport class RedisQueueDriver implements QueueDriver {\n  private prefix: string;\n\n  constructor(private client: RedisQueueLike, options: RedisQueueDriverOptions = {}) {\n    this.prefix = options.prefix ?? \"orm:queue:\";\n  }\n\n  // No DDL needed for Redis\n  async migrate(): Promise<void> {}\n\n  /** Runs a script; `keys` and `argv` are stringified for the wire protocol. */\n  private eval(script: string, keys: string[], argv: (string | number)[]): Promise<any> {\n    return this.client.send(\"EVAL\", [\n      script,\n      String(keys.length),\n      ...keys,\n      ...argv.map(String),\n    ]);\n  }\n\n  async dispatch(queue: string, jobClass: string, payload: string, delaySeconds: number, maxAttempts: number): Promise<void> {\n    const now = Math.floor(Date.now() / 1000);\n    const availableAt = now + delaySeconds;\n    const id = await this.client.incr(this.key(\"id\"));\n\n    await this.eval(\n      DISPATCH_LUA,\n      [this.jobKey(id), this.key(\"queues\"), this.pendingKey(queue), this.delayedKey(queue)],\n      [id, queue, jobClass, payload, maxAttempts, availableAt, now, delaySeconds > 0 ? 1 : 0],\n    );\n  }\n\n  async reserve(queue: string, retryAfterSeconds: number): Promise<JobRecord | null> {\n    const now = Math.floor(Date.now() / 1000);\n\n    await this.migrateDelayed(queue, now);\n    await this.requeueTimedOut(queue, now, retryAfterSeconds);\n\n    const result = (await this.eval(\n      RESERVE_LUA,\n      [this.pendingKey(queue), this.reservedKey(queue)],\n      [this.jobKeyPrefix(), now],\n    )) as unknown[] | null;\n\n    if (!result || result.length === 0) return null;\n\n    const id = Number(result[0]);\n    const attempts = Number(result[1]);\n    const fields = flattenedHashToObject(result.slice(2)) as unknown as StoredJob;\n    if (!fields.jobClass) return null;\n\n    return this.toJobRecord(id, fields, attempts);\n  }\n\n  async complete(id: number): Promise<void> {\n    const fields = (await this.client.hgetall(this.jobKey(id))) as unknown as StoredJob | undefined;\n    await this.eval(\n      COMPLETE_LUA,\n      [this.jobKey(id), this.reservedKey(fields?.queue ?? \"default\")],\n      [id],\n    );\n  }\n\n  async fail(id: number, exception: string): Promise<void> {\n    const fields = (await this.client.hgetall(this.jobKey(id))) as unknown as StoredJob | undefined;\n    if (!fields?.jobClass) return;\n\n    await this.eval(\n      FAIL_LUA,\n      [this.jobKey(id), this.reservedKey(fields.queue), this.key(\"failed\")],\n      [id, exception, Math.floor(Date.now() / 1000)],\n    );\n  }\n\n  async release(id: number, delaySeconds: number): Promise<void> {\n    const fields = (await this.client.hgetall(this.jobKey(id))) as unknown as StoredJob | undefined;\n    if (!fields?.queue) return;\n\n    const availableAt = Math.floor(Date.now() / 1000) + delaySeconds;\n    await this.eval(\n      RELEASE_LUA,\n      [this.jobKey(id), this.reservedKey(fields.queue), this.pendingKey(fields.queue), this.delayedKey(fields.queue)],\n      [id, availableAt, delaySeconds > 0 ? 1 : 0],\n    );\n  }\n\n  async size(queue?: string): Promise<number> {\n    if (queue) {\n      return this.queueSize(queue);\n    }\n\n    const queues = await this.client.smembers(this.key(\"queues\"));\n    let total = 0;\n    for (const q of queues) {\n      total += await this.queueSize(q);\n    }\n    return total;\n  }\n\n  private async queueSize(queue: string): Promise<number> {\n    const pending = await this.client.llen(this.pendingKey(queue));\n    const delayed = await this.client.zcard(this.delayedKey(queue));\n    return pending + delayed;\n  }\n\n  private async migrateDelayed(queue: string, now: number): Promise<void> {\n    await this.eval(MIGRATE_LUA, [this.delayedKey(queue), this.pendingKey(queue)], [now, \"r\"]);\n  }\n\n  private async requeueTimedOut(queue: string, now: number, retryAfterSeconds: number): Promise<void> {\n    const cutoff = now - retryAfterSeconds;\n    await this.eval(MIGRATE_LUA, [this.reservedKey(queue), this.pendingKey(queue)], [cutoff, \"l\"]);\n  }\n\n  private toJobRecord(id: number, fields: StoredJob, attempts: number): JobRecord {\n    return {\n      id,\n      queue: fields.queue,\n      jobClass: fields.jobClass,\n      payload: fields.payload,\n      attempts,\n      maxAttempts: parseInt(fields.maxAttempts, 10),\n      availableAt: parseInt(fields.availableAt, 10),\n      reservedAt: Math.floor(Date.now() / 1000),\n      createdAt: parseInt(fields.createdAt, 10),\n    };\n  }\n\n  private key(suffix: string): string {\n    return `${this.prefix}${suffix}`;\n  }\n\n  private jobKeyPrefix(): string {\n    return `${this.prefix}job:`;\n  }\n\n  private jobKey(id: number): string {\n    return `${this.jobKeyPrefix()}${id}`;\n  }\n\n  private pendingKey(queue: string): string {\n    return `${this.prefix}pending:${queue}`;\n  }\n\n  private delayedKey(queue: string): string {\n    return `${this.prefix}delayed:${queue}`;\n  }\n\n  private reservedKey(queue: string): string {\n    return `${this.prefix}reserved:${queue}`;\n  }\n}\n\n/** HGETALL comes back as a flat [field, value, ...] array from a script. */\nfunction flattenedHashToObject(flat: unknown[]): Record<string, string> {\n  const out: Record<string, string> = {};\n  for (let i = 0; i < flat.length - 1; i += 2) {\n    out[String(flat[i])] = String(flat[i + 1]);\n  }\n  return out;\n}\n"
+    },
+    "v3": {
+      "sha256": "8e7710810ce888021960d10bbad42ac0dcd396b04dfb4613fe8efaba07ec2491",
+      "source": "import { redis, RedisClient } from \"bun\";\nimport type { JobRecord, QueueDriver } from \"./QueueDriver.js\";\n\n/**\n * The client surface the driver needs.\n *\n * `send` is what carries the Lua scripts below. Every state transition a job\n * goes through touches several keys — the job hash, the pending list, the\n * delayed and reserved sorted sets — and issuing those as separate commands\n * leaves windows where a crash strands the job in none of them. Redis has no\n * rollback, so a script (which the server runs to completion, atomically) is the\n * only way to make those transitions all-or-nothing.\n */\ntype RedisQueueLike = Pick<\n  RedisClient,\n  | \"incr\"\n  | \"llen\"\n  | \"hgetall\"\n  | \"zcard\"\n  | \"smembers\"\n  | \"send\"\n>;\n\nexport interface RedisQueueDriverOptions {\n  prefix?: string;\n}\n\n/**\n * Client the Redis queue driver should talk to. Honours `queue.redis.url` when\n * present, otherwise falls back to Bun's default client (driven by `REDIS_URL`).\n */\nexport function resolveQueueRedisClient(url?: string): RedisQueueLike {\n  return url ? new RedisClient(url) : redis;\n}\n\ninterface StoredJob {\n  reservationToken: string;\n  queue: string;\n  jobClass: string;\n  payload: string;\n  attempts: string;\n  maxAttempts: string;\n  availableAt: string;\n  createdAt: string;\n}\n\n// ── Lua scripts ──────────────────────────────────────────────────────────────\n// Multi-key scripts require a standalone Redis server; Redis Cluster is unsupported.\n\n/**\n * Publish a job: write its hash, register the queue, and make it visible on\n * exactly one of the pending list or the delayed set.\n *\n * KEYS: job, queues, pending, delayed\n * ARGV: id, queue, jobClass, payload, maxAttempts, availableAt, createdAt, delayed\n */\nconst DISPATCH_LUA = `\nredis.call('HSET', KEYS[1],\n  'queue', ARGV[2], 'jobClass', ARGV[3], 'payload', ARGV[4],\n  'attempts', 0, 'maxAttempts', ARGV[5], 'availableAt', ARGV[6], 'createdAt', ARGV[7])\nredis.call('SADD', KEYS[2], ARGV[2])\nif ARGV[8] == '1' then\n  redis.call('ZADD', KEYS[4], ARGV[6], ARGV[1])\nelse\n  redis.call('RPUSH', KEYS[3], ARGV[1])\nend\nreturn 1\n`;\n\n/**\n * Move every due delayed job, and every reservation past its visibility\n * timeout, onto the pending list. ZREM is the arbitration point: with two\n * workers scanning at once, only the one whose ZREM returns 1 may push, so the\n * id cannot land on the list twice and run in parallel.\n *\n * KEYS: source (delayed or reserved), pending\n * ARGV: cutoff score, push side ('r' = RPUSH, 'l' = LPUSH)\n */\nconst MIGRATE_LUA = `\nlocal ids = redis.call('ZRANGEBYSCORE', KEYS[1], 0, ARGV[1])\nlocal moved = 0\nfor _, id in ipairs(ids) do\n  if redis.call('ZREM', KEYS[1], id) == 1 then\n    if ARGV[2] == 'r' then\n      redis.call('RPUSH', KEYS[2], id)\n    else\n      redis.call('HDEL', ARGV[3] .. id, 'reservationToken')\n      redis.call('LPUSH', KEYS[2], id)\n    end\n    moved = moved + 1\n  end\nend\nreturn moved\n`;\n\n/**\n * Claim the next job: pop it, bump its attempt counter and record the\n * reservation in one step, so a crash can never leave an id off the pending\n * list without a matching reservation to time out and redeliver it.\n *\n * Orphaned ids — a hash evicted or deleted behind the driver's back — are\n * skipped rather than returned, and are already off the list.\n *\n * KEYS: pending, reserved\n * ARGV: prefix for job keys, now\n * Returns: {} when the queue is empty, otherwise {id, attempts, flattened hash}\n */\nconst RESERVE_LUA = `\nwhile true do\n  local id = redis.call('LPOP', KEYS[1])\n  if not id then return {} end\n  local jobKey = ARGV[1] .. id\n  local fields = redis.call('HGETALL', jobKey)\n  if #fields > 0 then\n    redis.call('HSET', jobKey, 'reservationToken', ARGV[3])\n    local attempts = redis.call('HINCRBY', jobKey, 'attempts', 1)\n    redis.call('ZADD', KEYS[2], ARGV[2], id)\n    local result = {id, attempts}\n    for i = 1, #fields do result[#result + 1] = fields[i] end\n    return result\n  end\nend\n`;\n\n/**\n * Return a job to the queue: clear the reservation and republish it, either\n * immediately or after a delay.\n *\n * KEYS: job, reserved, pending, delayed\n * ARGV: id, availableAt, delayed\n */\nconst RELEASE_LUA = `\nif redis.call('HGET', KEYS[1], 'reservationToken') ~= ARGV[4] then return 0 end\nredis.call('HDEL', KEYS[1], 'reservationToken')\nredis.call('ZREM', KEYS[2], ARGV[1])\nredis.call('HSET', KEYS[1], 'availableAt', ARGV[2])\nif ARGV[3] == '1' then\n  redis.call('ZADD', KEYS[4], ARGV[2], ARGV[1])\nelse\n  redis.call('LPUSH', KEYS[3], ARGV[1])\nend\nreturn 1\n`;\n\n/**\n * Acknowledge a finished job: drop the reservation and the hash together.\n *\n * KEYS: job, reserved\n * ARGV: id\n */\nconst COMPLETE_LUA = `\nif redis.call('HGET', KEYS[1], 'reservationToken') ~= ARGV[2] then return 0 end\nredis.call('ZREM', KEYS[2], ARGV[1])\nreturn redis.call('DEL', KEYS[1])\n`;\n\n/**\n * Bury a job: record it on the failed list and remove it from the queue in one\n * step, so it can never be both failed and still reserved.\n *\n * KEYS: job, reserved, failed\n * ARGV: id, exception, failedAt\n */\nconst FAIL_LUA = `\nif redis.call('HGET', KEYS[1], 'reservationToken') ~= ARGV[4] then return 0 end\nlocal fields = redis.call('HGETALL', KEYS[1])\nif #fields == 0 then return 0 end\nlocal job = {}\nfor i = 1, #fields, 2 do job[fields[i]] = fields[i + 1] end\nif not job['jobClass'] then return 0 end\nredis.call('RPUSH', KEYS[3], cjson.encode({\n  queue = job['queue'], jobClass = job['jobClass'], payload = job['payload'],\n  exception = ARGV[2], failedAt = tonumber(ARGV[3]),\n}))\nredis.call('ZREM', KEYS[2], ARGV[1])\nredis.call('DEL', KEYS[1])\nreturn 1\n`;\n\nexport class RedisQueueDriver implements QueueDriver {\n  private prefix: string;\n\n  constructor(private client: RedisQueueLike, options: RedisQueueDriverOptions = {}) {\n    this.prefix = options.prefix ?? \"orm:queue:\";\n  }\n\n  // No DDL needed for Redis\n  async migrate(): Promise<void> {}\n\n  /** Runs a script; `keys` and `argv` are stringified for the wire protocol. */\n  private eval(script: string, keys: string[], argv: (string | number)[]): Promise<any> {\n    return this.client.send(\"EVAL\", [\n      script,\n      String(keys.length),\n      ...keys,\n      ...argv.map(String),\n    ]);\n  }\n\n  async dispatch(queue: string, jobClass: string, payload: string, delaySeconds: number, maxAttempts: number): Promise<void> {\n    const now = Math.floor(Date.now() / 1000);\n    const availableAt = now + delaySeconds;\n    const id = await this.client.incr(this.key(\"id\"));\n\n    await this.eval(\n      DISPATCH_LUA,\n      [this.jobKey(id), this.key(\"queues\"), this.pendingKey(queue), this.delayedKey(queue)],\n      [id, queue, jobClass, payload, maxAttempts, availableAt, now, delaySeconds > 0 ? 1 : 0],\n    );\n  }\n\n  async reserve(queue: string, retryAfterSeconds: number): Promise<JobRecord | null> {\n    const now = Math.floor(Date.now() / 1000);\n\n    await this.migrateDelayed(queue, now);\n    await this.requeueTimedOut(queue, now, retryAfterSeconds);\n\n    const token = crypto.randomUUID();\n    const result = (await this.eval(\n      RESERVE_LUA,\n      [this.pendingKey(queue), this.reservedKey(queue)],\n      [this.jobKeyPrefix(), now, token],\n    )) as unknown[] | null;\n\n    if (!result || result.length === 0) return null;\n\n    const id = Number(result[0]);\n    const attempts = Number(result[1]);\n    const fields = flattenedHashToObject(result.slice(2)) as unknown as StoredJob;\n    if (!fields.jobClass) return null;\n\n    return this.toJobRecord(id, { ...fields, reservationToken: token }, attempts);\n  }\n\n  async complete(id: number, token: string): Promise<boolean> {\n    const fields = (await this.client.hgetall(this.jobKey(id))) as unknown as StoredJob | undefined;\n    return Number(await this.eval(\n      COMPLETE_LUA,\n      [this.jobKey(id), this.reservedKey(fields?.queue ?? \"default\")],\n      [id, token],\n    )) > 0;\n  }\n\n  async fail(id: number, token: string, exception: string): Promise<boolean> {\n    const fields = (await this.client.hgetall(this.jobKey(id))) as unknown as StoredJob | undefined;\n    if (!fields?.jobClass) return false;\n\n    return Number(await this.eval(\n      FAIL_LUA,\n      [this.jobKey(id), this.reservedKey(fields.queue), this.key(\"failed\")],\n      [id, exception, Math.floor(Date.now() / 1000), token],\n    )) > 0;\n  }\n\n  async release(id: number, token: string, delaySeconds: number): Promise<boolean> {\n    const fields = (await this.client.hgetall(this.jobKey(id))) as unknown as StoredJob | undefined;\n    if (!fields?.queue) return false;\n\n    const availableAt = Math.floor(Date.now() / 1000) + delaySeconds;\n    return Number(await this.eval(\n      RELEASE_LUA,\n      [this.jobKey(id), this.reservedKey(fields.queue), this.pendingKey(fields.queue), this.delayedKey(fields.queue)],\n      [id, availableAt, delaySeconds > 0 ? 1 : 0, token],\n    )) > 0;\n  }\n\n  async heartbeat(id: number, token: string): Promise<boolean> {\n    const fields = await this.client.hgetall(this.jobKey(id)) as unknown as StoredJob;\n    if (!fields?.queue) return false;\n    return Number(await this.eval(`\n      if redis.call('HGET', KEYS[1], 'reservationToken') ~= ARGV[2] or not redis.call('ZSCORE', KEYS[2], ARGV[1]) then return 0 end\n      redis.call('ZADD', KEYS[2], ARGV[3], ARGV[1])\n      return 1`, [this.jobKey(id), this.reservedKey(fields.queue)], [id, token, Math.floor(Date.now() / 1000)])) > 0;\n  }\n\n  async size(queue?: string): Promise<number> {\n    if (queue) {\n      return this.queueSize(queue);\n    }\n\n    const queues = await this.client.smembers(this.key(\"queues\"));\n    let total = 0;\n    for (const q of queues) {\n      total += await this.queueSize(q);\n    }\n    return total;\n  }\n\n  private async queueSize(queue: string): Promise<number> {\n    const pending = await this.client.llen(this.pendingKey(queue));\n    const delayed = await this.client.zcard(this.delayedKey(queue));\n    return pending + delayed;\n  }\n\n  private async migrateDelayed(queue: string, now: number): Promise<void> {\n    await this.eval(MIGRATE_LUA, [this.delayedKey(queue), this.pendingKey(queue)], [now, \"r\"]);\n  }\n\n  private async requeueTimedOut(queue: string, now: number, retryAfterSeconds: number): Promise<void> {\n    const cutoff = now - retryAfterSeconds;\n    await this.eval(MIGRATE_LUA, [this.reservedKey(queue), this.pendingKey(queue)], [cutoff, \"l\", this.jobKeyPrefix()]);\n  }\n\n  private toJobRecord(id: number, fields: StoredJob, attempts: number): JobRecord {\n    return {\n      id,\n      reservationToken: fields.reservationToken,\n      queue: fields.queue,\n      jobClass: fields.jobClass,\n      payload: fields.payload,\n      attempts,\n      maxAttempts: parseInt(fields.maxAttempts, 10),\n      availableAt: parseInt(fields.availableAt, 10),\n      reservedAt: Math.floor(Date.now() / 1000),\n      createdAt: parseInt(fields.createdAt, 10),\n    };\n  }\n\n  private key(suffix: string): string {\n    return `${this.prefix}${suffix}`;\n  }\n\n  private jobKeyPrefix(): string {\n    return `${this.prefix}job:`;\n  }\n\n  private jobKey(id: number): string {\n    return `${this.jobKeyPrefix()}${id}`;\n  }\n\n  private pendingKey(queue: string): string {\n    return `${this.prefix}pending:${queue}`;\n  }\n\n  private delayedKey(queue: string): string {\n    return `${this.prefix}delayed:${queue}`;\n  }\n\n  private reservedKey(queue: string): string {\n    return `${this.prefix}reserved:${queue}`;\n  }\n}\n\n/** HGETALL comes back as a flat [field, value, ...] array from a script. */\nfunction flattenedHashToObject(flat: unknown[]): Record<string, string> {\n  const out: Record<string, string> = {};\n  for (let i = 0; i < flat.length - 1; i += 2) {\n    out[String(flat[i])] = String(flat[i + 1]);\n  }\n  return out;\n}\n"
+    }
+  },
+  "runs": [
+    {
+      "pair": 0,
+      "variant": "v2",
+      "elapsedMs": 10.668667000000001,
+      "jobsPerSecond": 18746.484448338295,
+      "medianMs": 0.41029100000000085,
+      "p95Ms": 0.5925409999999989,
+      "p99Ms": 0.7451249999999998,
+      "maxMs": 0.7954999999999988,
+      "reserve": {
+        "medianMs": 0.25116700000000236,
+        "p95Ms": 0.47129200000000004,
+        "p99Ms": 0.5741250000000004,
+        "maxMs": 0.5778750000000006
+      },
+      "complete": {
+        "medianMs": 0.1532499999999999,
+        "p95Ms": 0.1872499999999988,
+        "p99Ms": 0.20041699999999985,
+        "maxMs": 0.22045899999999996
+      },
+      "leaseCheck": "not-applicable-diagnostic",
+      "memoryBefore": {
+        "rss": 18333696,
+        "heapTotal": 1667072,
+        "heapUsed": 1667072,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 26525696,
+        "heapTotal": 2638848,
+        "heapUsed": 2638848,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 402315,
+        "total_net_output_bytes": 86005,
+        "used_cpu_sys": 0.0032180000000000004,
+        "used_cpu_user": 0.004316,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 54
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2427
+        },
+        "del": {
+          "calls": 200,
+          "usec": 50
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 38
+        },
+        "info": {
+          "calls": 1,
+          "usec": 32
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 54
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 113
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 68
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 228
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 0,
+      "variant": "v3",
+      "elapsedMs": 10.201084000000002,
+      "jobsPerSecond": 19605.759544769946,
+      "medianMs": 0.3881250000000023,
+      "p95Ms": 0.5,
+      "p99Ms": 0.7939170000000004,
+      "maxMs": 0.8395419999999998,
+      "reserve": {
+        "medianMs": 0.24279099999999865,
+        "p95Ms": 0.3538749999999986,
+        "p99Ms": 0.5480410000000004,
+        "maxMs": 0.5569160000000002
+      },
+      "complete": {
+        "medianMs": 0.1390829999999994,
+        "p95Ms": 0.18866700000000058,
+        "p99Ms": 0.2546660000000003,
+        "maxMs": 0.31437500000000007
+      },
+      "leaseCheck": "passed",
+      "memoryBefore": {
+        "rss": 18432000,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27279360,
+        "heapTotal": 2720768,
+        "heapUsed": 2720768,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 483715,
+        "total_net_output_bytes": 100076,
+        "used_cpu_sys": 0.0026939999999999993,
+        "used_cpu_user": 0.004709000000000001,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 55
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2634
+        },
+        "hset": {
+          "calls": 200,
+          "usec": 42
+        },
+        "del": {
+          "calls": 200,
+          "usec": 53
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 1
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 26
+        },
+        "info": {
+          "calls": 1,
+          "usec": 34
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 44
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 88
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 54
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 252
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 1
+        },
+        "hget": {
+          "calls": 200,
+          "usec": 39
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 1,
+      "variant": "v3",
+      "elapsedMs": 9.321625000000001,
+      "jobsPerSecond": 21455.486570206373,
+      "medianMs": 0.34829199999999894,
+      "p95Ms": 0.47504099999999916,
+      "p99Ms": 0.684958,
+      "maxMs": 0.6894580000000001,
+      "reserve": {
+        "medianMs": 0.21699999999999875,
+        "p95Ms": 0.30945800000000023,
+        "p99Ms": 0.43195799999999984,
+        "maxMs": 0.4413330000000002
+      },
+      "complete": {
+        "medianMs": 0.12320799999999998,
+        "p95Ms": 0.2010829999999988,
+        "p99Ms": 0.25283299999999986,
+        "maxMs": 0.2625410000000006
+      },
+      "leaseCheck": "passed",
+      "memoryBefore": {
+        "rss": 18350080,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27213824,
+        "heapTotal": 2737152,
+        "heapUsed": 2737152,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 483715,
+        "total_net_output_bytes": 100579,
+        "used_cpu_sys": 0.002508999999999999,
+        "used_cpu_user": 0.004758999999999999,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 63
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2692
+        },
+        "hset": {
+          "calls": 200,
+          "usec": 65
+        },
+        "del": {
+          "calls": 200,
+          "usec": 43
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 1
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 39
+        },
+        "info": {
+          "calls": 1,
+          "usec": 30
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 55
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 105
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 52
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 270
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        },
+        "hget": {
+          "calls": 200,
+          "usec": 36
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 1,
+      "variant": "v2",
+      "elapsedMs": 9.214915999999999,
+      "jobsPerSecond": 21703.941739675112,
+      "medianMs": 0.35666699999999985,
+      "p95Ms": 0.4657080000000011,
+      "p99Ms": 0.5890420000000001,
+      "maxMs": 0.6115000000000004,
+      "reserve": {
+        "medianMs": 0.2342499999999994,
+        "p95Ms": 0.344792,
+        "p99Ms": 0.42445799999999956,
+        "maxMs": 0.4346249999999996
+      },
+      "complete": {
+        "medianMs": 0.11970800000000104,
+        "p95Ms": 0.16495800000000038,
+        "p99Ms": 0.1898749999999989,
+        "maxMs": 0.19737500000000008
+      },
+      "leaseCheck": "not-applicable-diagnostic",
+      "memoryBefore": {
+        "rss": 18350080,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27000832,
+        "heapTotal": 2704384,
+        "heapUsed": 2704384,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 402315,
+        "total_net_output_bytes": 87395,
+        "used_cpu_sys": 0.002645999999999999,
+        "used_cpu_user": 0.004467000000000002,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 58
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2492
+        },
+        "del": {
+          "calls": 200,
+          "usec": 57
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 31
+        },
+        "info": {
+          "calls": 1,
+          "usec": 30
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 50
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 95
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 50
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 227
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 1
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 2,
+      "variant": "v2",
+      "elapsedMs": 8.745667000000001,
+      "jobsPerSecond": 22868.467322160788,
+      "medianMs": 0.33033400000000057,
+      "p95Ms": 0.40979100000000024,
+      "p99Ms": 0.5400409999999995,
+      "maxMs": 0.5458749999999997,
+      "reserve": {
+        "medianMs": 0.21724999999999994,
+        "p95Ms": 0.2615420000000004,
+        "p99Ms": 0.36404199999999953,
+        "maxMs": 0.375667
+      },
+      "complete": {
+        "medianMs": 0.1147500000000008,
+        "p95Ms": 0.17670799999999964,
+        "p99Ms": 0.1840830000000011,
+        "maxMs": 0.1862080000000006
+      },
+      "leaseCheck": "not-applicable-diagnostic",
+      "memoryBefore": {
+        "rss": 18300928,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 26935296,
+        "heapTotal": 2671616,
+        "heapUsed": 2671616,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 402315,
+        "total_net_output_bytes": 87400,
+        "used_cpu_sys": 0.00251,
+        "used_cpu_user": 0.004403000000000001,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 63
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2431
+        },
+        "del": {
+          "calls": 200,
+          "usec": 53
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 1
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 31
+        },
+        "info": {
+          "calls": 1,
+          "usec": 32
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 54
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 92
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 54
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 233
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 2,
+      "variant": "v3",
+      "elapsedMs": 8.839333,
+      "jobsPerSecond": 22626.141587832477,
+      "medianMs": 0.3394169999999992,
+      "p95Ms": 0.41366700000000023,
+      "p99Ms": 0.5486249999999995,
+      "maxMs": 0.5878329999999998,
+      "reserve": {
+        "medianMs": 0.22016599999999897,
+        "p95Ms": 0.284084,
+        "p99Ms": 0.36658400000000047,
+        "maxMs": 0.3782500000000004
+      },
+      "complete": {
+        "medianMs": 0.11537500000000023,
+        "p95Ms": 0.17270899999999934,
+        "p99Ms": 0.18445800000000023,
+        "maxMs": 0.22358300000000053
+      },
+      "leaseCheck": "passed",
+      "memoryBefore": {
+        "rss": 18382848,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27213824,
+        "heapTotal": 2737152,
+        "heapUsed": 2737152,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 483715,
+        "total_net_output_bytes": 100607,
+        "used_cpu_sys": 0.0023329999999999983,
+        "used_cpu_user": 0.004736999999999998,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 79
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2666
+        },
+        "hset": {
+          "calls": 200,
+          "usec": 63
+        },
+        "del": {
+          "calls": 200,
+          "usec": 44
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 22
+        },
+        "info": {
+          "calls": 1,
+          "usec": 30
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 63
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 96
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 52
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 223
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 1
+        },
+        "hget": {
+          "calls": 200,
+          "usec": 41
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 3,
+      "variant": "v3",
+      "elapsedMs": 8.652667000000001,
+      "jobsPerSecond": 23114.260608896653,
+      "medianMs": 0.3242919999999998,
+      "p95Ms": 0.4210419999999999,
+      "p99Ms": 0.663583,
+      "maxMs": 0.6990000000000007,
+      "reserve": {
+        "medianMs": 0.21166700000000027,
+        "p95Ms": 0.29887500000000067,
+        "p99Ms": 0.4303330000000001,
+        "maxMs": 0.4405840000000003
+      },
+      "complete": {
+        "medianMs": 0.11270900000000061,
+        "p95Ms": 0.1677919999999995,
+        "p99Ms": 0.24654199999999982,
+        "maxMs": 0.2584160000000004
+      },
+      "leaseCheck": "passed",
+      "memoryBefore": {
+        "rss": 18350080,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27197440,
+        "heapTotal": 2737152,
+        "heapUsed": 2737152,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 483715,
+        "total_net_output_bytes": 100609,
+        "used_cpu_sys": 0.0022369999999999994,
+        "used_cpu_user": 0.004699000000000002,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 56
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2679
+        },
+        "hset": {
+          "calls": 200,
+          "usec": 71
+        },
+        "del": {
+          "calls": 200,
+          "usec": 34
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 29
+        },
+        "info": {
+          "calls": 1,
+          "usec": 28
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 53
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 95
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 40
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 241
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 1
+        },
+        "hget": {
+          "calls": 200,
+          "usec": 29
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 3,
+      "variant": "v2",
+      "elapsedMs": 8.362959,
+      "jobsPerSecond": 23914.9803317223,
+      "medianMs": 0.32166600000000045,
+      "p95Ms": 0.36229200000000006,
+      "p99Ms": 0.5415830000000001,
+      "maxMs": 0.5537079999999994,
+      "reserve": {
+        "medianMs": 0.20870799999999967,
+        "p95Ms": 0.2569580000000009,
+        "p99Ms": 0.37508300000000006,
+        "maxMs": 0.384792
+      },
+      "complete": {
+        "medianMs": 0.11062499999999886,
+        "p95Ms": 0.15787500000000065,
+        "p99Ms": 0.17525000000000013,
+        "maxMs": 0.17862499999999937
+      },
+      "leaseCheck": "not-applicable-diagnostic",
+      "memoryBefore": {
+        "rss": 18333696,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 26951680,
+        "heapTotal": 2704384,
+        "heapUsed": 2704384,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 402315,
+        "total_net_output_bytes": 87414,
+        "used_cpu_sys": 0.0024080000000000004,
+        "used_cpu_user": 0.0044449999999999976,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 59
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2484
+        },
+        "del": {
+          "calls": 200,
+          "usec": 58
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 24
+        },
+        "info": {
+          "calls": 1,
+          "usec": 29
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 51
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 96
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 64
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 225
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 4,
+      "variant": "v2",
+      "elapsedMs": 8.479916,
+      "jobsPerSecond": 23585.139286757087,
+      "medianMs": 0.3237919999999992,
+      "p95Ms": 0.4085420000000006,
+      "p99Ms": 0.5376669999999999,
+      "maxMs": 0.5502080000000005,
+      "reserve": {
+        "medianMs": 0.21004100000000037,
+        "p95Ms": 0.27750000000000163,
+        "p99Ms": 0.3809580000000006,
+        "maxMs": 0.38558299999999956
+      },
+      "complete": {
+        "medianMs": 0.11387500000000017,
+        "p95Ms": 0.15829100000000018,
+        "p99Ms": 0.16258400000000073,
+        "maxMs": 0.1692499999999999
+      },
+      "leaseCheck": "not-applicable-diagnostic",
+      "memoryBefore": {
+        "rss": 18415616,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27066368,
+        "heapTotal": 2671616,
+        "heapUsed": 2671616,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 402315,
+        "total_net_output_bytes": 87418,
+        "used_cpu_sys": 0.002357999999999999,
+        "used_cpu_user": 0.004416000000000003,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 57
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2433
+        },
+        "del": {
+          "calls": 200,
+          "usec": 47
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 30
+        },
+        "info": {
+          "calls": 1,
+          "usec": 30
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 50
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 111
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 57
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 221
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 1
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 4,
+      "variant": "v3",
+      "elapsedMs": 7.85975,
+      "jobsPerSecond": 25446.101975253667,
+      "medianMs": 0.2980420000000006,
+      "p95Ms": 0.37016700000000036,
+      "p99Ms": 0.5609589999999995,
+      "maxMs": 0.5986250000000002,
+      "reserve": {
+        "medianMs": 0.18849999999999945,
+        "p95Ms": 0.25650000000000084,
+        "p99Ms": 0.4028330000000002,
+        "maxMs": 0.4107909999999997
+      },
+      "complete": {
+        "medianMs": 0.10400000000000009,
+        "p95Ms": 0.15870799999999985,
+        "p99Ms": 0.17370799999999953,
+        "maxMs": 0.19579199999999997
+      },
+      "leaseCheck": "passed",
+      "memoryBefore": {
+        "rss": 18366464,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27213824,
+        "heapTotal": 2737152,
+        "heapUsed": 2737152,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 483715,
+        "total_net_output_bytes": 100619,
+        "used_cpu_sys": 0.001909000000000001,
+        "used_cpu_user": 0.004676,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 57
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2698
+        },
+        "hset": {
+          "calls": 200,
+          "usec": 76
+        },
+        "del": {
+          "calls": 200,
+          "usec": 60
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 17
+        },
+        "info": {
+          "calls": 1,
+          "usec": 36
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 40
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 96
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 46
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 235
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        },
+        "hget": {
+          "calls": 200,
+          "usec": 43
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 5,
+      "variant": "v3",
+      "elapsedMs": 7.838583,
+      "jobsPerSecond": 25514.815624201467,
+      "medianMs": 0.30925000000000047,
+      "p95Ms": 0.3869170000000004,
+      "p99Ms": 0.5153329999999992,
+      "maxMs": 0.5542920000000002,
+      "reserve": {
+        "medianMs": 0.1949159999999992,
+        "p95Ms": 0.2620420000000001,
+        "p99Ms": 0.33591700000000024,
+        "maxMs": 0.3462909999999999
+      },
+      "complete": {
+        "medianMs": 0.10695800000000055,
+        "p95Ms": 0.16024999999999956,
+        "p99Ms": 0.1809579999999995,
+        "maxMs": 0.22091700000000003
+      },
+      "leaseCheck": "passed",
+      "memoryBefore": {
+        "rss": 18366464,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27181056,
+        "heapTotal": 2737152,
+        "heapUsed": 2737152,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 483715,
+        "total_net_output_bytes": 100626,
+        "used_cpu_sys": 0.0018900000000000028,
+        "used_cpu_user": 0.0047750000000000015,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 53
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2718
+        },
+        "hset": {
+          "calls": 200,
+          "usec": 63
+        },
+        "del": {
+          "calls": 200,
+          "usec": 55
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 31
+        },
+        "info": {
+          "calls": 1,
+          "usec": 31
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 62
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 97
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 55
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 241
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        },
+        "hget": {
+          "calls": 200,
+          "usec": 39
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 5,
+      "variant": "v2",
+      "elapsedMs": 7.599457999999999,
+      "jobsPerSecond": 26317.666338836272,
+      "medianMs": 0.2951250000000005,
+      "p95Ms": 0.4161660000000005,
+      "p99Ms": 0.5680420000000002,
+      "maxMs": 0.5930419999999996,
+      "reserve": {
+        "medianMs": 0.18541600000000003,
+        "p95Ms": 0.29404199999999925,
+        "p99Ms": 0.3953340000000001,
+        "maxMs": 0.4034999999999993
+      },
+      "complete": {
+        "medianMs": 0.0938750000000006,
+        "p95Ms": 0.16841699999999982,
+        "p99Ms": 0.1757080000000002,
+        "maxMs": 0.21958300000000008
+      },
+      "leaseCheck": "not-applicable-diagnostic",
+      "memoryBefore": {
+        "rss": 18333696,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 26968064,
+        "heapTotal": 2671616,
+        "heapUsed": 2671616,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 402315,
+        "total_net_output_bytes": 87427,
+        "used_cpu_sys": 0.0019850000000000007,
+        "used_cpu_user": 0.004310000000000001,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 60
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2347
+        },
+        "del": {
+          "calls": 200,
+          "usec": 43
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 22
+        },
+        "info": {
+          "calls": 1,
+          "usec": 32
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 57
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 97
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 47
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 240
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 6,
+      "variant": "v2",
+      "elapsedMs": 7.808334000000001,
+      "jobsPerSecond": 25613.658432131615,
+      "medianMs": 0.3130410000000001,
+      "p95Ms": 0.34645800000000015,
+      "p99Ms": 0.5372909999999997,
+      "maxMs": 0.5572079999999993,
+      "reserve": {
+        "medianMs": 0.1984579999999987,
+        "p95Ms": 0.24591700000000039,
+        "p99Ms": 0.3599160000000001,
+        "maxMs": 0.37366600000000005
+      },
+      "complete": {
+        "medianMs": 0.10391699999999915,
+        "p95Ms": 0.1679170000000001,
+        "p99Ms": 0.186458,
+        "maxMs": 0.2052499999999995
+      },
+      "leaseCheck": "not-applicable-diagnostic",
+      "memoryBefore": {
+        "rss": 18350080,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27000832,
+        "heapTotal": 2671616,
+        "heapUsed": 2671616,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 402315,
+        "total_net_output_bytes": 87427,
+        "used_cpu_sys": 0.0020999999999999977,
+        "used_cpu_user": 0.004347000000000004,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 62
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2428
+        },
+        "del": {
+          "calls": 200,
+          "usec": 45
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 1
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 30
+        },
+        "info": {
+          "calls": 1,
+          "usec": 53
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 49
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 94
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 44
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 208
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 6,
+      "variant": "v3",
+      "elapsedMs": 8.25775,
+      "jobsPerSecond": 24219.6724289304,
+      "medianMs": 0.31862499999999905,
+      "p95Ms": 0.37837500000000013,
+      "p99Ms": 0.5686249999999999,
+      "maxMs": 0.6067499999999999,
+      "reserve": {
+        "medianMs": 0.20879099999999973,
+        "p95Ms": 0.24837500000000112,
+        "p99Ms": 0.38937500000000025,
+        "maxMs": 0.39733399999999985
+      },
+      "complete": {
+        "medianMs": 0.10883299999999885,
+        "p95Ms": 0.15662500000000001,
+        "p99Ms": 0.2057909999999996,
+        "maxMs": 0.23841599999999996
+      },
+      "leaseCheck": "passed",
+      "memoryBefore": {
+        "rss": 18350080,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27148288,
+        "heapTotal": 2737152,
+        "heapUsed": 2737152,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 483715,
+        "total_net_output_bytes": 100628,
+        "used_cpu_sys": 0.002147000000000003,
+        "used_cpu_user": 0.004817000000000002,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 48
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2733
+        },
+        "hset": {
+          "calls": 200,
+          "usec": 70
+        },
+        "del": {
+          "calls": 200,
+          "usec": 60
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 26
+        },
+        "info": {
+          "calls": 1,
+          "usec": 35
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 38
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 101
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 51
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 228
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 1
+        },
+        "hget": {
+          "calls": 200,
+          "usec": 43
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 7,
+      "variant": "v3",
+      "elapsedMs": 8.071,
+      "jobsPerSecond": 24780.076818238136,
+      "medianMs": 0.3158340000000006,
+      "p95Ms": 0.3784580000000002,
+      "p99Ms": 0.5567920000000006,
+      "maxMs": 0.5913749999999993,
+      "reserve": {
+        "medianMs": 0.2054589999999994,
+        "p95Ms": 0.2632089999999998,
+        "p99Ms": 0.384792,
+        "maxMs": 0.39175000000000004
+      },
+      "complete": {
+        "medianMs": 0.10979200000000056,
+        "p95Ms": 0.15833299999999895,
+        "p99Ms": 0.17300000000000004,
+        "maxMs": 0.2065829999999993
+      },
+      "leaseCheck": "passed",
+      "memoryBefore": {
+        "rss": 18448384,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27279360,
+        "heapTotal": 2737152,
+        "heapUsed": 2737152,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 483715,
+        "total_net_output_bytes": 100628,
+        "used_cpu_sys": 0.0021009999999999987,
+        "used_cpu_user": 0.004728999999999997,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 49
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2654
+        },
+        "hset": {
+          "calls": 200,
+          "usec": 64
+        },
+        "del": {
+          "calls": 200,
+          "usec": 32
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 30
+        },
+        "info": {
+          "calls": 1,
+          "usec": 35
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 46
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 92
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 55
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 238
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        },
+        "hget": {
+          "calls": 200,
+          "usec": 32
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 7,
+      "variant": "v2",
+      "elapsedMs": 7.868208000000001,
+      "jobsPerSecond": 25418.748462165713,
+      "medianMs": 0.30562499999999915,
+      "p95Ms": 0.3646659999999997,
+      "p99Ms": 0.5366249999999999,
+      "maxMs": 0.5459589999999999,
+      "reserve": {
+        "medianMs": 0.19333400000000012,
+        "p95Ms": 0.2478750000000005,
+        "p99Ms": 0.3637920000000001,
+        "maxMs": 0.3721250000000005
+      },
+      "complete": {
+        "medianMs": 0.10608299999999993,
+        "p95Ms": 0.14270799999999983,
+        "p99Ms": 0.17508400000000002,
+        "maxMs": 0.19445900000000016
+      },
+      "leaseCheck": "not-applicable-diagnostic",
+      "memoryBefore": {
+        "rss": 18399232,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27033600,
+        "heapTotal": 2671616,
+        "heapUsed": 2671616,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 402315,
+        "total_net_output_bytes": 87431,
+        "used_cpu_sys": 0.0021130000000000038,
+        "used_cpu_user": 0.004343,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 51
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2424
+        },
+        "del": {
+          "calls": 200,
+          "usec": 38
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 27
+        },
+        "info": {
+          "calls": 1,
+          "usec": 30
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 52
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 96
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 59
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 233
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 8,
+      "variant": "v2",
+      "elapsedMs": 8.199875,
+      "jobsPerSecond": 24390.615710605343,
+      "medianMs": 0.3117920000000005,
+      "p95Ms": 0.42312500000000064,
+      "p99Ms": 0.5042080000000002,
+      "maxMs": 0.5182919999999998,
+      "reserve": {
+        "medianMs": 0.2044580000000007,
+        "p95Ms": 0.29249999999999954,
+        "p99Ms": 0.34237499999999965,
+        "maxMs": 0.35108300000000003
+      },
+      "complete": {
+        "medianMs": 0.1122500000000013,
+        "p95Ms": 0.16000000000000014,
+        "p99Ms": 0.18320899999999973,
+        "maxMs": 0.19137500000000074
+      },
+      "leaseCheck": "not-applicable-diagnostic",
+      "memoryBefore": {
+        "rss": 18300928,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 26935296,
+        "heapTotal": 2671616,
+        "heapUsed": 2671616,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 402315,
+        "total_net_output_bytes": 87431,
+        "used_cpu_sys": 0.002236000000000002,
+        "used_cpu_user": 0.004323000000000007,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 63
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2412
+        },
+        "del": {
+          "calls": 200,
+          "usec": 45
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 29
+        },
+        "info": {
+          "calls": 1,
+          "usec": 31
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 59
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 99
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 59
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 230
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 8,
+      "variant": "v3",
+      "elapsedMs": 7.828542,
+      "jobsPerSecond": 25547.541291852303,
+      "medianMs": 0.28775000000000084,
+      "p95Ms": 0.49624999999999986,
+      "p99Ms": 0.555625,
+      "maxMs": 0.5942090000000002,
+      "reserve": {
+        "medianMs": 0.19004200000000004,
+        "p95Ms": 0.33949999999999925,
+        "p99Ms": 0.3879999999999999,
+        "maxMs": 0.3904999999999994
+      },
+      "complete": {
+        "medianMs": 0.10395800000000044,
+        "p95Ms": 0.1628330000000009,
+        "p99Ms": 0.20762500000000017,
+        "maxMs": 0.2612920000000001
+      },
+      "leaseCheck": "passed",
+      "memoryBefore": {
+        "rss": 18350080,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27164672,
+        "heapTotal": 2737152,
+        "heapUsed": 2737152,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 483715,
+        "total_net_output_bytes": 100633,
+        "used_cpu_sys": 0.0017240000000000033,
+        "used_cpu_user": 0.004826999999999998,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 58
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2741
+        },
+        "hset": {
+          "calls": 200,
+          "usec": 63
+        },
+        "del": {
+          "calls": 200,
+          "usec": 47
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 27
+        },
+        "info": {
+          "calls": 1,
+          "usec": 39
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 55
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 89
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 53
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 287
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        },
+        "hget": {
+          "calls": 200,
+          "usec": 35
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 9,
+      "variant": "v3",
+      "elapsedMs": 7.536083,
+      "jobsPerSecond": 26538.985836541346,
+      "medianMs": 0.27341700000000024,
+      "p95Ms": 0.36541700000000077,
+      "p99Ms": 0.5158749999999994,
+      "maxMs": 0.5894589999999997,
+      "reserve": {
+        "medianMs": 0.18295900000000032,
+        "p95Ms": 0.24616700000000158,
+        "p99Ms": 0.4042919999999999,
+        "maxMs": 0.42262500000000003
+      },
+      "complete": {
+        "medianMs": 0.10108300000000092,
+        "p95Ms": 0.14404099999999964,
+        "p99Ms": 0.16041699999999892,
+        "maxMs": 0.17020899999999983
+      },
+      "leaseCheck": "passed",
+      "memoryBefore": {
+        "rss": 18432000,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27279360,
+        "heapTotal": 2737152,
+        "heapUsed": 2737152,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 483715,
+        "total_net_output_bytes": 100634,
+        "used_cpu_sys": 0.0017409999999999995,
+        "used_cpu_user": 0.0047760000000000025,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 53
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2706
+        },
+        "hset": {
+          "calls": 200,
+          "usec": 78
+        },
+        "del": {
+          "calls": 200,
+          "usec": 46
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 24
+        },
+        "info": {
+          "calls": 1,
+          "usec": 32
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 59
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 104
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 45
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 249
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        },
+        "hget": {
+          "calls": 200,
+          "usec": 39
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 9,
+      "variant": "v2",
+      "elapsedMs": 7.46125,
+      "jobsPerSecond": 26805.159993298712,
+      "medianMs": 0.27933300000000116,
+      "p95Ms": 0.42824999999999847,
+      "p99Ms": 0.5625,
+      "maxMs": 0.569833,
+      "reserve": {
+        "medianMs": 0.18374999999999986,
+        "p95Ms": 0.2932499999999987,
+        "p99Ms": 0.3607079999999998,
+        "maxMs": 0.36879099999999987
+      },
+      "complete": {
+        "medianMs": 0.09675000000000011,
+        "p95Ms": 0.15866699999999945,
+        "p99Ms": 0.2147079999999999,
+        "maxMs": 0.22208300000000047
+      },
+      "leaseCheck": "not-applicable-diagnostic",
+      "memoryBefore": {
+        "rss": 18350080,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27033600,
+        "heapTotal": 2704384,
+        "heapUsed": 2704384,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 402315,
+        "total_net_output_bytes": 87440,
+        "used_cpu_sys": 0.0017609999999999987,
+        "used_cpu_user": 0.004364999999999994,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 74
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2439
+        },
+        "del": {
+          "calls": 200,
+          "usec": 47
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 1
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 31
+        },
+        "info": {
+          "calls": 1,
+          "usec": 39
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 50
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 79
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 68
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 216
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 10,
+      "variant": "v2",
+      "elapsedMs": 7.591875,
+      "jobsPerSecond": 26343.953239483,
+      "medianMs": 0.2947919999999993,
+      "p95Ms": 0.3836250000000003,
+      "p99Ms": 0.4980830000000003,
+      "maxMs": 0.5179590000000003,
+      "reserve": {
+        "medianMs": 0.19150000000000134,
+        "p95Ms": 0.259042,
+        "p99Ms": 0.3335840000000001,
+        "maxMs": 0.3421669999999999
+      },
+      "complete": {
+        "medianMs": 0.10025000000000084,
+        "p95Ms": 0.15929100000000052,
+        "p99Ms": 0.16645799999999955,
+        "maxMs": 0.18437500000000018
+      },
+      "leaseCheck": "not-applicable-diagnostic",
+      "memoryBefore": {
+        "rss": 18399232,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27033600,
+        "heapTotal": 2671616,
+        "heapUsed": 2671616,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 402315,
+        "total_net_output_bytes": 87441,
+        "used_cpu_sys": 0.0019979999999999998,
+        "used_cpu_user": 0.004345000000000002,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 53
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2408
+        },
+        "del": {
+          "calls": 200,
+          "usec": 46
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 23
+        },
+        "info": {
+          "calls": 1,
+          "usec": 34
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 59
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 93
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 58
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 238
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 10,
+      "variant": "v3",
+      "elapsedMs": 8.180791,
+      "jobsPerSecond": 24447.513693969206,
+      "medianMs": 0.3185830000000003,
+      "p95Ms": 0.4068329999999989,
+      "p99Ms": 0.5041669999999998,
+      "maxMs": 0.5216250000000002,
+      "reserve": {
+        "medianMs": 0.20458299999999952,
+        "p95Ms": 0.2711250000000014,
+        "p99Ms": 0.3262089999999995,
+        "maxMs": 0.3289169999999997
+      },
+      "complete": {
+        "medianMs": 0.10875000000000057,
+        "p95Ms": 0.15487500000000054,
+        "p99Ms": 0.1787909999999986,
+        "maxMs": 0.1938329999999997
+      },
+      "leaseCheck": "passed",
+      "memoryBefore": {
+        "rss": 18415616,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27262976,
+        "heapTotal": 2737152,
+        "heapUsed": 2737152,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 483715,
+        "total_net_output_bytes": 100642,
+        "used_cpu_sys": 0.0020979999999999957,
+        "used_cpu_user": 0.004780999999999994,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 62
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2704
+        },
+        "hset": {
+          "calls": 200,
+          "usec": 68
+        },
+        "del": {
+          "calls": 200,
+          "usec": 50
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 36
+        },
+        "info": {
+          "calls": 1,
+          "usec": 29
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 50
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 96
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 54
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 240
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        },
+        "hget": {
+          "calls": 200,
+          "usec": 34
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 11,
+      "variant": "v3",
+      "elapsedMs": 8.301207999999999,
+      "jobsPerSecond": 24092.87901230761,
+      "medianMs": 0.32545799999999936,
+      "p95Ms": 0.42879100000000037,
+      "p99Ms": 0.5822079999999996,
+      "maxMs": 0.5955829999999995,
+      "reserve": {
+        "medianMs": 0.2136250000000004,
+        "p95Ms": 0.2664590000000011,
+        "p99Ms": 0.33370799999999967,
+        "maxMs": 0.338584
+      },
+      "complete": {
+        "medianMs": 0.10837499999999878,
+        "p95Ms": 0.14779199999999904,
+        "p99Ms": 0.2535419999999995,
+        "maxMs": 0.2594580000000004
+      },
+      "leaseCheck": "passed",
+      "memoryBefore": {
+        "rss": 18350080,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27181056,
+        "heapTotal": 2737152,
+        "heapUsed": 2737152,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 483715,
+        "total_net_output_bytes": 100642,
+        "used_cpu_sys": 0.002111999999999996,
+        "used_cpu_user": 0.0048749999999999905,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 53
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2760
+        },
+        "hset": {
+          "calls": 200,
+          "usec": 61
+        },
+        "del": {
+          "calls": 200,
+          "usec": 41
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 34
+        },
+        "info": {
+          "calls": 1,
+          "usec": 30
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 54
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 95
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 55
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 259
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 0
+        },
+        "hget": {
+          "calls": 200,
+          "usec": 25
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    },
+    {
+      "pair": 11,
+      "variant": "v2",
+      "elapsedMs": 7.789458000000001,
+      "jobsPerSecond": 25675.72737409971,
+      "medianMs": 0.31204199999999993,
+      "p95Ms": 0.39454100000000025,
+      "p99Ms": 0.5702499999999997,
+      "maxMs": 0.5841249999999993,
+      "reserve": {
+        "medianMs": 0.19995899999999978,
+        "p95Ms": 0.2858339999999995,
+        "p99Ms": 0.3924159999999999,
+        "maxMs": 0.40225000000000044
+      },
+      "complete": {
+        "medianMs": 0.10470799999999869,
+        "p95Ms": 0.16062499999999957,
+        "p99Ms": 0.18279099999999993,
+        "maxMs": 0.1947909999999995
+      },
+      "leaseCheck": "not-applicable-diagnostic",
+      "memoryBefore": {
+        "rss": 18366464,
+        "heapTotal": 1683456,
+        "heapUsed": 1683456,
+        "external": 0,
+        "arrayBuffers": 0
+      },
+      "memoryAfter": {
+        "rss": 27049984,
+        "heapTotal": 2671616,
+        "heapUsed": 2671616,
+        "external": 5385,
+        "arrayBuffers": 5385
+      },
+      "delta": {
+        "total_net_input_bytes": 402315,
+        "total_net_output_bytes": 87443,
+        "used_cpu_sys": 0.0019890000000000047,
+        "used_cpu_user": 0.0043360000000000065,
+        "rdb_saves": 0,
+        "aof_delayed_fsync": 0,
+        "evicted_scripts": 0
+      },
+      "commands": {
+        "lpop": {
+          "calls": 200,
+          "usec": 68
+        },
+        "eval": {
+          "calls": 800,
+          "usec": 2408
+        },
+        "del": {
+          "calls": 200,
+          "usec": 41
+        },
+        "llen": {
+          "calls": 1,
+          "usec": 0
+        },
+        "zrangebyscore": {
+          "calls": 400,
+          "usec": 20
+        },
+        "info": {
+          "calls": 1,
+          "usec": 31
+        },
+        "zrem": {
+          "calls": 200,
+          "usec": 62
+        },
+        "zadd": {
+          "calls": 200,
+          "usec": 83
+        },
+        "hincrby": {
+          "calls": 200,
+          "usec": 61
+        },
+        "hgetall": {
+          "calls": 400,
+          "usec": 242
+        },
+        "zcard": {
+          "calls": 1,
+          "usec": 1
+        }
+      },
+      "persistence": {
+        "before": "0",
+        "after": "0"
+      }
+    }
+  ]
+}

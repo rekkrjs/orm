@@ -145,12 +145,13 @@ return 1
 /**
  * Acknowledge a finished job: drop the reservation and the hash together.
  *
- * KEYS: job, reserved
- * ARGV: id
+ * KEYS: job
+ * ARGV: id, reservation token, reserved-key prefix
  */
 const COMPLETE_LUA = `
 if redis.call('HGET', KEYS[1], 'reservationToken') ~= ARGV[2] then return 0 end
-redis.call('ZREM', KEYS[2], ARGV[1])
+local queue = redis.call('HGET', KEYS[1], 'queue') or 'default'
+redis.call('ZREM', ARGV[3] .. queue, ARGV[1])
 return redis.call('DEL', KEYS[1])
 `;
 
@@ -233,11 +234,10 @@ export class RedisQueueDriver implements QueueDriver {
   }
 
   async complete(id: number, token: string): Promise<boolean> {
-    const fields = (await this.client.hgetall(this.jobKey(id))) as unknown as StoredJob | undefined;
     return Number(await this.eval(
       COMPLETE_LUA,
-      [this.jobKey(id), this.reservedKey(fields?.queue ?? "default")],
-      [id, token],
+      [this.jobKey(id)],
+      [id, token, this.key("reserved:")],
     )) > 0;
   }
 
