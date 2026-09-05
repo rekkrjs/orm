@@ -1,0 +1,12 @@
+{
+  "v2.5.0": {
+    "filesVerifiedAgainstGit": 138,
+    "aggregateSourceSha256": "4a64b7f8212626fc5a24c6f5eb56ea44b25e86f97a3419c311e40f46cd99b252",
+    "resolvedOrmEntry": "/Users/gporto/Desktop/rekkr/orm/tmp_agents/http-users/v2.5.0/orm/src/index.ts"
+  },
+  "v3.1.1": {
+    "filesVerifiedAgainstGit": 142,
+    "aggregateSourceSha256": "20771344b3c22d932e40f5fb41cfaeb06d48108b815771857b983e3bf19aeb27",
+    "resolvedOrmEntry": "/Users/gporto/Desktop/rekkr/orm/tmp_agents/http-users/v3.1.1/orm/src/index.ts"
+  }
+}

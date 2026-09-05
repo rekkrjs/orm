@@ -1,5 +1,13 @@
 # Benchmark history
 
+For the self-contained HTTP server, deterministic fixtures and two-version
+runner, see [the reproducible HTTP benchmark](http/README.md):
+`BENCH_HTTP_URL=... bun run bench:http v2.5.0 v3.1.1`.
+The [users](http-users-2026-09-05/README.md) and
+[records](http-records-2026-09-05/README.md) HTTP reports are historical external
+consumer measurements; their private application/fixtures were not published.
+They are not the same protocol as the new repository-owned HTTP harness.
+
 ```sh
 bun run bench:record
 bun run bench:record benchmarks/results/<previous-result>.json

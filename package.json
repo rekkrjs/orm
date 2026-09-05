@@ -116,6 +116,7 @@
     "bench": "bun test tests/benchmark*.test.ts",
     "bench:record": "bun run scripts/benchmark-history.ts",
     "bench:runtime": "bun run scripts/benchmark-runtime.ts",
+    "bench:http": "bun run scripts/benchmark-http.ts",
     "migrate": "bun run bin/orm.ts migrate",
     "make:migration": "bun run bin/orm.ts make:migration",
     "migrate:rollback": "bun run bin/orm.ts migrate:rollback",
