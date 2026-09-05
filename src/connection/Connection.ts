@@ -66,6 +66,7 @@ export class Connection {
   private session?: Connection;
   private parent?: Connection;
   private tenantId?: string;
+  private rlsScope?: { tenantId: string; setting: string; role?: string };
   private transactionFinished = false;
   private requiresTenantScope = false;
   private commitEffects: Array<Array<() => unknown | Promise<unknown>>> = [];
@@ -297,6 +298,7 @@ export class Connection {
     const connection = new Connection(this.config, { driver: this.driver, ownsDriver: false, sqliteDefaultsApplied: this.sqliteDefaultsApplied });
     connection.schema = schema;
     connection.tenantId = tenantId;
+    connection.rlsScope = this.rlsScope;
     connection.resource = this.resource ?? this;
     connection.parent = this;
     connection.session = this.session ?? ((this.isInTransaction() || this.dedicated) ? this : undefined);
@@ -873,6 +875,7 @@ export class Connection {
           connection.resource = this.resource ?? this;
           connection.parent = this;
           connection.tenantId = this.tenantId;
+          connection.rlsScope = this.rlsScope;
           connection.logQueries = this.logQueries;
           connection.transactionActive = true;
           connection.dedicated = true;
@@ -920,15 +923,41 @@ export class Connection {
     if (role) {
       Connection.assertSafeIdentifier(role, "role name");
     }
-    return await this.transaction(async (connection) => {
-      connection.tenantId ??= tenantId;
-      connection.requiresTenantScope = true;
-      if (role) {
-        await connection.run(`SET LOCAL ROLE ${connection.quoteIdentifier(role)}`);
+    const effective = resolveConnection(this);
+    const scope = effective.rlsScope;
+    if (scope) {
+      if (scope.tenantId !== tenantId || scope.setting !== setting || scope.role !== role) {
+        throw new Error("Cannot change tenant, setting or role inside an active RLS scope.");
       }
-      await connection.run(`SELECT set_config(${connection.getGrammar().placeholder(1)}, ${connection.getGrammar().placeholder(2)}, true)`, [setting, tenantId]);
-      return await callback(connection);
-    });
+      return await callback(effective);
+    }
+    if (effective.isInTransaction()) {
+      throw new Error("Cannot enter an RLS tenant scope inside an existing transaction.");
+    }
+    const originalTenantId = effective.tenantId;
+    const originalRequiresScope = effective.requiresTenantScope;
+    let borrowed = false;
+    try {
+      return await effective.transaction(async (connection) => {
+        borrowed = connection === effective;
+        connection.tenantId ??= tenantId;
+        connection.rlsScope = { tenantId, setting, role };
+        connection.requiresTenantScope = true;
+        if (role) {
+          await connection.run(`SET LOCAL ROLE ${connection.quoteIdentifier(role)}`);
+        }
+        await connection.run(`SELECT set_config(${connection.getGrammar().placeholder(1)}, ${connection.getGrammar().placeholder(2)}, true)`, [setting, tenantId]);
+        return await callback(connection);
+      });
+    } finally {
+      // Dedicated sessions survive the transaction; their logical identity
+      // must be restored together with PostgreSQL's SET LOCAL state.
+      if (borrowed) {
+        effective.tenantId = originalTenantId;
+        effective.rlsScope = undefined;
+        effective.requiresTenantScope = originalRequiresScope;
+      }
+    }
   }
 
   async withSearchPath<T>(schema: string, callback: (connection: Connection) => T | Promise<T>): Promise<T> {

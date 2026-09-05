@@ -23,6 +23,7 @@ tests/temp_type_declarations/
 tests/temp_convention_types/
 tests/temp_migration_types/
 tmp/
+tmp_agents/
 
 debug-*.ts
 debug_*.ts

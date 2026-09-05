@@ -368,24 +368,32 @@ describe("Connection", () => {
     const conn = new Connection({ url: "postgres://user:pass@localhost:5432/db" });
 
     await expect(
-      conn.withTenant("tenant-1", async () => {}, "app.tenant_id; RESET search_path; --")
+      conn.withTenant("tenant-1", async () => { throw new Error("Unsafe setting reached callback"); }, "app.tenant_id; RESET search_path; --")
     ).rejects.toThrow("Invalid PostgreSQL setting name");
   });
 
   test("sets a safe tenant role and rejects unsafe role names", async () => {
     const calls: string[] = [];
-    const txDriver = { unsafe: (sql: string) => (calls.push(sql), []) };
+    let tenant: string | undefined;
+    const txDriver = { unsafe: (sql: string, bindings?: any[]) => {
+      calls.push(sql);
+      if (sql.includes("set_config")) tenant = bindings?.[1];
+      return sql.includes("current_setting") ? [{ tenant }] : [];
+    } };
     const driver = { begin: (callback: (sql: any) => any) => callback(txDriver) };
     const conn = new Connection(
       { url: "postgres://user:pass@localhost:5432/db" },
       { driver: driver as any, ownsDriver: true }
     );
 
-    await conn.withTenant("tenant-1", async () => {}, "app.tenant_id", "tenant_reader");
+    await conn.withTenant("tenant-1", async scoped => {
+      expect(scoped.getTenantId()).toBe("tenant-1");
+      expect(await scoped.query("SELECT current_setting('app.tenant_id') AS tenant")).toEqual([{ tenant: "tenant-1" }]);
+    }, "app.tenant_id", "tenant_reader");
     expect(calls[0]).toBe('SET LOCAL ROLE "tenant_reader"');
 
     await expect(
-      conn.withTenant("tenant-1", async () => {}, "app.tenant_id", 'reader"; RESET ROLE; --')
+      conn.withTenant("tenant-1", async () => { throw new Error("Unsafe role reached callback"); }, "app.tenant_id", 'reader"; RESET ROLE; --')
     ).rejects.toThrow("Invalid role name");
   });
 

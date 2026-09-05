@@ -166,9 +166,10 @@ For the schema-qualify strategy, all tables are in the same physical database, s
 - **Forgetting to `await`.** A missing `await` on `transaction(...)` lets the
   caller continue before commit or rollback finishes, and a later rejection can
   become unhandled.
-- **A package that captures a `Connection` at construction.** It writes on the
-  pooled connection and escapes the caller's transaction. Resolve per call with
-  `TransactionContext.current() ?? this.connection`.
+- **A package that captures a `Connection` at construction.** Operations through
+  that connection resolve the active context on each call. Compatible bindings
+  join the caller's transaction; incompatible connections or tenants throw a
+  context conflict. Calling the underlying driver directly bypasses this check.
 - **`beginTransaction()` and unbound queries on another connection object.**
   The manual form reserves the driver on the connection it is called on and
   installs no async context, so unbound queries follow the default connection.

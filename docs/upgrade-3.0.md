@@ -27,6 +27,12 @@ switch schemas on the same pool's active transaction; both schemas then commit
 or roll back together. Leaving for landlord while a tenant transaction is active
 is rejected. There is no cross-database transaction or two-phase commit support.
 
+The lower-level PostgreSQL `Connection.withTenant()` follows the same rule:
+enter it before starting other transactions. Reentry with the same RLS tenant
+value, setting and role reuses the active scope; changing any of them throws
+before modifying the session. The configured logical tenant ID may differ from
+its RLS value. Exiting the outer scope restores the prior PostgreSQL settings.
+
 FROM, JOIN and write targets use the effective schema; explicit qualified tables,
 aliases, derived tables and CTE names retain their meaning. Raw SQL text remains
 your responsibility: under qualify, write `tenant_schema.table` explicitly.

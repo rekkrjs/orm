@@ -30,6 +30,12 @@ function pathParts(path: string): string[] {
   return path.split(".").filter(Boolean);
 }
 
+function assertSafePath(parts: string[]): void {
+  if (parts.some(part => part === "__proto__" || part === "prototype" || part === "constructor")) {
+    throw new ValidationError({ "": ["Prototype-sensitive field names are not allowed."] });
+  }
+}
+
 function getPath(data: Record<string, any>, path: string): unknown {
   if (Object.prototype.hasOwnProperty.call(data, path)) return data[path];
   let current: any = data;
@@ -55,16 +61,19 @@ function hasPath(data: Record<string, any>, path: string): boolean {
 }
 
 function setPath(data: Record<string, any>, path: string, value: unknown): void {
+  const parts = pathParts(path);
+  assertSafePath(parts);
   if (!path.includes(".")) {
     data[path] = value;
     return;
   }
   let current: any = data;
-  const parts = pathParts(path);
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
     const next = parts[i + 1];
-    current[part] ??= /^\d+$/.test(next) ? [] : {};
+    if (!Object.hasOwn(current, part) || current[part] == null) {
+      current[part] = /^\d+$/.test(next) ? [] : {};
+    }
     current = current[part];
   }
   current[parts[parts.length - 1]] = value;
@@ -213,7 +222,7 @@ function normalizeEmptyStringValues(value: unknown): unknown {
   }
   if (isPlainObjectInput(value)) {
     let changed = false;
-    const output: Record<string, any> = {};
+    const output: Record<string, any> = Object.create(null);
     for (const [key, item] of Object.entries(value)) {
       const normalized = normalizeEmptyStringValues(item);
       output[key] = normalized;
@@ -284,9 +293,9 @@ function appendNestedInputValue(target: Record<string, any>, name: string, value
   const prefixMatch = name.match(/^([bn]):(.+)$/);
   const key = prefixMatch?.[2] ?? name;
   const coerced = coerceFormValue(prefixMatch?.[1], value);
-  if (coerced === "") return;
-
   const parts = inputNameParts(key);
+  assertSafePath(parts);
+  if (coerced === "") return;
   if (parts.length <= 1) {
     appendInputValue(target, key, coerced);
     return;
@@ -296,7 +305,9 @@ function appendNestedInputValue(target: Record<string, any>, name: string, value
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
     const next = parts[i + 1];
-    current[part] ??= /^\d+$/.test(next) ? [] : {};
+    if (!Object.hasOwn(current, part) || current[part] == null) {
+      current[part] = /^\d+$/.test(next) ? [] : {};
+    }
     current = current[part];
   }
 
@@ -421,7 +432,7 @@ export class Validator<S extends ValidationSchema, TInput = unknown> {
   private stopOnFirst = false;
   private collectAll = false;
   private ran = false;
-  private bag: ErrorBag = {};
+  private bag: ErrorBag = Object.create(null);
   private output: Record<string, any> = {};
 
   private constructor(
@@ -455,7 +466,7 @@ export class Validator<S extends ValidationSchema, TInput = unknown> {
   }
 
   static flatten(issues: readonly StandardSchemaIssue[]): FlatIssueMap {
-    const bag: FlatIssueMap = {};
+    const bag: FlatIssueMap = Object.create(null);
     for (const issue of issues) {
       const key = issue.path && issue.path.length > 0
         ? issue.path.map((segment: { key: PropertyKey }) => String(segment.key)).join(".")

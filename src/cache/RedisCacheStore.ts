@@ -87,7 +87,8 @@ export class RedisCacheStore implements CacheStore {
     let cursor = "0";
     do {
       const [next, keys] = await this.client.scan(cursor, "MATCH", `${this.prefix}*`);
-      if (keys.length) await this.client.del(...keys);
+      const owned = keys.filter(key => ["cache:", "cache-tags:", "tag:"].some(family => key.startsWith(`${this.prefix}${family}`)));
+      if (owned.length) await this.client.del(...owned);
       cursor = next;
     } while (cursor !== "0");
   }

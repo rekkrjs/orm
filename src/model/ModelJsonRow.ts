@@ -1,3 +1,4 @@
+import { timestampsEnabled } from "./TimestampScope.js";
 import { formatDecimal } from "../utils.js";
 import {
   assertBackedEnumValue,
@@ -81,7 +82,7 @@ export function implicitDateCasts(model: ModelConstructor): Record<string, CastD
   const cached = implicitDateCastsCache.get(model);
   if (
     cached !== undefined &&
-    cached.timestamps === model.timestamps &&
+    cached.timestamps === timestampsEnabled(model) &&
     cached.createdAtColumn === model.createdAtColumn &&
     cached.updatedAtColumn === model.updatedAtColumn &&
     cached.softDeletes === model.softDeletes &&
@@ -95,7 +96,7 @@ export function implicitDateCasts(model: ModelConstructor): Record<string, CastD
     if (typeof column === "string" && column.length > 0) (casts ??= {})[column] = "datetime";
   };
 
-  if (model.timestamps) {
+  if (timestampsEnabled(model)) {
     try {
       add(model.getCreatedAtColumn());
       add(model.getUpdatedAtColumn());
@@ -104,7 +105,7 @@ export function implicitDateCasts(model: ModelConstructor): Record<string, CastD
   if (model.softDeletes) add(model.deletedAtColumn);
 
   implicitDateCastsCache.set(model, {
-    timestamps: model.timestamps,
+    timestamps: timestampsEnabled(model),
     createdAtColumn: model.createdAtColumn,
     updatedAtColumn: model.updatedAtColumn,
     softDeletes: model.softDeletes,

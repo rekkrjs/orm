@@ -142,8 +142,10 @@ Set `static override timestamps = false` when ORM must not manage timestamp
 fields. Inactive timestamp settings are not validated during ordinary model use
 or model-derived schema generation; explicit timestamp APIs such as the public
 getters, `latest()`, and `replicate()` still validate the names they need.
-`withoutTimestamps()` temporarily disables writes and restores the inherited
-setting afterward.
+`withoutTimestamps()` disables automatic timestamps within its asynchronous
+callback, including nested calls and subclasses inheriting the setting. Other
+callbacks and models remain unaffected. The static `timestamps` configuration
+does not change; implicit timestamp casts follow the callback's scope too.
 
 Valdyr applications keep Valdyr's direct `extends Model` requirement for static
 analysis; ORM's support for inherited settings does not introduce an

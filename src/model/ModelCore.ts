@@ -1,3 +1,4 @@
+import { timestampsEnabled } from "./TimestampScope.js";
 import { Connection } from "../connection/Connection.js";
 import { Builder } from "../query/Builder.js";
 import { Schema } from "../schema/Schema.js";
@@ -309,7 +310,7 @@ export class ModelCore<T extends Record<string, any> = any> {
    */
   static dateColumns(): string[] {
     const keys = dateCastKeys(this.casts);
-    if (this.timestamps) {
+    if (timestampsEnabled(this)) {
       const { createdAt, updatedAt } = this.getTimestampColumns();
       keys.push(createdAt, updatedAt);
     }
@@ -329,7 +330,7 @@ export class ModelCore<T extends Record<string, any> = any> {
   }
 
   static schema(): ModelSchemaBuilder {
-    const timestampColumns = this.timestamps ? this.getTimestampColumns() : undefined;
+    const timestampColumns = timestampsEnabled(this) ? this.getTimestampColumns() : undefined;
     return new ModelSchemaBuilder(this.getTable(), this.getConnection(), {
       casts: this.casts,
       fillable: this.fillable ?? [],
@@ -337,7 +338,7 @@ export class ModelCore<T extends Record<string, any> = any> {
       primaryKey: this.primaryKey,
       keyType: this.keyType,
       incrementing: this.incrementing,
-      timestamps: this.timestamps,
+      timestamps: timestampsEnabled(this),
       createdAtColumn: timestampColumns?.createdAt ?? this.createdAtColumn,
       updatedAtColumn: timestampColumns?.updatedAt ?? this.updatedAtColumn,
       softDeletes: this.softDeletes,
@@ -929,7 +930,7 @@ export class ModelCore<T extends Record<string, any> = any> {
 
   updateTimestamps(): void {
     const constructor = this.getModelConstructor();
-    if (!constructor.timestamps) return;
+    if (!timestampsEnabled(constructor)) return;
     const { createdAt, updatedAt } = constructor.getTimestampColumns();
     const now = this.freshTimestamp();
     (this.$attributes as any)[updatedAt] = now;

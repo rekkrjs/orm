@@ -67,7 +67,7 @@ await authorize(user, "update", announcement); // throws on deny
 
 ## Route-level Actor Extension
 
-`route().can(...)` uses a locally-extended actor internally for policy checks and does not mutate `event.locals.user`.
+`route().can(...)` extends the actor for policy checks and assigns that extended actor to `event.locals.user`, so subsequent route handlers see the same actor.
 
 ## RouteBuilder Integration
 

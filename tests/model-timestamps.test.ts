@@ -246,10 +246,10 @@ describe("Timestamp column metadata", () => {
     expect(columns.slice(1).every((column) => column.type === "dateTime")).toBe(true);
   });
 
-  test("withoutTimestamps() disables writes and restores the inherited flag", async () => {
+  test("withoutTimestamps() disables scoped writes without changing the inherited flag", async () => {
     expect(CamelTimestampModel.timestamps).toBe(true);
     const record = await CamelTimestampModel.withoutTimestamps(async () => {
-      expect(CamelTimestampModel.timestamps).toBe(false);
+      expect(CamelTimestampModel.timestamps).toBe(true);
       return CamelTimestampModel.create({ slug: "without-timestamps", name: "none", count: 0 });
     });
 
@@ -294,7 +294,7 @@ describe("implicit timestamp casts", () => {
 
     expect(Child.hydrate({ created_at: stored }).getAttribute("created_at")).toBeInstanceOf(Date);
     await Parent.withoutTimestamps(async () => {
-      expect(Child.timestamps).toBe(false);
+      expect(Child.timestamps).toBe(true);
       expect(Child.hydrate({ created_at: stored }).getAttribute("created_at")).toBe(stored);
     });
     expect(Child.hydrate({ created_at: stored }).getAttribute("created_at")).toBeInstanceOf(Date);

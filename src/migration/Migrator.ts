@@ -12,7 +12,7 @@ import { TypeGenerator } from "../typegen/TypeGenerator.js";
 import type { TypeGeneratorOptions } from "../typegen/TypeGenerator.js";
 import { discoverModelTables } from "../typegen/discoverModelTables.js";
 import type { Migration } from "./Migration.js";
-import { acquireMigrationLock, type MigrationLockHandle } from "./MigrationLock.js";
+import { acquireMigrationLock, MIGRATION_LOCKS_TABLE, type MigrationLockHandle } from "./MigrationLock.js";
 import { normalizePathList, toPosixPath } from "../utils.js";
 import type { ConnectionConfig } from "../types/index.js";
 
@@ -250,6 +250,16 @@ export class Migrator {
     });
   }
 
+  private async withMigrationLock<T>(callback: () => Promise<T>): Promise<T> {
+    await this.ensureCreateIfMissing();
+    const lock = await this.acquireLock();
+    try {
+      return await callback();
+    } finally {
+      await lock?.release();
+    }
+  }
+
   static on(event: MigrationEvent, listener: MigrationEventListener): () => void {
     const listeners = this.listeners.get(event) || new Set<MigrationEventListener>();
     listeners.add(listener);
@@ -331,7 +341,7 @@ export class Migrator {
 
   /** Applies every pending migration and returns their ids, in the order applied. */
   async run(): Promise<string[]> {
-    return this.withoutSqlLogging(() => this.runWithoutSqlLogging());
+    return this.withoutSqlLogging(() => this.withMigrationLock(() => this.runUnlocked()));
   }
 
   /** Compiles every pending migration through the active driver's real grammar without writing. */
@@ -352,51 +362,40 @@ export class Migrator {
     });
   }
 
-  private async runWithoutSqlLogging(): Promise<string[]> {
-    await this.ensureCreateIfMissing();
-    // The lock comes before the migrations table: creating it is itself a write
-    // two concurrent deploys would race on, and the loser dies with
-    // "table migrations already exists" before any migration runs.
-    const lock = await this.acquireLock();
-    try {
-      await this.ensureMigrationsTable();
-      const ran = await this.getRanRecords();
-      const files = await this.getMigrationFiles();
-      const pending = files.filter((f) => !ran.has(f.id) && !ran.has(f.fileName));
-      this.reportChangedMigrations(files, ran);
+  private async runUnlocked(): Promise<string[]> {
+    await this.ensureMigrationsTable();
+    const ran = await this.getRanRecords();
+    const files = await this.getMigrationFiles();
+    const pending = files.filter((f) => !ran.has(f.id) && !ran.has(f.fileName));
+    this.reportChangedMigrations(files, ran);
 
-      if (pending.length === 0) {
-        this.write("Nothing to migrate.");
-        return [];
-      }
-
-      const batch = (await this.getLastBatchNumber()) + 1;
-      const applied: string[] = [];
-
-      await this.inTransaction(async (connection) => {
-        for (const file of pending) {
-          const migration = await this.resolve(file.id);
-          this.write(`Migrating: ${file.id}`);
-          await this.emit("migrating", { migration: file.id, batch });
-          await migration.up();
-          await new Builder(connection, this.migrationsTable(connection)).insert({
-            migration: file.id,
-            tenant: this.getTenantId(),
-            checksum: file.checksum,
-            batch,
-          });
-          await this.emit("migrated", { migration: file.id, batch });
-          applied.push(file.id);
-          this.write(`Migrated:  ${file.id}`);
-        }
-      });
-      await this.generateTypesIfNeeded();
-      return applied;
-    } catch (error) {
-      throw error;
-    } finally {
-      await lock?.release();
+    if (pending.length === 0) {
+      this.write("Nothing to migrate.");
+      return [];
     }
+
+    const batch = (await this.getLastBatchNumber()) + 1;
+    const applied: string[] = [];
+
+    await this.inTransaction(async (connection) => {
+      for (const file of pending) {
+        const migration = await this.resolve(file.id);
+        this.write(`Migrating: ${file.id}`);
+        await this.emit("migrating", { migration: file.id, batch });
+        await migration.up();
+        await new Builder(connection, this.migrationsTable(connection)).insert({
+          migration: file.id,
+          tenant: this.getTenantId(),
+          checksum: file.checksum,
+          batch,
+        });
+        await this.emit("migrated", { migration: file.id, batch });
+        applied.push(file.id);
+        this.write(`Migrated:  ${file.id}`);
+      }
+    });
+    await this.generateTypesIfNeeded();
+    return applied;
   }
 
   /**
@@ -429,7 +428,7 @@ export class Migrator {
 
   /** Rolls back `steps` batches and returns the ids it undid, in the order undone. */
   async rollback(steps: number = 1): Promise<string[]> {
-    return this.withoutSqlLogging(() => this.rollbackWithoutSqlLogging(steps));
+    return this.withoutSqlLogging(() => this.withMigrationLock(() => this.rollbackUnlocked(steps)));
   }
 
   /** Compiles the selected rollback batches without changing schema or migration records. */
@@ -460,49 +459,41 @@ export class Migrator {
     });
   }
 
-  private async rollbackWithoutSqlLogging(steps: number = 1): Promise<string[]> {
-    await this.ensureCreateIfMissing();
-    const lock = await this.acquireLock();
-    try {
-      await this.ensureMigrationsTable();
-      const batches = await this.getRollbackBatches(steps);
-      if (batches.length === 0) {
-        this.write("Nothing to rollback.");
-        return [];
-      }
-
-      const records = (await this.scopedMigrations()
-        .whereIn("batch", batches)
-        .orderBy("id", "desc")
-        .get()) as MigrationRecord[];
-
-      if (records.length === 0) {
-        this.write("Nothing to rollback.");
-        return [];
-      }
-
-      const rolledBack: string[] = [];
-      await this.inTransaction(async (connection) => {
-        for (const record of records) {
-          const migration = await this.resolve(record.migration);
-          this.write(`Rolling back: ${record.migration}`);
-          await this.emit("rollingBack", { migration: record.migration, batch: record.batch });
-          await migration.down();
-          await new Builder(connection, this.migrationsTable(connection))
-            .where("id", record.id)
-            .delete();
-          await this.emit("rolledBack", { migration: record.migration, batch: record.batch });
-          rolledBack.push(record.migration);
-          this.write(`Rolled back:  ${record.migration}`);
-        }
-      });
-      await this.generateTypesIfNeeded();
-      return rolledBack;
-    } catch (error) {
-      throw error;
-    } finally {
-      await lock?.release();
+  private async rollbackUnlocked(steps: number = 1): Promise<string[]> {
+    await this.ensureMigrationsTable();
+    const batches = await this.getRollbackBatches(steps);
+    if (batches.length === 0) {
+      this.write("Nothing to rollback.");
+      return [];
     }
+
+    const records = (await this.scopedMigrations()
+      .whereIn("batch", batches)
+      .orderBy("id", "desc")
+      .get()) as MigrationRecord[];
+
+    if (records.length === 0) {
+      this.write("Nothing to rollback.");
+      return [];
+    }
+
+    const rolledBack: string[] = [];
+    await this.inTransaction(async (connection) => {
+      for (const record of records) {
+        const migration = await this.resolve(record.migration);
+        this.write(`Rolling back: ${record.migration}`);
+        await this.emit("rollingBack", { migration: record.migration, batch: record.batch });
+        await migration.down();
+        await new Builder(connection, this.migrationsTable(connection))
+          .where("id", record.id)
+          .delete();
+        await this.emit("rolledBack", { migration: record.migration, batch: record.batch });
+        rolledBack.push(record.migration);
+        this.write(`Rolled back:  ${record.migration}`);
+      }
+    });
+    await this.generateTypesIfNeeded();
+    return rolledBack;
   }
 
   private async getRollbackBatches(steps: number): Promise<number[]> {
@@ -527,35 +518,32 @@ export class Migrator {
 
   /** Rolls every batch back and returns the ids it undid. */
   async reset(): Promise<string[]> {
-    return this.withoutSqlLogging(async () => {
-      await this.ensureCreateIfMissing();
+    return this.withoutSqlLogging(() => this.withMigrationLock(async () => {
       const rolledBack: string[] = [];
       while ((await this.getLastBatchNumber()) > 0) {
-        rolledBack.push(...(await this.rollbackWithoutSqlLogging()));
+        rolledBack.push(...(await this.rollbackUnlocked()));
       }
       return rolledBack;
-    });
+    }));
   }
 
   /** Rolls everything back and re-applies it, returning both halves. */
   async refresh(): Promise<{ rolledBack: string[]; applied: string[] }> {
-    return this.withoutSqlLogging(async () => {
-      await this.ensureCreateIfMissing();
+    return this.withoutSqlLogging(() => this.withMigrationLock(async () => {
       const rolledBack: string[] = [];
       while ((await this.getLastBatchNumber()) > 0) {
-        rolledBack.push(...(await this.rollbackWithoutSqlLogging()));
+        rolledBack.push(...(await this.rollbackUnlocked()));
       }
-      return { rolledBack, applied: await this.runWithoutSqlLogging() };
-    });
+      return { rolledBack, applied: await this.runUnlocked() };
+    }));
   }
 
   /** Drops every table and re-applies all migrations, returning what it applied. */
   async fresh(): Promise<string[]> {
-    return this.withoutSqlLogging(async () => {
-      await this.ensureCreateIfMissing();
+    return this.withoutSqlLogging(() => this.withMigrationLock(async () => {
       await this.dropAllTables();
-      return await this.runWithoutSqlLogging();
-    });
+      return await this.runUnlocked();
+    }));
   }
 
   private async generateTypesIfNeeded(): Promise<void> {
@@ -730,6 +718,7 @@ export class Migrator {
           "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
         );
         for (const row of rows as any[]) {
+          if (row.name === MIGRATION_LOCKS_TABLE) continue;
           await this.connection.run(`DROP TABLE IF EXISTS ${grammar.wrap(String(row.name))}`);
         }
       } finally {

@@ -1,3 +1,4 @@
+import { timestampScopes, timestampsEnabled } from "./TimestampScope.js";
 import { Builder } from "../query/Builder.js";
 import { ObserverRegistry } from "./Observer.js";
 import { IdentityMap } from "./IdentityMap.js";
@@ -137,7 +138,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
   ): Promise<Record<string, any>[]> {
     const generatePk = await (this as any).shouldAutoGeneratePrimaryKey(connection);
     const timestampColumns = resolvedTimestampColumns === undefined
-      ? (this.timestamps ? (this as any).getTimestampColumns() as TimestampColumns : null)
+      ? (timestampsEnabled(this) ? (this as any).getTimestampColumns() as TimestampColumns : null)
       : resolvedTimestampColumns;
     const now = timestampColumns ? new Date().toISOString() : null;
     const prepared: Record<string, any>[] = [];
@@ -191,7 +192,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     }
 
     const timestampColumns = resolvedTimestampColumns === undefined
-      ? (this.timestamps ? (this as any).getTimestampColumns() as TimestampColumns : null)
+      ? (timestampsEnabled(this) ? (this as any).getTimestampColumns() as TimestampColumns : null)
       : resolvedTimestampColumns;
     if (timestampColumns) {
       const now = instance.freshTimestamp();
@@ -215,13 +216,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
   }
 
   static async withoutTimestamps<M extends ModelConstructor, R>(this: M, callback: () => Promise<R>): Promise<R> {
-    const original = this.timestamps;
-    (this as any).timestamps = false;
-    try {
-      return await callback();
-    } finally {
-      (this as any).timestamps = original;
-    }
+    return await timestampScopes.run(new Set([...(timestampScopes.getStore() ?? []), this]), callback);
   }
 
   static hydrate<M extends ModelConstructor>(
@@ -304,7 +299,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     updateColumns?: any[],
     options: Omit<BulkModelOptions, "events"> = {}
   ): Promise<any> {
-    const timestampColumns = this.timestamps
+    const timestampColumns = timestampsEnabled(this)
       ? (this as any).getTimestampColumns() as TimestampColumns
       : null;
     const prepared = await (this as any).prepareBulkRecords(
@@ -372,7 +367,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       model.validateBackedEnumAttributes();
     }
 
-    const timestampColumns = this.timestamps
+    const timestampColumns = timestampsEnabled(this)
       ? (this as any).getTimestampColumns() as TimestampColumns
       : null;
 
@@ -552,7 +547,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
         if (events) await ObserverRegistry.dispatch("updating", this as any);
         dirty = this.getDirty();
         Object.assign(this.$attributes, dirty);
-        if (constructor.timestamps) {
+        if (timestampsEnabled(constructor)) {
           const { updatedAt } = constructor.getTimestampColumns();
           const now = this.freshTimestamp();
           (this.$attributes as any)[updatedAt] = now;
@@ -583,7 +578,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       if (events) await ObserverRegistry.dispatch("saving", this as any);
       this.validateBackedEnumAttributes();
 
-      if (constructor.timestamps) {
+      if (timestampsEnabled(constructor)) {
         const { createdAt, updatedAt } = constructor.getTimestampColumns();
         const now = this.freshTimestamp();
         (this.$attributes as any)[createdAt] = now;
@@ -679,7 +674,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
   async touch(): Promise<boolean> {
     if (!this.$exists) return false;
     const constructor = this.getModelConstructor() as typeof ModelPersistence;
-    if (!constructor.timestamps) return false;
+    if (!timestampsEnabled(constructor)) return false;
     const { updatedAt } = constructor.getTimestampColumns();
     const now = this.freshTimestamp();
     const pk = this.getAttribute(constructor.primaryKey);
@@ -703,7 +698,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       .setModel(constructor as any)
       .where(constructor.primaryKey, pk);
 
-    if (constructor.timestamps) {
+    if (timestampsEnabled(constructor)) {
       const { updatedAt } = constructor.getTimestampColumns();
       extra = { ...extra, [updatedAt]: this.freshTimestamp() };
     }

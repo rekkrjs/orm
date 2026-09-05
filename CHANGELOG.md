@@ -1,5 +1,45 @@
 # Changelog
 
+## 3.1.1 — 2026-09-05
+
+### Security and isolation fixes
+
+- Validation rejects prototype-sensitive path segments in both form input
+  normalization and validated output construction. Path writers no longer walk
+  inherited containers; normalization and error dictionaries use safe objects.
+  This prevents rejected forms and accepted wildcard JSON from contaminating
+  `Object.prototype`.
+- PostgreSQL `Connection.withTenant()` rejects changes to the RLS tenant value,
+  setting or role inside an active scope, and rejects entry inside an existing
+  non-RLS transaction. Identical reentry reuses the scope. Logical tenant IDs
+  may differ from RLS values; borrowed sessions restore their logical identity
+  when the transaction ends.
+- Redis cache `flush()` deletes only its `cache:`, `cache-tags:` and `tag:`
+  families, preserving queues and other keys sharing the prefix.
+- Migration `fresh()`, `refresh()` and `reset()` hold one lock across the entire
+  destructive operation. SQLite rebuilds preserve the table holding that lock.
+- `withoutTimestamps()` uses asynchronous scope isolation instead of mutating
+  shared static configuration, preserving unrelated writes and overlapping or
+  nested callbacks. Implicit casts follow the scoped setting too.
+
+### Compatibility and verification
+
+- Fixes are enabled automatically. No dependency, database schema or Redis key
+  migration is needed when upgrading from v3.1.0. Bun minimum remains 1.4.1.
+  Code reading `Model.timestamps` inside `withoutTimestamps()` now sees the
+  configured value; timestamp suppression applies to the callback's operations.
+- Corrected connection-capture and SvelteKit policy documentation. Added a global
+  prototype invariant and 31 tests for malicious inputs, shipped Redis defaults,
+  queued search, scope composition and migration lock contention.
+- The full suite passes with 1,726 tests, including real SQLite, PostgreSQL,
+  MySQL and Redis. Against parent `64ab254`, 24 of the new cases fail, confirming
+  detection of the defects rather than merely exercising the changed code.
+- Nine paired benchmark runs show small, consistent costs in flat validation
+  (+6.8–7.5%) and Redis flush (+4.6%), faster identical RLS reentry (-42.9%), and
+  no consistent slowdown in normal hydration or SQLite CRUD. These are local
+  workloads, not application latency guarantees. See the [report and raw
+  measurements](benchmarks/audit-fixes.md).
+
 ## 3.1.0 — 2026-09-04
 
 First published 3.x release, including the previously unreleased v3 changes.
