@@ -1,23 +1,26 @@
 import { InvalidEnumValueError } from "./InvalidEnumValueError.js";
 
-const backedEnumMetadata: unique symbol = Symbol("@rekkr/orm/backed-enum");
-
-interface BackedEnumMetadata {
-  readonly values: readonly string[];
-}
+// Type-only brand. Its value is an enum value, not an object, so descriptors
+// satisfy `Record<PropertyKey, string | number>` (TypeBox 1.x `Enum`).
+declare const backedEnumBrand: unique symbol;
 
 type BackedEnumCases = Readonly<Record<string, string>>;
 
 export type BackedEnumDefinition<
   Cases extends BackedEnumCases = BackedEnumCases,
 > = Readonly<Cases> & {
-  readonly [backedEnumMetadata]: BackedEnumMetadata;
+  readonly [backedEnumBrand]: Cases[keyof Cases];
 };
 
 export type EnumValue<T extends BackedEnumDefinition> =
   T extends BackedEnumDefinition<infer Cases> ? Cases[keyof Cases] : never;
 
-const memberships = new WeakMap<object, ReadonlySet<string>>();
+interface BackedEnumRegistration {
+  readonly values: readonly string[];
+  readonly membership: ReadonlySet<string>;
+}
+
+const registrations = new WeakMap<object, BackedEnumRegistration>();
 
 export function backedEnum<const Cases extends BackedEnumCases>(
   cases: Cases,
@@ -47,33 +50,24 @@ export function backedEnum<const Cases extends BackedEnumCases>(
     membership.add(value);
   }
 
-  const frozenValues = Object.freeze(values);
-  const metadata = Object.freeze({ values: frozenValues });
-  const descriptor = Object.fromEntries(entries);
-  Object.defineProperty(descriptor, backedEnumMetadata, {
-    value: metadata,
-    enumerable: false,
-    writable: false,
-    configurable: false,
-  });
-  Object.freeze(descriptor);
-  memberships.set(descriptor, membership);
+  const descriptor = Object.freeze(Object.fromEntries(entries));
+  registrations.set(descriptor, { values: Object.freeze(values), membership });
   return descriptor as BackedEnumDefinition<Cases>;
 }
 
 export function isBackedEnumDefinition(value: unknown): value is BackedEnumDefinition {
-  return typeof value === "object" && value !== null && memberships.has(value);
+  return typeof value === "object" && value !== null && registrations.has(value);
 }
 
 export function getBackedEnumValues(definition: BackedEnumDefinition): readonly string[] {
-  return definition[backedEnumMetadata].values;
+  return registrations.get(definition)!.values;
 }
 
 export function backedEnumContains(
   definition: BackedEnumDefinition,
   value: unknown,
 ): value is string {
-  return typeof value === "string" && memberships.get(definition)?.has(value) === true;
+  return typeof value === "string" && registrations.get(definition)?.membership.has(value) === true;
 }
 
 export function assertBackedEnumValue(

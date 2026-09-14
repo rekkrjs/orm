@@ -22,7 +22,8 @@
     "tests/model-timestamps.test.ts",
     "tests/native-appends.test.ts",
     "tests/schema-types.test.ts",
-    "tests/schema-enum.test.ts"
+    "tests/schema-enum.test.ts",
+    "tests/backed-enum-types.test.ts"
   ],
   "exclude": ["node_modules", "dist"]
 }

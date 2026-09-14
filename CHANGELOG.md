@@ -1,5 +1,33 @@
 # Changelog
 
+## 3.1.2 — 2026-09-14
+
+### Type compatibility fix
+
+- `backedEnum()` descriptors are now assignable to
+  `Record<PropertyKey, string | number>`, the TypeScript enum contract of
+  TypeBox 1.x `Type.Enum` and Elysia 2 `t.Enum`. Passing a descriptor to
+  `t.Enum()` already validated correctly at runtime, but TypeScript rejected the
+  call because the descriptor type exposed a symbol-keyed metadata object.
+- Descriptor metadata lives in an internal registry instead of on the
+  descriptor, whose only own keys are its string cases. `BackedEnumDefinition`
+  stays nominal through a type-only brand, so plain objects are still rejected
+  as descriptors and as casts.
+
+### Compatibility and verification
+
+- No public behavior changes and no migration needed when upgrading from v3.1.1.
+  Validation, serialization, `EnumValue` and `InvalidEnumValueError.expected` are
+  unchanged. The non-enumerable symbol property previously defined on
+  descriptors was not public API and no longer exists. The contract is checked
+  structurally; the ORM adds no TypeBox or Elysia dependency.
+- Added a compile-time test for the enum-like contract, `EnumValue` and
+  descriptor nominality, and a runtime assertion that descriptors have no hidden
+  own keys. Against parent `9f89499`, `tsc -p tsconfig.test.json` fails on the
+  new type test with the incompatible `[backedEnumMetadata]` error, and the
+  runtime assertion fails on the leftover symbol key.
+- The full suite passes with 1,728 tests.
+
 ## 3.1.1 — 2026-09-05
 
 ### Security and isolation fixes

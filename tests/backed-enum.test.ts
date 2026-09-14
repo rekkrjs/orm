@@ -83,18 +83,12 @@ class AccessorEnumRecord extends PermissiveModel {
 }
 
 describe("backedEnum", () => {
-  test("exposes only frozen string cases as enumerable properties", () => {
-    expect(Object.keys(PublicationState)).toEqual(["Draft", "Published"]);
+  test("exposes only frozen string cases as own properties", () => {
+    expect(Reflect.ownKeys(PublicationState)).toEqual(["Draft", "Published"]);
+    expect(Object.getPrototypeOf(PublicationState)).toBe(Object.prototype);
     expect(Object.values(PublicationState)).toEqual(["draft", "published"]);
     expect(JSON.stringify(PublicationState)).toBe('{"Draft":"draft","Published":"published"}');
     expect(Object.isFrozen(PublicationState)).toBe(true);
-
-    const symbols = Object.getOwnPropertySymbols(PublicationState);
-    expect(symbols).toHaveLength(1);
-    const property = Object.getOwnPropertyDescriptor(PublicationState, symbols[0]!);
-    expect(property).toMatchObject({ enumerable: false, writable: false, configurable: false });
-    expect(Object.isFrozen(property!.value)).toBe(true);
-    expect(Object.isFrozen(property!.value.values)).toBe(true);
   });
 
   test("copies its input and validates runtime definitions", () => {

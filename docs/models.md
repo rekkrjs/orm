@@ -273,7 +273,9 @@ Descriptor constants and serialized model values are primitive strings. The
 descriptor, its case map, and its internal value list are immutable. Empty
 descriptors, empty or duplicate values, and non-string values fail immediately
 when `backedEnum()` is called. `BackedEnumDefinition` is exported for APIs that
-accept any descriptor.
+accept any descriptor. A descriptor's only own keys are its string cases, so APIs
+typed as `Record<PropertyKey, string | number>`, such as TypeBox 1.x `Type.Enum`
+or Elysia 2 `t.Enum`, accept it directly.
 
 Reads, writes, bulk model operations, and hydration reject values outside the
 descriptor with `InvalidEnumValueError`. The error exposes `model`, `attribute`,
