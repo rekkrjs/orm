@@ -107,11 +107,6 @@ export interface HavingClause {
   not?: boolean;
 }
 
-export interface UnionClause {
-  query: string;
-  all: boolean;
-}
-
 export type SQLitePragmaConfig = {
   journalMode?: string | false;
   synchronous?: string | false;

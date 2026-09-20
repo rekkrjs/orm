@@ -307,7 +307,7 @@ export class ModelSchemaBuilder {
   constructor(
     private tableName: string,
     private connection: Connection,
-    private info: ModelInfo
+    info: ModelInfo
   ) {
     this.blueprint = new Blueprint(tableName);
     if (info.schemaDefinition) {

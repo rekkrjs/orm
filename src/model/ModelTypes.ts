@@ -1,4 +1,3 @@
-import type { Connection } from "../connection/Connection.js";
 import type { Builder } from "../query/Builder.js";
 import type { BackedEnumDefinition } from "./BackedEnum.js";
 
@@ -94,6 +93,11 @@ type BaseModelInstanceKey =
   | "json"
   | "toString"
   | "freshTimestamp"
+  | "push"
+  | "getKey"
+  | "getKeyName"
+  | "getAttributes"
+  | "assertAttributeExists"
   | "setRelation"
   | "getRelation"
   | "relationLoaded"

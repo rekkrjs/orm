@@ -16,6 +16,8 @@
 | Attribute casting        | Casts and accessors / mutators                                                            | `static casts`, custom casts, and runtime `mergeCasts()`                               |
 | Dirty tracking           | `$model->isDirty()`                                                                       | `isDirty()`, `getDirty()`, and proxy-based property access                             |
 | Save / refresh           | `$model->save()`, `$model->refresh()`                                                     | `save()`, `refresh()`, and `touch()`                                                   |
+| Cascading save           | `$model->push()`                                                                          | `await model.push()`                                                                   |
+| Strict development mode  | `Model::shouldBeStrict()`                                                                 | `Model.shouldBeStrict()`                                                               |
 | Bulk writes              | `createMany`, `upsert`, `saveMany` via collections/packages                               | Built-in `createMany`, `upsert`, `saveMany`, `insert`, and chunking                    |
 | Eager loading            | `with("posts", "profile")`                                                                | `with("posts", "profile")`                                                             |
 | Lazy loading on a model  | `$user->load("posts")`                                                                    | `await user.load("posts")`                                                             |

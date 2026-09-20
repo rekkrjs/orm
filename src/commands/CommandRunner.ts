@@ -2,7 +2,6 @@ import { parseArgs, styleText } from "node:util";
 import { parseSignature, type ParsedSignature } from "./SignatureParser.js";
 import { getPromptService } from "./Prompt.js";
 import {
-  Command,
   isCommandConstructor,
   type CommandContext,
   type CommandEntry,

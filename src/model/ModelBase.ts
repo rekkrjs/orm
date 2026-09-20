@@ -34,10 +34,6 @@ export type {
 import type {
   ModelConstructor,
   EagerLoadConstraint,
-  EagerLoadDefinition,
-  EagerLoadInput,
-  MorphEagerLoadMap,
-  MorphCountLoadMap,
   ModelAttributes,
   ModelColumn,
   ModelColumnValue,
@@ -45,12 +41,8 @@ import type {
   ModelMassAssignmentInput,
   ModelMassAssignmentInputWithout,
   CastDefinition,
-  CastsAttributes,
-  AttributeDefinition,
   AccessorMap,
   GlobalScope,
-  BulkModelOptions,
-  SaveOptions,
   StripTablePrefix,
 } from "./ModelTypes.js";
 
@@ -103,6 +95,7 @@ type BaseModelInstanceKey =
   | "load" | "loadMissing" | "loadMorph" | "loadCount" | "loadSum" | "loadAvg" | "loadMin"
   | "loadMax" | "delete" | "saveQuietly" | "deleteQuietly" | "restore"
   | "forceDelete" | "fresh" | "refresh" | "toJSON" | "json" | "toString" | "freshTimestamp"
+  | "push" | "getKey" | "getKeyName" | "getAttributes" | "assertAttributeExists"
   | "setRelation" | "getRelation" | "relationLoaded" | "setRelations" | "unsetRelation" | "unsetRelations" | "hasMany" | "belongsTo" | "hasOne"
   | "hasManyThrough" | "hasOneThrough" | "belongsToMany" | "morphTo" | "morphOne"
   | "morphMany" | "morphToMany" | "morphedByMany";
@@ -255,16 +248,6 @@ export type StrictTypedEagerLoad<T> =
   | { name: string & NestedRelationPath<T>; constraint?: EagerLoadConstraint }
   | TypedConstraintMap<T>;
 
-type LoadedRelationType<F> =
-  F extends (...args: any[]) => HasMany<infer R, any> ? Collection<R>
-  : F extends (...args: any[]) => HasOne<infer R> ? R | null
-  : F extends (...args: any[]) => BelongsTo<infer R> ? R | null
-  : F extends (...args: any[]) => BelongsToMany<infer R, any, any> ? Collection<R>
-  : F extends (...args: any[]) => MorphMany<infer R> ? Collection<R>
-  : F extends (...args: any[]) => MorphOne<infer R> ? R | null
-  : F extends (...args: any[]) => MorphToMany<infer R, any, any, any> ? Collection<R>
-  : F extends (...args: any[]) => Relation<infer R> ? Collection<R> | R
-  : unknown;
 
 type LoadedTypeWithNested<F, ElemType> =
   F extends (...args: any[]) => HasMany<any, any> ? Collection<ElemType>
@@ -348,11 +331,6 @@ export type WithRelationExistsMap<T, R extends object> =
 export type AggregateConstraint<T, R extends string> = TypedConstraintCallback<T, R & NestedRelationPath<T>>;
 export type AggregateColumn<T, R extends string> = ModelColumn<RelationRelatedModel<T, R>>;
 
-type AggregateLoadRelationName<T> = [ModelRelationName<T>] extends [never] ? string : string & ModelRelationName<T>;
-type AggregateLoadColumn<T, R extends string> = [ModelRelationName<T>] extends [never] ? string : AggregateColumn<T, R & ModelRelationName<T>>;
-type AggregateLoadConstraint<T, R extends string> = [ModelRelationName<T>] extends [never] ? EagerLoadConstraint : AggregateConstraint<T, R & ModelRelationName<T>>;
-type AggregateLoadValue<T, R extends string, C extends string> = [ModelRelationName<T>] extends [never] ? any : AggregateValueForRelation<T, R & ModelRelationName<T>, C>;
-
 type WithLoadedRelationsFromConstraintMapShape<T, R extends object> =
   Omit<T, keyof R & keyof T> & {
     [K in keyof R & keyof T & string]: T[K] extends (...args: any[]) => ModelRelationValue
@@ -384,10 +362,13 @@ type JsonRelationValue<T> =
   T extends { toJSON(): infer R } ? R
   : T;
 
+type JsonAttributeValue<V> = V extends Date ? string : V;
+type JsonAttributes<T> = { [K in keyof T]: JsonAttributeValue<T[K]> };
+
 export type ModelJson<T> =
-  Omit<ModelAttributes<T>, JsonRelationKeys<T>> &
+  JsonAttributes<Omit<ModelAttributes<T>, JsonRelationKeys<T>>> &
   { [K in JsonRelationKeys<T>]: JsonRelationValue<T[K]>; } &
-  { [K in JsonExtraKeys<T>]: T[K]; };
+  { [K in JsonExtraKeys<T>]: JsonAttributeValue<T[K]>; };
 
 type DirectSelectionSource<S extends string> =
   S extends `${infer Source} as ${string}` ? StripTablePrefix<Source>
@@ -419,10 +400,10 @@ export type DirectJson<TResult, TSelected extends string = "*", TWith = TResult>
   [K in keyof (
     DirectSelectedAttributes<TResult, TSelected>
     & Pick<TWith, Exclude<keyof TWith, keyof TResult>>
-  )]: (
+  )]: JsonAttributeValue<(
     DirectSelectedAttributes<TResult, TSelected>
     & Pick<TWith, Exclude<keyof TWith, keyof TResult>>
-  )[K];
+  )[K]>;
 };
 
 // ─── Dot-path type utilities ──────────────────────────────────────────────────
@@ -588,7 +569,12 @@ export const modelProxyHandler: ProxyHandler<any> = {
         return accessors[prop].get!((target.$attributes as any)[prop], target.$attributes as any, target);
       }
       if (Object.hasOwn(target.$relations, prop)) return target.$relations[prop];
-      if (!(prop in target) && Object.hasOwn(target.$attributes, prop)) return target.getAttribute(prop);
+      if (!(prop in target)) {
+        if (Object.hasOwn(target.$attributes, prop)) return target.getAttribute(prop);
+        // `then` is how the runtime probes for a thenable — `await model` must
+        // stay a no-op rather than a strict-mode failure.
+        if (prop !== "then") target.assertAttributeExists(prop);
+      }
     }
     return Reflect.get(target, prop, receiver);
   },

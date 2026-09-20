@@ -404,7 +404,7 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
         metadata: { driver, nested: [1, 2] },
         state: "ready",
       });
-      expect((direct[0] as any).happened_at).toBeInstanceOf(Date);
+      expect((direct[0] as any).happened_at).toBe("2026-08-20T10:11:12.000Z");
     });
 
     run("paginates joined and grouped queries with having bindings", async () => {

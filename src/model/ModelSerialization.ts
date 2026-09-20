@@ -1,42 +1,6 @@
 import { ModelPersistence } from "./ModelPersistence.js";
 import { getModelTarget, type ModelJson, type DotPaths, type DeepPick } from "./ModelBase.js";
-
-/**
- * Whether a stored value already equals what `ModelCore.castAttribute` would
- * return, letting serialization read `$attributes` directly instead of paying
- * for the full cast path.
- *
- * This mirrors `ModelCore.castAttribute` and must stay in sync with it: change
- * what a cast returns there and the matching arm here has to change too, or
- * serialization will hand back the untransformed value. Only bare cast names
- * are listed, so parameterised casts ("decimal:2", "datetime:…") fall through
- * to the default. Returning `false` is always safe — it just costs a call.
- *
- * Date-producing casts are deliberately absent: `castAttribute` builds a
- * fresh Date, and short-circuiting to the stored instance would leak a mutable
- * reference to `$attributes` (which `$original` shares), so an in-place edit
- * would silently corrupt the snapshot.
- */
-function castValueIsReady(cast: unknown, value: unknown): boolean {
-  if (value === null || value === undefined) return true;
-  if (typeof cast !== "string") return false;
-
-  switch (cast) {
-    case "string":
-      return typeof value === "string";
-    case "number":
-    case "integer":
-    case "int":
-    case "float":
-    case "double":
-      return typeof value === "number";
-    case "boolean":
-    case "bool":
-      return typeof value === "boolean";
-    default:
-      return false;
-  }
-}
+import { castValueIsReady, serializeDate } from "./ModelJsonRow.js";
 
 function deepPick(obj: Record<string, any>, paths: string[]): Record<string, any> {
   const groups = new Map<string, string[]>();
@@ -151,32 +115,35 @@ export class ModelSerialization<T extends Record<string, any> = any> extends Mod
     const visible = staticVisible.length > 0
       ? new Set([...staticVisible, ...target.$visible])
       : undefined;
-    const hidden = new Set([...staticHidden, ...target.$hidden]);
-    for (const key of target.$visible) hidden.delete(key);
+    let hidden: Set<string> | undefined;
+    if (staticHidden.length > 0 || target.$hidden.length > 0) {
+      hidden = new Set([...staticHidden, ...target.$hidden]);
+      for (const key of target.$visible) hidden.delete(key);
+    }
     const attributes = target.$attributes as Record<string, any>;
     const accessors = constructor.accessors || {};
     const casts = target.$mergedCasts;
     const result: Record<string, any> = {};
 
     for (const key of Object.keys(attributes)) {
-      if ((visible && !visible.has(key)) || hidden.has(key)) continue;
+      if ((visible && !visible.has(key)) || hidden?.has(key)) continue;
       const value = attributes[key];
       const cast = casts[key];
       const needsCastPath = Boolean(accessors[key]?.get) || (cast !== undefined && !castValueIsReady(cast, value));
-      result[key] = needsCastPath ? target.getAttributeFromTarget(receiver, key) : value;
+      result[key] = serializeDate(needsCastPath ? target.getAttributeFromTarget(receiver, key) : value);
     }
     if (target.$appendsOverride !== undefined || (constructor.appends?.length || 0) > 0 || target.$appends.length > 0) {
       // Bind the Proxy intentionally so getAppends() overrides keep public
       // attribute lookup semantics.
       for (const key of target.getAppends.call(this)) {
-        if ((visible && !visible.has(key)) || hidden.has(key)) continue;
+        if ((visible && !visible.has(key)) || hidden?.has(key)) continue;
         const nativeGetter = accessors[key]?.get ? undefined : findNativeGetter(receiver, key);
-        result[key] = nativeGetter ? nativeGetter.call(receiver) : target.getAttributeFromTarget(receiver, key as any);
+        result[key] = serializeDate(nativeGetter ? nativeGetter.call(receiver) : target.getAttributeFromTarget(receiver, key as any));
       }
     }
     if (includeRelations) {
       for (const key of Object.keys(target.$relations)) {
-        if ((visible && !visible.has(key)) || hidden.has(key)) continue;
+        if ((visible && !visible.has(key)) || hidden?.has(key)) continue;
         const value = target.$relations[key];
         if (value === null || value === undefined) {
           result[key] = value;

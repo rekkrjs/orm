@@ -238,8 +238,8 @@ Here `timestamp` means a temporal database value, not Laravel's Unix-timestamp
 cast. Store epoch seconds with a `number` cast instead.
 
 The `date` cast represents a calendar day, not an instant: time components are
-discarded in UTC before storage. `toJSON()` still exposes the decoded `Date`, so
-JSON serialization emits the full midnight value, such as
+discarded in UTC before storage. Reading the attribute gives a `Date` at UTC
+midnight, and serialization emits that full midnight value as a string, such as
 `2026-08-26T00:00:00.000Z`. Use `datetime` when the column must preserve a time.
 
 ### Backed enum casts
@@ -458,6 +458,37 @@ user.forceFill({ is_admin: true });
 await user.save();
 ```
 
+## Strict mode
+
+Three guards turn a silent model foot-gun into a throw. Each one stands alone,
+and `shouldBeStrict()` flips all three:
+
+```ts
+Model.shouldBeStrict();            // every model — do this in development only
+StrictUser.shouldBeStrict();       // or just one model
+StrictUser.shouldBeStrict(false);  // and back off
+```
+
+| Guard | Throws when |
+| --- | --- |
+| `preventLazyLoading` | A relation is loaded outside `with()` |
+| `preventSilentlyDiscardingAttributes` | `fill()` drops an attribute the policy protects |
+| `preventAccessingMissingAttributes` | A persisted model is asked for a column the query never selected |
+
+```ts
+User.shouldBeStrict();
+
+const user = await User.select("id", "name").firstOrFail();
+user.name;   // fine
+user.email;  // throws MissingAttributeError — email was never selected
+```
+
+A missing attribute only throws on a model that came back from the database:
+an unsaved model, a model still in `$wasRecentlyCreated` (its row may hold
+defaults it never read back), a declared cast, an accessor, a relation, and a
+relation method all read as before. Strict mode is set per class, so enabling
+it on one model leaves its siblings and its parent untouched.
+
 ## Visibility (`hidden` / `visible`)
 
 Control what `toJSON()` returns. Use `hidden` to remove fields from output, or `visible` to allow-list:
@@ -555,6 +586,26 @@ await user.update({ name: "Bob", email: "bob@example.com" });
 user.getAttribute("name");
 user.setAttribute("name", "Dana");
 ```
+
+### `push` — save the model and its loaded relations
+
+`save()` writes one row. `push()` writes that row and then every relation
+already loaded on the model, depth first:
+
+```ts
+const user = await User.with("posts.comments").findOrFail(1);
+user.name = "Alice Smith";
+user.posts[0].title = "Edited";
+user.posts[0].comments[0].body = "Edited too";
+
+await user.push();   // three UPDATEs, one call
+```
+
+Only loaded relations are visited — `push()` never queries for more — and
+foreign keys are left alone, so a related model that was never associated stays
+unassociated. Each model is saved at most once, so a parent holding its own
+children terminates instead of recursing. `push({ events: false })` skips
+observers for the whole cascade.
 
 ### Delete
 
@@ -743,6 +794,22 @@ const fetched = await User.findOrFail(created.id);
 fetched.$wasRecentlyCreated;  // false
 ```
 
+### `getKey` / `getKeyName` / `getAttributes`
+
+Read the primary key without hard-coding its name, or take the raw attribute
+bag:
+
+```ts
+user.getKeyName();    // "id" — whatever static primaryKey says
+user.getKey();        // 1
+
+user.getAttributes(); // { id: 1, name: "Alice", settings: '{"theme":"dark"}' }
+```
+
+`getAttributes()` returns stored values, not cast ones: a `json` column comes
+back as its string, a `boolean` as `1`. It is a copy, so editing it never
+reaches the model — use `setAttribute()` for that.
+
 ### `wasChanged` / `getChanges`
 
 Inspect which attributes changed in the last `save()`:
@@ -849,6 +916,18 @@ user.json({ relations: false });   // attributes only, no relations
 ```
 
 `JSON.stringify(user)` calls `toJSON()`, so it picks up relations and accessor-defined virtual fields automatically.
+
+Dates come out as ISO strings, not `Date` objects:
+
+```ts
+user.toJSON().created_at;   // "2026-08-20T10:11:12.000Z"
+user.created_at;            // Date — reading the attribute is unchanged
+```
+
+`toJSON()`, `json()` and `rawJson()` agree on this. The bytes
+`JSON.stringify()` produces are the same as before, since it serialized those
+`Date` objects to the same text; what changed is what you get when you inspect
+the object without serializing it.
 
 ### Direct query JSON
 

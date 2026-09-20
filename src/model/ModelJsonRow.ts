@@ -1,5 +1,5 @@
 import { timestampsEnabled } from "./TimestampScope.js";
-import { formatDecimal } from "../utils.js";
+import { formatDecimal, formatIso } from "../utils.js";
 import {
   assertBackedEnumValue,
   isBackedEnumDefinition,
@@ -10,7 +10,6 @@ export interface RawJsonPlan {
   readonly modelName: string;
   readonly casts: Readonly<Record<string, CompiledCast>>;
   readonly enumCasts: readonly CompiledCast[];
-  readonly fastCasts?: readonly CompiledCast[];
   readonly defaults: Readonly<Record<string, unknown>>;
   readonly accessors: Record<string, any>;
   readonly visible?: ReadonlySet<string>;
@@ -115,6 +114,104 @@ export function implicitDateCasts(model: ModelConstructor): Record<string, CastD
   return casts;
 }
 
+const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+/** The number the two digits at `index` spell; the scan above proved they are digits. */
+function twoDigits(value: string, index: number): number {
+  return (value.charCodeAt(index) - 48) * 10 + (value.charCodeAt(index + 1) - 48);
+}
+
+/**
+ * True when the string is already exactly what `toISOString()` would return:
+ * `YYYY-MM-DDTHH:MM:SS.sssZ` over a real calendar date and a real time of day.
+ *
+ * The calendar check is not optional. JavaScript rolls impossible dates over,
+ * so a format-only test would pass `2023-02-30` through unchanged while the
+ * cast path turns it into `2023-03-02` — the same output today, a silent data
+ * change tomorrow. Measured over 20,000 generated instants plus every day
+ * 29–32 of every month from 1996 to 2025, format alone diverges on 562 of
+ * them and format plus calendar on none.
+ *
+ * It allocates nothing on purpose: the point is to not build a Date, and a
+ * Date built to count the days in a month hands that saving straight back.
+ */
+export function isCanonicalIso(value: string): boolean {
+  if (value.length !== 24) return false;
+  for (let index = 0; index < 24; index++) {
+    const code = value.charCodeAt(index);
+    switch (index) {
+      case 4: case 7: if (code !== 45) return false; break;   // -
+      case 10: if (code !== 84) return false; break;          // T
+      case 13: case 16: if (code !== 58) return false; break; // :
+      case 19: if (code !== 46) return false; break;          // .
+      case 23: if (code !== 90) return false; break;          // Z
+      default: if (code < 48 || code > 57) return false;
+    }
+  }
+
+  const month = twoDigits(value, 5);
+  if (month < 1 || month > 12) return false;
+  const year = twoDigits(value, 0) * 100 + twoDigits(value, 2);
+  const day = twoDigits(value, 8);
+  const leapDay = month === 2 && year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  if (day < 1 || day > (leapDay ? 29 : MONTH_DAYS[month - 1]!)) return false;
+  return twoDigits(value, 11) <= 23 && twoDigits(value, 14) <= 59 && twoDigits(value, 17) <= 59;
+}
+
+/**
+ * Skip a cast when its stored value already serializes to the same output.
+ * Keep in sync with castCompiledAttribute below; a parameterized cast such as
+ * `decimal:2` finds no case here and takes the full path.
+ *
+ * Reusing a datetime/timestamp value is safe because serializeDate emits
+ * strings or null: a Date is formatted where it lies instead of being rebuilt
+ * from itself first, and a canonical ISO string is already the text that
+ * formatting it would produce. The `date` cast must still run — it truncates
+ * to the UTC calendar day.
+ */
+export function castValueIsReady(cast: unknown, value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof cast !== "string") return false;
+
+  switch (cast) {
+    case "string":
+      return typeof value === "string";
+    case "number":
+    case "integer":
+    case "int":
+    case "float":
+    case "double":
+      return typeof value === "number";
+    case "boolean":
+    case "bool":
+      return typeof value === "boolean";
+    case "datetime":
+    case "timestamp":
+      return value instanceof Date || (typeof value === "string" && isCanonicalIso(value));
+    default:
+      return false;
+  }
+}
+
+/** Match JSON.stringify: invalid dates become null instead of throwing. */
+export function serializeDate(value: unknown): unknown {
+  return value instanceof Date
+    ? (Number.isNaN(value.getTime()) ? null : formatIso(value))
+    : value;
+}
+
+/** Preserve the driver row; copy only when a Date needs serialization. */
+export function serializeRowDates(row: Record<string, unknown>): Record<string, unknown> {
+  let output = row;
+  for (const key of Object.keys(row)) {
+    const value = row[key];
+    if (!(value instanceof Date)) continue;
+    if (output === row) output = { ...row };
+    output[key] = Number.isNaN(value.getTime()) ? null : formatIso(value);
+  }
+  return output;
+}
+
 export function createRawJsonPlan(
   model: ModelConstructor,
   baseModel: ModelConstructor,
@@ -137,7 +234,6 @@ export function createRawJsonPlan(
     attribute,
     compileCast(definition, { modelName: model.name, attribute }),
   ]));
-  const compiledCasts = Object.values(casts);
 
   const visibleValues = model.visible ?? [];
   const hiddenValues = model.hidden ?? [];
@@ -149,20 +245,12 @@ export function createRawJsonPlan(
   const accessors = model.accessors ?? {};
   const visible = visibleValues.length > 0 ? new Set(visibleValues) : undefined;
   const hidden = hiddenValues.length > 0 ? new Set(hiddenValues) : undefined;
-  const enumCasts = compiledCasts.filter((cast) => cast.backedEnum);
-  const fastCasts = Object.keys(defaults).length === 0
-      && !hasAccessorConfiguration(accessors)
-      && !visible
-      && !hidden
-      && !compiledCasts.some((cast) => cast.custom)
-    ? compiledCasts.filter((cast) => !cast.backedEnum)
-    : undefined;
+  const enumCasts = Object.values(casts).filter((cast) => cast.backedEnum);
 
   return {
     modelName: model.name,
     casts,
     enumCasts,
-    fastCasts,
     defaults,
     accessors,
     visible,
@@ -178,26 +266,12 @@ export function canReturnRawJsonRows(plan: RawJsonPlan): boolean {
     && !plan.hidden;
 }
 
+/** Hydration stores json casts as text: `$attributes` holds what the row holds. */
 export function normalizeHydratedCastValue(cast: unknown, value: unknown): unknown {
   if (typeof cast !== "string" || value === null || value === undefined || typeof value === "string") return value;
-  const separator = typeof cast === "string" ? cast.indexOf(":") : -1;
-  const type = typeof cast === "string"
-    ? separator === -1 ? cast : cast.slice(0, separator)
-    : undefined;
-  return normalizeHydratedCastValueForType(cast, value, type);
-}
-
-function normalizeHydratedCastValueForType(
-  cast: unknown,
-  value: unknown,
-  type: string | undefined,
-): unknown {
-  if (typeof cast !== "string" || value === null || value === undefined || typeof value === "string") {
-    return value;
-  }
-  return type === "json" || type === "array" || type === "object"
-    ? JSON.stringify(value)
-    : value;
+  const separator = cast.indexOf(":");
+  const type = separator === -1 ? cast : cast.slice(0, separator);
+  return type === "json" || type === "array" || type === "object" ? JSON.stringify(value) : value;
 }
 
 const builtInCasts = new Set([
@@ -315,21 +389,6 @@ export function serializeRawJsonRow(
   row: Record<string, unknown>,
   plan: RawJsonPlan,
 ): Record<string, unknown> {
-  if (plan.fastCasts) {
-    const output = { ...row };
-    for (const cast of plan.enumCasts) {
-      if (Object.hasOwn(row, cast.attribute)) castCompiledAttribute(cast, row[cast.attribute]);
-    }
-    for (const cast of plan.fastCasts) {
-      if (!Object.hasOwn(output, cast.attribute)) continue;
-      output[cast.attribute] = castCompiledAttribute(
-        cast,
-        normalizeHydratedCastValueForType(cast.definition, output[cast.attribute], cast.type),
-      );
-    }
-    return output;
-  }
-
   const attributes = Object.keys(plan.defaults).length > 0
     ? { ...plan.defaults, ...row }
     : row;
@@ -351,12 +410,15 @@ export function serializeRawJsonRow(
       throw new Error(`${plan.modelName}.rawJson() does not support the custom cast on ${key} because it appears in the output.`);
     }
 
-    output[key] = cast === undefined || cast.backedEnum
-      ? attributes[key]
-      : castCompiledAttribute(
-          cast,
-          normalizeHydratedCastValueForType(cast.definition, attributes[key], cast.type),
-        );
+    // No normalization on the way in: a driver that returns an object for a
+    // json column can keep it. The row is this call's own — fresh from the
+    // driver, or freshly parsed by the cache store — so nothing is shared.
+    const value = attributes[key];
+    const ready = cast === undefined
+      || cast.backedEnum
+      // An unsupported cast has to reach castCompiledAttribute to report itself.
+      || (cast.supported && castValueIsReady(cast.definition, value));
+    output[key] = serializeDate(ready ? value : castCompiledAttribute(cast!, value));
   }
   return output;
 }

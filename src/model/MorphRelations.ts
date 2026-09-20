@@ -8,7 +8,6 @@ import type {
   Model,
   ModelMassAssignmentInputWithout,
   ModelConstructor,
-  EagerLoadInput,
   MorphCountLoadMap,
   MorphEagerLoadMap,
   MorphRelationInput,

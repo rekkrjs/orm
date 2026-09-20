@@ -1,4 +1,5 @@
 import type { FullTextOptions } from "../../fulltext.js";
+import { formatIso } from "../../utils.js";
 
 export abstract class Grammar {
   abstract wrap(value: string): string;
@@ -27,7 +28,7 @@ export abstract class Grammar {
     if (value === null) return "NULL";
     if (typeof value === "boolean") return value ? "1" : "0";
     if (typeof value === "number") return String(value);
-    if (value instanceof Date) value = value.toISOString();
+    if (value instanceof Date) value = formatIso(value);
     return `'${String(value).replace(/'/g, "''")}'`;
   }
 

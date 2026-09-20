@@ -4,7 +4,6 @@ import {
   setJobDriver,
   resetJobDrivers,
   registerJobDriver,
-  getJobDriver,
   getJobDriverByConnection,
   getDefaultQueue,
   jobKeyFor,

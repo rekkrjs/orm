@@ -18,7 +18,6 @@ import type {
   MorphEagerLoadMap,
 } from "./ModelBase.js";
 import { ModelSerialization } from "./ModelSerialization.js";
-import { Collection } from "../support/Collection.js";
 
 export class ModelRelations<T extends Record<string, any> = any> extends ModelSerialization<T> {
   // Static eager loading

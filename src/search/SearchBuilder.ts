@@ -1,4 +1,4 @@
-import type { Model, ModelConstructor, ModelColumn, ModelColumnValue } from "../model/Model.js";
+import type { Model, ModelConstructor, ModelColumn } from "../model/Model.js";
 import { Collection } from "../support/Collection.js";
 import { getSearchEngine } from "./SearchManager.js";
 import type {
@@ -13,7 +13,6 @@ import type {
   SearchHybrid,
   SearchPage,
   SearchQuery,
-  SearchSimplePage,
   SearchSort,
 } from "./SearchEngine.js";
 import type { SearchableModelConstructor } from "./Searchable.js";

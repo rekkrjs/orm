@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "fs/promises";
+import { formatIso } from "../utils.js";
 import { join } from "path";
 
 export class MigrationCreator {
@@ -24,7 +25,7 @@ export default class ${this.toClassName(name)} extends Migration {
 
   async createWithContent(name: string, path: string, content: string): Promise<string> {
     await mkdir(path, { recursive: true });
-    const timestamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
+    const timestamp = formatIso(new Date()).replace(/[-:T.Z]/g, "").slice(0, 14);
     const filename = `${timestamp}_${this.snakeCase(name)}.ts`;
     const filePath = join(path, filename);
     await writeFile(filePath, content, "utf-8");

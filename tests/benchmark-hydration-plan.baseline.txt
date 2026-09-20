@@ -1,15 +1,17 @@
 command: bun run bench
-bun: 1.4.0 (1.4.0+34cbb9a40)
-date: 2026-09-02
+bun: 1.4.2 (1.4.2+744846f84)
+date: 2026-09-20
 machine: Darwin arm64
 
 # model_factor / rawJson_factor are the acceptance criteria (see plan 3.0.0 §6.4).
 # Absolute ms vary by machine; the factors do not. CASTPLAN counts are deterministic.
+# getCastDefinition reads 4.00/row, one per attribute that reaches the cast path,
+# because the caller now passes the definition it already resolved.
 
-CEILING rows=20000 driver_ms=4.4703 stringify_ms=5.6040 ceiling_ms=10.0743 model_ms=39.7882 rawJson_ms=20.9925 model_factor=3.95 rawJson_factor=2.08
+CEILING rows=20000 driver_ms=4.3370 stringify_ms=5.4458 ceiling_ms=9.6648 model_ms=25.4570 rawJson_ms=16.1642 model_factor=2.63 rawJson_factor=1.67
 CASTPLAN phase=get rows=20000 getCastDefinition=0.00/row castAttribute=0.00/row getAttributeFromTarget=0.00/row
-CASTPLAN phase=toJSON rows=20000 getCastDefinition=8.00/row castAttribute=0.00/row getAttributeFromTarget=4.00/row
+CASTPLAN phase=toJSON rows=20000 getCastDefinition=4.00/row castAttribute=0.00/row getAttributeFromTarget=4.00/row
 
  2 pass
  0 fail
-Ran 2 tests across 1 file. [961.00ms]
+Ran 2 tests across 1 file. [880.00ms]

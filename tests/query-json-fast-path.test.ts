@@ -10,6 +10,7 @@ import {
   type CastsAttributes,
 } from "../src/index.js";
 import { Cache, MemoryCacheStore } from "../src/cache/index.js";
+import { createRawJsonPlan, serializeRawJsonRow } from "../src/model/ModelJsonRow.js";
 import { PermissiveModel } from "./helpers.js";
 
 const JsonState = backedEnum({ Active: "active", Disabled: "disabled" });
@@ -433,7 +434,7 @@ describe("Builder.rawJson", () => {
       nullable_number: null,
       passthrough: "unchanged",
     });
-    expect((direct[0] as any).occurred_at).toBeInstanceOf(Date);
+    expect((direct[0] as any).occurred_at).toBe("2026-08-20T10:11:12.000Z");
   });
 
   test("uses precompiled casts for plain model rows", async () => {
@@ -646,17 +647,17 @@ describe("Builder.rawJson", () => {
     expect(cold).toEqual(hydrated);
     expect(cached).toEqual(hydrated);
     expect(JSON.stringify(cold)).toBe(JSON.stringify(hydrated));
-    expect((cold[0] as any).created_at).toBeInstanceOf(Date);
-    expect((cold[0] as any).updated_at).toBeInstanceOf(Date);
-    expect((cold[0] as any).deleted_at).toBeInstanceOf(Date);
+    expect((cold[0] as any).created_at).toBe("2026-08-27T12:00:00.000Z");
+    expect((cold[0] as any).updated_at).toBe("2026-08-27T13:00:00.000Z");
+    expect((cold[0] as any).deleted_at).toBe("2026-08-27T14:00:00.000Z");
   });
 
   test("honors custom timestamp names and explicit cast precedence", async () => {
     const custom = await CustomTimestampJsonModel.where("id", 1).rawJson();
     const hydratedCustom = (await CustomTimestampJsonModel.where("id", 1).get()).toJSON();
     expect(custom).toEqual(hydratedCustom);
-    expect((custom[0] as any).made_at).toBeInstanceOf(Date);
-    expect((custom[0] as any).changed_at).toBeInstanceOf(Date);
+    expect((custom[0] as any).made_at).toBe("2026-08-27T15:00:00.000Z");
+    expect((custom[0] as any).changed_at).toBe("2026-08-27T16:00:00.000Z");
 
     const explicit = await StringTimestampJsonModel.where("id", 1).rawJson();
     expect((explicit[0] as any).created_at).toBe("2026-08-27 12:00:00");
@@ -677,6 +678,63 @@ describe("Builder.rawJson", () => {
     // @ts-expect-error unloaded relations are omitted from rawJson()
     rows[0]!.posts;
     expect(rows[0]).toEqual({ id: 1, label: "Ada", post_total: 2 });
+  });
+
+  // MySQL and PostgreSQL return Date objects and parsed json columns; SQLite
+  // returns strings for both, so the driver-shaped row is built here instead of
+  // queried. Serializing it must convert each value exactly once.
+  test("serializes a driver-shaped row without repeating work", () => {
+    class DriverShapedJsonUser extends PermissiveModel {
+      static override table = "fast_json_users";
+      static override casts = { active: "boolean", metadata: "json" };
+    }
+
+    const plan = createRawJsonPlan(DriverShapedJsonUser, Model);
+    const row: Record<string, unknown> = {
+      id: 1,
+      active: 1,
+      metadata: { nested: { value: 1 } },
+      created_at: new Date("2026-08-20T10:11:12.000Z"),
+      updated_at: new Date("2026-08-21T10:11:12.000Z"),
+    };
+    const before = structuredClone(row);
+
+    // Both entry points are counted, so the assertion holds whichever one runs:
+    // formatIso() reads getUTCFullYear() once per date and hands the odd ones
+    // (invalid, expanded year, subclass) back to toISOString().
+    const toISOString = Date.prototype.toISOString;
+    const getUTCFullYear = Date.prototype.getUTCFullYear;
+    const stringify = JSON.stringify;
+    const parse = JSON.parse;
+    let formatCalls = 0;
+    let stringifyCalls = 0;
+    let parseCalls = 0;
+    Date.prototype.toISOString = function (this: Date) { formatCalls++; return toISOString.call(this); };
+    Date.prototype.getUTCFullYear = function (this: Date) { formatCalls++; return getUTCFullYear.call(this); };
+    JSON.stringify = ((...args: unknown[]) => { stringifyCalls++; return (stringify as any)(...args); }) as any;
+    JSON.parse = ((...args: unknown[]) => { parseCalls++; return (parse as any)(...args); }) as any;
+
+    let output: Record<string, unknown>;
+    try {
+      output = serializeRawJsonRow(row, plan);
+    } finally {
+      Date.prototype.toISOString = toISOString;
+      Date.prototype.getUTCFullYear = getUTCFullYear;
+      JSON.stringify = stringify;
+      JSON.parse = parse;
+    }
+
+    expect(output).toEqual({
+      id: 1,
+      active: true,
+      metadata: { nested: { value: 1 } },
+      created_at: "2026-08-20T10:11:12.000Z",
+      updated_at: "2026-08-21T10:11:12.000Z",
+    });
+    expect(formatCalls).toBe(2);    // one per date column, not one per pass
+    expect(stringifyCalls).toBe(0); // the driver already parsed the json column
+    expect(parseCalls).toBe(0);
+    expect(row).toEqual(before);    // and the row it read is left as it was
   });
 
   test("castAttribute preserves backed-enum validator overrides", () => {

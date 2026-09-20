@@ -12,6 +12,19 @@ class GeneralJsonBenchUser extends FastJsonBenchUser {
   static hidden = ["unused"];
 }
 
+/** The shipped default: timestamps on, so two columns carry date casts. */
+class TimestampedJsonBenchUser extends Model {
+  static table = "fast_json_bench_users";
+  static casts = { active: "boolean" };
+}
+
+/** Control for the row above: the same five columns, without the date casts. */
+class UncastJsonBenchUser extends Model {
+  static table = "fast_json_bench_users";
+  static timestamps = false;
+  static casts = { active: "boolean" };
+}
+
 class HydratedJsonBenchUser extends Model {
   static table = "fast_json_bench_users";
   static timestamps = false;
@@ -67,11 +80,14 @@ describe("Benchmark: model query JSON", () => {
       table.increments("id");
       table.string("name");
       table.boolean("active");
+      table.timestamps();
     });
     await new Builder(connection, "fast_json_bench_users").insert(
       Array.from({ length: 500 }, (_, index) => ({
         name: `User ${index.toString().padStart(3, "0")}`,
         active: index % 2,
+        created_at: new Date(1700000000000 + index * 1000).toISOString(),
+        updated_at: new Date(1700000000000 + index * 2000).toISOString(),
       })),
     );
   });
@@ -88,6 +104,16 @@ describe("Benchmark: model query JSON", () => {
       .get()).toArray();
     const direct = () => FastJsonBenchUser.select("id", "name", "active").orderBy("id").rawJson();
     const general = () => GeneralJsonBenchUser.select("id", "name", "active").orderBy("id").rawJson();
+    // SQLite returns date columns as strings; MySQL and PostgreSQL return Dates,
+    // which is where this shape costs the most.
+    const timestamped = () => TimestampedJsonBenchUser
+      .select("id", "name", "active", "created_at", "updated_at").orderBy("id").rawJson();
+    const uncast = () => UncastJsonBenchUser
+      .select("id", "name", "active", "created_at", "updated_at").orderBy("id").rawJson();
+    const rawFive = async () => (await new Builder(connection, "fast_json_bench_users")
+      .select("id", "name", "active", "created_at", "updated_at")
+      .orderBy("id")
+      .get()).toArray();
     const hydrated = async () => (await FastJsonBenchUser.select("id", "name", "active").orderBy("id").get()).toJSON();
     const fallback = () => HydratedJsonBenchUser.select("id", "name", "active").orderBy("id").json();
 
@@ -97,27 +123,37 @@ describe("Benchmark: model query JSON", () => {
     const generalValue = await general();
     const hydratedValue = await hydrated();
     const fallbackValue = await fallback();
+    const timestampedValue = await timestamped();
+    const uncastValue = await uncast();
+    const expectedFive = (await rawFive()).map((row) => ({ ...row, active: Boolean(row.active) }));
 
     expect(directValue).toEqual(expected);
     expect(generalValue).toEqual(expected);
     expect(hydratedValue).toEqual(expected);
     expect(fallbackValue).toEqual(expected);
+    // The stored timestamps are canonical ISO, so casting them changes nothing:
+    // the five-column rows must match their uncast control exactly.
+    expect(uncastValue).toEqual(expectedFive);
+    expect(timestampedValue).toEqual(expectedFive);
     expect(Object.getPrototypeOf(directValue)).toBe(Array.prototype);
     expect(directValue).not.toBeInstanceOf(Collection);
 
     console.log(`response bytes: ${JSON.stringify(rawValue).length}`);
     const compiledPlan = createRawJsonPlan(FastJsonBenchUser, Model);
     const generalPlan = createRawJsonPlan(GeneralJsonBenchUser, Model);
-    await measure("serializeRawJsonRow() compiled casts", () =>
+    await measure("serializeRawJsonRow()", () =>
       rawValue.map((row) => serializeRawJsonRow(row, compiledPlan)), 100);
-    await measure("serializeRawJsonRow() general serializer", () =>
+    await measure("serializeRawJsonRow() with hidden filtering", () =>
       rawValue.map((row) => serializeRawJsonRow(row, generalPlan)), 100);
     await measure("DB.table().get().toArray()", raw);
-    await measure("Model.rawJson() compiled casts", direct);
-    await measure("Model.rawJson() general serializer", general);
+    await measure("Model.rawJson()", direct);
+    await measure("Model.rawJson() with hidden filtering", general);
+    await measure("Model.rawJson() 5 columns, no date casts", uncast);
+    await measure("Model.rawJson() 5 columns with timestamps", timestamped);
     await measure("Model.get().toJSON()", hydrated);
     await measure("fallback Model.json()", fallback);
     measureEncoding("JSON.stringify(raw)", rawValue);
+    measureEncoding("JSON.stringify(timestamped)", timestampedValue);
     measureEncoding("JSON.stringify(direct)", directValue);
     measureEncoding("JSON.stringify(hydrated)", hydratedValue);
     measureEncoding("JSON.stringify(fallback)", fallbackValue);

@@ -71,11 +71,6 @@ export interface SqliteFTS5EngineOptions {
   journalMode?: string;
 }
 
-interface CompiledFilter {
-  sql: string;
-  bindings: any[];
-}
-
 export class SqliteFTS5Engine implements SearchEngine {
   private readonly indexConfigs = new Map<string, SqliteFTS5IndexConfig>();
   private readonly useTriggers: boolean;
@@ -528,7 +523,7 @@ export class SqliteFTS5Engine implements SearchEngine {
   }
 
   private async countMatches(query: SearchQuery): Promise<number> {
-    const cfg = this.requireConfig(query.index);
+    this.requireConfig(query.index);
     const bindings: any[] = [];
     const where: string[] = [];
 

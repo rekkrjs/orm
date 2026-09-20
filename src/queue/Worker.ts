@@ -22,7 +22,6 @@ export class Worker {
   private pollIntervalMs: number;
   private retryAfterSeconds: number;
   private retryDelaySeconds: number;
-  private running = false;
   private activeJobs = 0;
   private stopSignal = false;
 
@@ -35,12 +34,10 @@ export class Worker {
   }
 
   async run(): Promise<void> {
-    this.running = true;
     this.stopSignal = false;
 
     const loops = Array.from({ length: this.concurrency }, () => this.workerLoop());
     await Promise.all(loops);
-    this.running = false;
   }
 
   stop(): void {

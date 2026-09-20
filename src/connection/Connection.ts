@@ -1,4 +1,5 @@
 import { SQL, FileSink } from "bun";
+import { formatIso } from "../utils.js";
 import type { ConnectionConfig } from "../types/index.js";
 import { Grammar } from "../query/grammars/Grammar.js";
 import { SQLiteGrammar } from "../query/grammars/SQLiteGrammar.js";
@@ -454,7 +455,7 @@ export class Connection {
   private log(sqlString: string, bindings?: any[]): void {
     if (!(this.logQueries ?? Connection.logQueries)) return;
     if (Connection.queryLogFile) {
-      const date = new Date().toISOString().slice(0, 10);
+      const date = formatIso(new Date()).slice(0, 10);
       if (Connection._logWriterDate !== date) {
         Connection._logWriter?.flush();
         Connection._logWriter?.end();
@@ -481,7 +482,7 @@ export class Connection {
 
   private normalizeBinding(value: any): any {
     if (value instanceof Date) {
-      return this.driverName === "mysql" ? value : value.toISOString();
+      return this.driverName === "mysql" ? value : formatIso(value);
     }
     if (Array.isArray(value)) return value.map((item) => this.normalizeBinding(item));
     return value;

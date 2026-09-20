@@ -1,18 +1,14 @@
 #!/usr/bin/env bun
-import { SQL } from "bun";
 import { Connection } from "../src/connection/Connection.js";
 import { ConnectionManager } from "../src/connection/ConnectionManager.js";
 import { configureOrm } from "../src/config/OrmConfig.js";
 import type { OrmConfig } from "../src/config/OrmConfig.js";
-import { MigrationCreator } from "../src/migration/MigrationCreator.js";
-import { TypeGenerator } from "../src/typegen/TypeGenerator.js";
 import { existsSync } from "fs";
 import { mkdir, mkdtempDisposable, readdir, writeFile } from "fs/promises";
-import { basename, extname, join, resolve } from "path";
+import { extname, join, resolve } from "path";
 import { pathToFileURL } from "url";
 import { styleText } from "node:util";
-import { normalizePathList, snakeCase } from "../src/utils.js";
-import { discoverModelTables } from "../src/typegen/discoverModelTables.js";
+import { normalizePathList } from "../src/utils.js";
 import { DatabaseQueueDriver } from "../src/queue/DatabaseQueueDriver.js";
 import { RedisQueueDriver, resolveQueueRedisClient } from "../src/queue/RedisQueueDriver.js";
 import type { QueueDriver } from "../src/queue/QueueDriver.js";
@@ -25,30 +21,6 @@ import { registerOrmCommands } from "../src/cli/index.js";
 import { relayStdoutToStderr } from "../src/cli/StdoutContract.js";
 import { getFlagValue, parsePositiveInteger, readFlag } from "../src/cli/flags.js";
 import { buildOrmConfigTemplate } from "../src/cli/configTemplate.js";
-import {
-  BelongsTo,
-  BelongsToMany,
-  Blueprint,
-  Grammar,
-  HasMany,
-  HasManyThrough,
-  HasOne,
-  HasOneThrough,
-  Migration,
-  MorphMany,
-  MorphMap,
-  MorphOne,
-  MorphTo,
-  MorphToMany,
-  MySqlGrammar,
-  ObserverRegistry,
-  PostgresGrammar,
-  Schema,
-  SQLiteGrammar,
-  TypeMapper,
-  Builder,
-  Model,
-} from "../src/index.js";
 
 /** The commands whose stdout is a machine contract under `--json`. */
 const JSON_CONTRACT_COMMANDS = new Set<string>([

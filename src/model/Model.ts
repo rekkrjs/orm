@@ -3,7 +3,6 @@ import { ModelAggregates } from "./ModelAggregates.js";
 import type {
   ModelConstructor,
   EagerLoadConstraint,
-  EagerLoadDefinition,
   EagerLoadInput,
   MorphEagerLoadMap,
   LiteralUnion,
@@ -24,7 +23,6 @@ import type {
   RelationConstraintQuery,
   MorphToRelationName,
   BelongsToRelationName,
-  ChildRelationName,
   AttachedToRelationName,
   ModelRelationName,
   RelationRelatedModel,
@@ -35,13 +33,7 @@ import type {
   ModelColumn,
   ModelColumnValue,
   ModelAttributeInput,
-  ModelMassAssignable,
-  ModelMassAssignmentAttributes,
-  ModelMassAssignmentInput,
-  ModelMassAssignmentInputWithout,
   LoadMorphRelationName,
-  ModelJson,
-  DirectJson,
 } from "./ModelBase.js";
 import { Builder } from "../query/Builder.js";
 import { Collection } from "../support/Collection.js";

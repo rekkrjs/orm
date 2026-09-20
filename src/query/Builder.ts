@@ -1,4 +1,5 @@
 import { SqlFragment } from "./SqlFragment.js";
+import { formatIso } from "../utils.js";
 import { Connection } from "../connection/Connection.js";
 import { UniqueConstraintViolationError } from "../connection/UniqueConstraintViolationError.js";
 import { TransactionContext } from "../connection/TransactionContext.js";
@@ -6,12 +7,12 @@ import { resolveConnection } from "../connection/ExecutionContext.js";
 import { Cache } from "../cache/index.js";
 import { MorphTo } from "../model/MorphRelations.js";
 import type { WhereClause, OrderClause, HavingClause } from "../types/index.js";
-import type { AttachedToRelationName, BelongsToRelationName, DirectJson, EagerLoadDefinition, EagerLoadInput, Model, ModelAttributeInput, ModelMassAssignmentInput, ModelColumn, ModelColumnValue, ModelConstructor, ModelRelationName, MorphToRelationName, SaveOptions, TypedEagerLoad, TypedConstraintMap, TypedConstraintSelection, TypedExistsConstraintMap, ExtractStringPaths, WithLoadedRelations, WithLoadedRelationsFromConstraintMap, WithRelationCount, WithRelationExists, WithRelationExistsMap, Relation, RelationConstraintQuery, NestedRelationPath, LiteralUnion, RelationRelatedModel, MorphToConstraintCallback } from "../model/Model.js";
+import type { AttachedToRelationName, BelongsToRelationName, DirectJson, EagerLoadDefinition, Model, ModelAttributeInput, ModelMassAssignmentInput, ModelColumn, ModelColumnValue, ModelConstructor, ModelRelationName, MorphToRelationName, SaveOptions, TypedEagerLoad, TypedConstraintMap, TypedConstraintSelection, TypedExistsConstraintMap, ExtractStringPaths, WithLoadedRelations, WithLoadedRelationsFromConstraintMap, WithRelationCount, WithRelationExists, WithRelationExistsMap, RelationConstraintQuery, NestedRelationPath, LiteralUnion, RelationRelatedModel, MorphToConstraintCallback } from "../model/Model.js";
 import { findRelationMethod, HasMany, Model as BaseModel } from "../model/Model.js";
 import { ObserverRegistry } from "../model/Observer.js";
 import { ModelNotFoundError } from "../model/ModelNotFoundError.js";
 import { IdentityMap } from "../model/IdentityMap.js";
-import { assertSupportedStringCast, canReturnRawJsonRows, createRawJsonPlan, serializeRawJsonRow } from "../model/ModelJsonRow.js";
+import { assertSupportedStringCast, canReturnRawJsonRows, createRawJsonPlan, serializeRawJsonRow, serializeRowDates } from "../model/ModelJsonRow.js";
 import {
   assertBackedEnumValue,
   isBackedEnumDefinition,
@@ -2446,7 +2447,13 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     query.model = undefined;
     query.eagerLoads = [];
     const rows = await query.get();
-    if (canReturnRawJsonRows(plan)) return Array.from(rows) as DirectJson<T, TSelected, TResult>[];
+    if (canReturnRawJsonRows(plan)) {
+      // Drivers can return Dates even when the model has no casts.
+      return Array.from(
+        rows,
+        (row) => serializeRowDates(row as Record<string, unknown>),
+      ) as DirectJson<T, TSelected, TResult>[];
+    }
     return Array.from(
       rows,
       (row) => serializeRawJsonRow(row as Record<string, unknown>, plan),
@@ -3635,7 +3642,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   }
 
   private today(): string {
-    return new Date().toISOString().slice(0, 10);
+    return formatIso(new Date()).slice(0, 10);
   }
 
   private normalizeRelationShortcutModels(input: RelationShortcutInput): RelationModelInput[] {

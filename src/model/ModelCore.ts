@@ -1,9 +1,7 @@
 import { timestampsEnabled } from "./TimestampScope.js";
 import { Connection } from "../connection/Connection.js";
 import { Builder } from "../query/Builder.js";
-import { Schema } from "../schema/Schema.js";
 import { ConnectionManager } from "../connection/ConnectionManager.js";
-import { TenantContext } from "../connection/TenantContext.js";
 import { resolveConnection } from "../connection/ExecutionContext.js";
 import { IdentityMap } from "./IdentityMap.js";
 import { ModelSchemaBuilder } from "./ModelSchemaBuilder.js";
@@ -23,10 +21,10 @@ import type {
   AccessorMap,
   ModelAttributeInput,
   ModelMassAssignmentInput,
-  BulkModelOptions,
 } from "./ModelBase.js";
-import { formatDecimal, snakeCase } from "../utils.js";
+import { formatDecimal, formatIso, snakeCase } from "../utils.js";
 import { MassAssignmentError } from "./MassAssignmentError.js";
+import { MissingAttributeError } from "./MissingAttributeError.js";
 import {
   assertBackedEnumValue as assertEnumValue,
   isBackedEnumDefinition,
@@ -164,7 +162,6 @@ export class ModelCore<T extends Record<string, any> = any> {
   static createdAtColumn = "created_at";
   static updatedAtColumn = "updated_at";
   static connection?: Connection;
-  static dateFormat = "YYYY-MM-DD HH:mm:ss";
   static keyType: "int" | "string" | "uuid" = "int";
   static incrementing = true;
   static usesUuids = false;
@@ -177,6 +174,7 @@ export class ModelCore<T extends Record<string, any> = any> {
   static deletedAtColumn = "deleted_at";
   static preventLazyLoading = false;
   static preventSilentlyDiscardingAttributes = false;
+  static preventAccessingMissingAttributes = false;
   static hidden: readonly string[] = [];
   static visible: readonly string[] = [];
   static appends: readonly string[] = [];
@@ -415,6 +413,16 @@ export class ModelCore<T extends Record<string, any> = any> {
     return `${(this as any).getQualifiedTable()}.${this.deletedAtColumn}`;
   }
 
+  /**
+   * Laravel's strict mode: every silent model foot-gun becomes a throw.
+   * Call it on `Model` for the whole app, or on one model for just that one.
+   */
+  static shouldBeStrict(shouldBeStrict = true): void {
+    this.preventLazyLoading = shouldBeStrict;
+    this.preventSilentlyDiscardingAttributes = shouldBeStrict;
+    this.preventAccessingMissingAttributes = shouldBeStrict;
+  }
+
   // Instance methods
   trashed(): boolean {
     const ctor = Object.getPrototypeOf(this).constructor as typeof ModelCore;
@@ -480,6 +488,45 @@ export class ModelCore<T extends Record<string, any> = any> {
     return policyAllows(policy, key);
   }
 
+  getKeyName(): string {
+    return this.getModelConstructor().primaryKey;
+  }
+
+  getKey(): any {
+    return this.getAttribute(this.getKeyName());
+  }
+
+  /**
+   * The raw attribute bag, copied so callers cannot edit the model through it.
+   * A json/date cast hands out a mutable object whose edits live in the cast
+   * cache, so those are folded back in first — the same merge `syncOriginal()`
+   * makes, and skipped entirely by models with no mutable cast.
+   */
+  getAttributes(): T {
+    const { json, date } = mutableCastKeys(this.$mergedCasts);
+    return json.size > 0 || date.size > 0
+      ? { ...this.$attributes, ...this.getDirty() }
+      : { ...this.$attributes };
+  }
+
+  /**
+   * Under `preventAccessingMissingAttributes`, reading a column the query never
+   * selected is a bug rather than a null. A model that was just created is
+   * exempt: its row may hold database defaults it never fetched back.
+   */
+  assertAttributeExists(key: string): void {
+    const constructor = this.getModelConstructor();
+    if (!constructor.preventAccessingMissingAttributes) return;
+    if (!this.$exists || this.$wasRecentlyCreated) return;
+    if (Object.hasOwn(this.$attributes, key) || Object.hasOwn(this.$relations, key)) return;
+    // Anything the class itself declares — relation methods included — plus
+    // declared casts and accessors, are names the model knows about.
+    if (key in this) return;
+    if (this.getCastDefinition(key)) return;
+    if (key in ((constructor as any).accessors || {})) return;
+    throw new MissingAttributeError(constructor.name, key);
+  }
+
   getAttribute<K extends keyof T>(key: K): T[K];
   getAttribute(key: string): any;
   getAttribute(key: string | keyof T): any {
@@ -493,6 +540,7 @@ export class ModelCore<T extends Record<string, any> = any> {
     // or receive `receiver` explicitly.
     const cast = this.getCastDefinition(key as string);
     const value = (this.$attributes as any)[key];
+    if (value === undefined) this.assertAttributeExists(key as string);
     const backedEnum = isBackedEnumDefinition(cast);
     if (backedEnum && Object.hasOwn(this.$attributes, key) && value !== null) {
       this.assertBackedEnumValue(key as string, value, cast);
@@ -504,7 +552,7 @@ export class ModelCore<T extends Record<string, any> = any> {
     if (!backedEnum && Object.prototype.hasOwnProperty.call(this.$castCache, key as string)) {
       return this.$castCache[key as string];
     }
-    const casted = backedEnum ? value : this.castAttributeFromTarget(receiver, key as string, value);
+    const casted = backedEnum ? value : this.castAttributeFromTarget(receiver, key as string, value, cast);
     if (cast && !backedEnum && value !== null && value !== undefined) {
       this.$castCache[key as string] = casted;
     }
@@ -538,10 +586,12 @@ export class ModelCore<T extends Record<string, any> = any> {
     return target.castAttributeFromTarget(this, key, value);
   }
 
-  protected castAttributeFromTarget(receiver: this, key: string, value: any): any {
+  protected castAttributeFromTarget(receiver: this, key: string, value: any, resolvedCast?: CastDefinition): any {
     // Keep the target/receiver split above: hooks run on the raw target, while
     // custom casts receive the Proxy when they need public attribute behavior.
-    const cast = this.getCastDefinition(key);
+    // `resolvedCast` is the definition the caller already looked up; both read
+    // the same $mergedCasts entry, so this only skips the second lookup.
+    const cast = resolvedCast !== undefined ? resolvedCast : this.getCastDefinition(key);
     if (!cast) return value;
     if (value === null) return value;
     const backedEnum = isBackedEnumDefinition(cast);
@@ -591,11 +641,11 @@ export class ModelCore<T extends Record<string, any> = any> {
           modelName: this.constructor.name,
           attribute: key,
         }) as Date;
-        return Number.isNaN(date.getTime()) ? value : date.toISOString().slice(0, 10);
+        return Number.isNaN(date.getTime()) ? value : formatIso(date).slice(0, 10);
       }
       case "datetime":
       case "timestamp":
-        return value instanceof Date ? value.toISOString() : value;
+        return value instanceof Date ? formatIso(value) : value;
       case "json":
       case "array":
       case "object":
@@ -876,7 +926,7 @@ export class ModelCore<T extends Record<string, any> = any> {
   }
 
   freshTimestamp(): string {
-    return new Date().toISOString();
+    return formatIso(new Date());
   }
 
   relationLoaded(name: string): boolean {

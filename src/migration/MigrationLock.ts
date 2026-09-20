@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { formatIso } from "../utils.js";
 import { TenantContext } from "../connection/TenantContext.js";
 import { Connection } from "../connection/Connection.js";
 import { UniqueConstraintViolationError } from "../connection/UniqueConstraintViolationError.js";
@@ -234,7 +235,7 @@ async function acquireTableLock(
       await new Builder(connection, table).insert({
         name,
         owner,
-        created_at: new Date().toISOString(),
+        created_at: formatIso(new Date()),
       });
       return registerTableLock(async () => {
         await new Builder(connection, table).where("name", name).where("owner", owner).delete();

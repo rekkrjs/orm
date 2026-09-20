@@ -5,7 +5,6 @@ import { SQLiteGrammar } from "./grammars/SQLiteGrammar.js";
 import { MySqlGrammar } from "./grammars/MySqlGrammar.js";
 import { PostgresGrammar } from "./grammars/PostgresGrammar.js";
 import { ConnectionManager } from "../connection/ConnectionManager.js";
-import { TenantContext } from "../connection/TenantContext.js";
 import { resolveConnection } from "../connection/ExecutionContext.js";
 import { declaredColumnLength } from "../utils.js";
 import { SchemaRawExpression } from "./RawExpression.js";

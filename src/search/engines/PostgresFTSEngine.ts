@@ -1,4 +1,5 @@
 import { Connection } from "../../connection/Connection.js";
+import { formatIso } from "../../utils.js";
 import { resolveConnection } from "../../connection/ExecutionContext.js";
 import type {
   FacetDistribution,
@@ -202,7 +203,7 @@ export class PostgresFTSEngine implements SearchEngine {
 
   private textValue(value: unknown): unknown {
     if (typeof value === "boolean") return value ? "true" : "false";
-    if (value instanceof Date) return value.toISOString();
+    if (value instanceof Date) return formatIso(value);
     return value;
   }
 

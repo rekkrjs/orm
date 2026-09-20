@@ -1,5 +1,67 @@
 # Changelog
 
+## 4.0.0 — 2026-09-20
+
+### Breaking: dates serialize as ISO strings
+
+- `toJSON()`, `json()` and `rawJson()` emit `"2026-08-20T10:11:12.000Z"` where
+  they used to hand back a `Date` object, matching Eloquent's `serializeDate()`.
+  Reading the attribute (`user.created_at`) still gives a `Date`.
+- `JSON.stringify()` produces the same bytes as before, because it serialized
+  those `Date` objects to the same text. Code that took a date out of `toJSON()`
+  and called a `Date` method on it must parse it first.
+- An unparseable stored date serializes as `null` instead of throwing, which is
+  what `JSON.stringify()` already did with an invalid `Date`.
+
+### Breaking: removed inert API
+
+- `Model.dateFormat` is gone. Nothing read it, so setting it never had an
+  effect; date formatting follows the cast.
+- The unused `UnionClause` type is no longer exported.
+
+### Added
+
+- `push()` saves a model and every relation already loaded on it, depth first.
+  It never rewrites a foreign key and visits each model once, so a parent
+  holding its own children terminates.
+- `getKey()`, `getKeyName()` and `getAttributes()`.
+- `shouldBeStrict()` turns on the three development guards at once, including
+  the new `preventAccessingMissingAttributes`, which throws
+  `MissingAttributeError` when a persisted model is asked for a column the query
+  never selected. Every guard is set per model class and defaults to off.
+
+### Performance
+
+Serialization was the bottleneck; the work went into removing work rather than
+adding caches.
+
+- The row serializer runs one pass instead of three. It no longer converts a
+  date twice, no longer sends a json column the driver already parsed through
+  `JSON.stringify` and back, and skips the cast entirely when the stored value
+  already serializes to the same output.
+- `formatIso()` replaces `Date.prototype.toISOString()` on every path that
+  emits a date, at a third of the cost. The calendar arithmetic still belongs to
+  the engine; only the string assembly changed. Dates outside years 0000–9999,
+  invalid dates and `Date` subclasses keep the built-in.
+- Serializing a model no longer allocates a hidden-attribute set when nothing is
+  hidden, and no longer resolves each cast definition twice.
+
+Measured against MySQL with `oha`: `/rekkr-json` 1469 → 1948 req/s (+32%),
+`/rekkr-rawJson` 1905 → 2573 req/s (+35%), with an unchanged control endpoint.
+In the repository benchmarks, per-row cast lookups during `toJSON()` fall from
+8.00 to 4.00, proxy traps from 62.00 to 3.00, and the model path from 3.95x to
+2.63x the driver-plus-encode floor.
+
+### Compatibility and verification
+
+- Upgrading needs no code change unless something consumed a `Date` out of
+  `toJSON()`, read `Model.dateFormat`, or imported `UnionClause`.
+- 1,761 tests pass against SQLite, MySQL 8, PostgreSQL and Redis, plus the type
+  check and the build. The ISO formatter is verified against the built-in over
+  2.4 million dates across six time zones, including 45-minute offsets, every
+  millisecond value, the whole calendar and the edges of the representable
+  range.
+
 ## 3.1.2 — 2026-09-14
 
 ### Type compatibility fix

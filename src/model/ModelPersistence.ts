@@ -14,7 +14,7 @@ import type {
   ModelMassAssignmentInput,
 } from "./ModelBase.js";
 import { ModelCore } from "./ModelCore.js";
-import { isNumericColumnType, shouldGeneratePrimaryKeyForColumn } from "../utils.js";
+import { formatIso, shouldGeneratePrimaryKeyForColumn } from "../utils.js";
 import type { Connection } from "../connection/Connection.js";
 import { insertAndResolveKey, type PrimaryKeyColumn } from "./PrimaryKeyResolution.js";
 import { isBackedEnumDefinition } from "./BackedEnum.js";
@@ -27,6 +27,19 @@ interface BulkInsertModelRecordsOptions {
   events: boolean;
   chunkSize?: number;
   connection?: Connection;
+}
+
+async function pushModel(model: any, options: SaveOptions, seen: Set<unknown>): Promise<void> {
+  seen.add(getModelTarget(model));
+  await model.save(options);
+  for (const relation of Object.values(model.$relations as Record<string, any>)) {
+    // Collection extends Array, so one branch covers both relation shapes.
+    for (const related of Array.isArray(relation) ? relation : [relation]) {
+      if (!related || typeof related.save !== "function") continue;
+      if (seen.has(getModelTarget(related))) continue;
+      await pushModel(related, options, seen);
+    }
+  }
 }
 
 export function validateBulkInsertChunkSize(chunkSize?: number): number {
@@ -140,7 +153,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     const timestampColumns = resolvedTimestampColumns === undefined
       ? (timestampsEnabled(this) ? (this as any).getTimestampColumns() as TimestampColumns : null)
       : resolvedTimestampColumns;
-    const now = timestampColumns ? new Date().toISOString() : null;
+    const now = timestampColumns ? formatIso(new Date()) : null;
     const prepared: Record<string, any>[] = [];
     const trustedValidator = trusted ? new this() as InstanceType<M> : null;
     if (connection) trustedValidator?.setConnection(connection);
@@ -669,6 +682,19 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
 
   saveQuietly(): Promise<this> {
     return this.save({ events: false });
+  }
+
+  /**
+   * Save this model and every relation already loaded on it, depth first.
+   *
+   * Like Eloquent, this saves what is in memory and never rewrites a foreign
+   * key: a related model that was never associated stays unassociated. Each
+   * model is visited once, so a parent holding its own children — what an
+   * identity-mapped read produces — terminates instead of recursing forever.
+   */
+  async push(options: SaveOptions = {}): Promise<this> {
+    await pushModel(this, options, new Set());
+    return this;
   }
 
   async touch(): Promise<boolean> {

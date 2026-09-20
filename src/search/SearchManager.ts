@@ -13,7 +13,6 @@ import {
   applySearchableStatics,
   Searchable,
   type SearchableInstance,
-  type SearchableModelConstructor,
   type SearchableModelStatics,
   type SearchableOptions,
 } from "./Searchable.js";

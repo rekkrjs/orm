@@ -59,7 +59,6 @@ type ResolverBindSpec = {
   resolver: BindResolver<any>;
 };
 type BindSpec = ModelBindSpec | ResolverBindSpec;
-type BindOptions<M extends ModelConstructor<any>> = { with?: BindWithArg<M> };
 type PolicyCheck = { ability: string; alias?: string };
 type RequestValidationErrorPayload = {
   issues: Record<string, string[]>;

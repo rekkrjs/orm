@@ -62,6 +62,7 @@ export type {
 } from "./model/Model.js";
 export { ModelNotFoundError } from "./model/ModelNotFoundError.js";
 export { MassAssignmentError } from "./model/MassAssignmentError.js";
+export { MissingAttributeError } from "./model/MissingAttributeError.js";
 export { backedEnum } from "./model/BackedEnum.js";
 export type { BackedEnumDefinition, EnumValue } from "./model/BackedEnum.js";
 export { InvalidEnumValueError } from "./model/InvalidEnumValueError.js";
