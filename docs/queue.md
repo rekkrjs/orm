@@ -226,19 +226,13 @@ Queue.configure(new MyDriver(), "default");
 | Retries | No | Yes |
 | Use case | React to something now | Do work later or in background |
 
-## v3 reservations and deployment
+## Reservations and deployment
 
 Every `reserve()` returns a fresh `JobRecord.reservationToken`. Complete, release,
 fail and heartbeat must atomically match the current token and return false on
 ownership loss. A stale worker must not write a failed-job record. Worker renews
 its reservation during `handle()` and stops on completion, failure or lease loss.
 The token protects queue state; job side effects still need application idempotency.
-
-Stop and drain **all old workers** before migration. Run
-`await Queue.getDriver().migrate()` to add nullable `reservation_token` to existing
-jobs tables without deleting pending jobs, then start only v3 workers. Redis
-pending job hashes gain tokens when reserved; its migration remains a no-op.
-Old workers mutate by id and cannot safely coexist with v3 workers.
 
 RedisQueueDriver supports standalone Redis. Redis Cluster is not supported.
 Dispatch inside an ORM transaction waits for root commit and captures the tenant

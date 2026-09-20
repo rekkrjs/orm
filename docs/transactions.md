@@ -220,4 +220,4 @@ Switching tenants inside a transaction rejects, except schema/qualify scopes on
 the same physical transaction. Connections bound to a different resource or active
 transaction reject too. Raw SQL uses the effective connection but requires explicit
 schema names under qualify. Objects from finished RLS/search_path scopes require
-reentering their tenant before reuse. See [migration examples](./upgrade-3.0.md).
+reentering their tenant before reuse.

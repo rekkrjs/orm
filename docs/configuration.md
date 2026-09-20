@@ -612,7 +612,7 @@ cached tenant contexts and invalidates pending resolutions. Existing scopes and
 operations renew the idle TTL; a referenced model alone does not keep a pool alive.
 Connections created from configuration are owned. Passing an existing Connection
 to `add` or `setDefault` borrows it unless `{ owned: true }` is explicit. Borrowed
-connections remain the caller's responsibility. See [v3 migration](./upgrade-3.0.md).
+connections remain the caller's responsibility.
 
 ## Environment variables (CLI only)
 

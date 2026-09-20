@@ -125,8 +125,7 @@ First published 3.x release, including the previously unreleased v3 changes.
   runs and contention percentiles. Revalidated all three Bun/Elysia workarounds
   and an isolated real Elysia consumer. Redis regressions include concurrent
   completion, named-queue isolation and rejection of stale reservation owners.
-- [Migration guide](docs/upgrade-3.0.md) and
-  [verification with measured tradeoffs](benchmarks/v3-verification.md).
+- [Verification with measured tradeoffs](benchmarks/v3-verification.md).
 
 ## 2.5.0 - 2026-08-29
 

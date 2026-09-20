@@ -378,8 +378,5 @@ Built-in stores distinguish cached null from misses. Custom stores can implement
 the existing `get()` interface remains valid.
 
 Redis tag associations and replacement/invalidation are atomic Lua operations.
-The v3 layout uses sorted tag indexes and per-key reverse associations. Choose a
-fresh RedisCacheStore prefix on upgrade (for example `orm:v3:`), or stop all
-writers and remove the previous namespace first. Do not run old and new writers
-against one prefix. Old query keys are unreachable and can expire or be removed.
-Redis Cluster is not supported. See [migration details](./upgrade-3.0.md).
+The layout uses sorted tag indexes and per-key reverse associations. Do not run
+writers with different layouts against one prefix. Redis Cluster is not supported.

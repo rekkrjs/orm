@@ -46,8 +46,7 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 bun add github:rekkrjs/orm#v3.1.2
 ```
 
-See [Installation](./docs/installation.md) for details. Upgrading from 2.x requires
-the [3.x migration steps](./docs/upgrade-3.0.md).
+See [Installation](./docs/installation.md) for details.
 
 ---
 
@@ -247,4 +246,4 @@ MIT
 
 > This project is a fork of [Bunny](https://github.com/bunnykit/orm).
 
-Migrating from v2: [v3 upgrade guide](./docs/upgrade-3.0.md). Performance and verification: [benchmark history](./benchmarks/README.md).
+Performance and verification: [benchmark history](./benchmarks/README.md).
