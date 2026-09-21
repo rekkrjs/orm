@@ -1,5 +1,50 @@
 # Changelog
 
+## 4.1.0 — 2026-09-21
+
+### Fixed behaviour
+
+- `relation.whereIn()`, `.orderBy()` and `.limit()` were recorded but never
+  applied to the relation's own query, so `user.posts().whereIn("id", [1])`
+  returned every post. They now constrain it, like `.where()` always did.
+  Affects `hasMany`, `hasOne`, `belongsTo` and `hasManyThrough`.
+- `Schema.hasIndex()` and `hasForeignKey()` ignored the connection argument and
+  always inspected the default database.
+- Relation constraints now qualify the column with the related table, so
+  `where`/`whereIn`/`orderBy` on a `hasManyThrough` no longer fail with
+  "ambiguous column name".
+
+### Fixed types
+
+- `hasOneThrough().get()` was typed `Collection<T>` but returns a model:
+  now `T | null`. Eager-loaded `hasManyThrough`/`hasOneThrough` infer
+  `Collection<T>` and `T | null` instead of a union that omitted `null`.
+- `with({ relation: cb })` on a `morphTo` inferred `unknown`; now `Model | null`.
+- `BelongsTo.get()` and `HasOne.get()` no longer widen to `Collection<T> | T`.
+- Instance `loadSum`/`loadAvg`/`loadMin`/`loadMax` return the aggregate, not `this`.
+- `with()` no longer loses a relation when array and constraint-map forms mix.
+
+### Improved inference
+
+- Query statics type their column, and their value by column where `Builder`
+  already did. Keys (`find`, `findMany`, `whereKey`, `Collection.find`) take the
+  new `ModelKey`.
+- New exported types: `WriteResult`, `ModelKey`, `ModelType`. Driver write
+  methods return `Promise<WriteResult>` instead of `Promise<any>`.
+- Callbacks the ORM awaits (`chunk`, `each`, `Events.listen`, factory hooks)
+  accept concise arrows such as `(user) => seen.push(user.id)`.
+- `Model.orWhereHas`, `MorphMap.register`, `Factory.for` and
+  `toSqlWithEagerLoads` are callable from typed code.
+- `Connection.query<TRow>()` is generic over the row;
+  `rule().object(shape, "passthrough")` types its output.
+
+### Internal
+
+- All 151 test files are typechecked; only 17 were before.
+- One declaration per model method, so the typed and untyped copies can no
+  longer drift (`Model.ts` 555 → 182 lines).
+- `bun run test` now fails if the public surface gains an `any`.
+
 ## 4.0.0 — 2026-09-20
 
 ### Breaking: dates serialize as ISO strings
