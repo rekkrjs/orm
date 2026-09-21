@@ -15,7 +15,13 @@ import { readFileSync, existsSync, rmSync, mkdtempSync } from "node:fs";
 import { dirname, resolve, relative, join } from "node:path";
 import { tmpdir } from "node:os";
 
-const TOPE = { retornos: 20, parametros: 259, total: 864 };
+// 2026-09-21: 259→265 y 864→872 al dar rama propia a `hasManyThrough` y
+// `hasOneThrough` en los tres mapeos de relaciones. Son seis ramas de tipo
+// condicional con la misma forma que las siete que ya había
+// (`F extends (...args: any[]) => Rel<any>`): fontanería interna que no
+// ensancha nada de lo que el usuario pasa. De hecho estrecha: antes esas dos
+// relaciones caían en el `Relation<infer R>` genérico.
+const TOPE = { retornos: 20, parametros: 265, total: 872 };
 
 const root = new URL("..", import.meta.url).pathname;
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));

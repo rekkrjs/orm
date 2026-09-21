@@ -261,6 +261,8 @@ type LoadedTypeWithNested<F, ElemType> =
   : F extends (...args: any[]) => MorphMany<any> ? Collection<ElemType>
   : F extends (...args: any[]) => MorphOne<any> ? ElemType | null
   : F extends (...args: any[]) => MorphToMany<any, any, any, any> ? Collection<ElemType>
+  : F extends (...args: any[]) => HasOneThrough<any> ? ElemType | null
+  : F extends (...args: any[]) => HasManyThrough<any> ? Collection<ElemType>
   : unknown;
 
 type RelModelOf<F> =
@@ -271,6 +273,8 @@ type RelModelOf<F> =
   : F extends (...args: any[]) => MorphMany<infer R> ? R
   : F extends (...args: any[]) => MorphOne<infer R> ? R
   : F extends (...args: any[]) => MorphToMany<infer R, any, any, any> ? R
+  : F extends (...args: any[]) => HasOneThrough<infer R> ? R
+  : F extends (...args: any[]) => HasManyThrough<infer R> ? R
   : unknown;
 
 type CallbackResultModel<CB, Fallback> =
@@ -303,6 +307,8 @@ type LoadedRelationValueForPaths<F, Paths extends string> =
   : F extends (...args: any[]) => MorphOne<infer R> ? WithLoadedRelations<R, Paths> | null
   : F extends (...args: any[]) => MorphToMany<infer R, any, any, any> ? Collection<WithLoadedRelations<R, Paths>>
   : F extends (...args: any[]) => MorphTo<infer R> ? WithLoadedRelations<R, Paths> | null
+  : F extends (...args: any[]) => HasOneThrough<infer R> ? WithLoadedRelations<R, Paths> | null
+  : F extends (...args: any[]) => HasManyThrough<infer R> ? Collection<WithLoadedRelations<R, Paths>>
   : F extends (...args: any[]) => Relation<infer R> ? Collection<WithLoadedRelations<R, Paths>> | WithLoadedRelations<R, Paths>
   : never;
 
@@ -696,15 +702,20 @@ export abstract class Relation<T extends ModelType = ModelType> {
   first(): Promise<T | null> { return this.builder.first(); }
   find(id: ModelKey): Promise<T | null> { return this.builder.find(id); }
   whereIn<K extends ModelColumn<T>>(column: K, values: ModelColumnValue<T, K>[]): this {
-    this.extraConstraints.push({ apply: (b) => b.whereIn(column, values), aggregateSafe: true });
-    this.builder.whereIn(column, values);
+    // Cualificada: una relación Through consulta con un JOIN, y ahí una columna
+    // que exista en las dos tablas es ambigua. `qualifyRelatedColumn` respeta
+    // las que ya traen tabla.
+    const qualified = this.qualifyRelatedColumn(column) as K;
+    this.extraConstraints.push({ apply: (b) => b.whereIn(qualified, values), aggregateSafe: true });
+    this.builder.whereIn(qualified, values);
     return this;
   }
   orderBy(column: string, direction: "asc" | "desc" = "asc"): this {
     // Not aggregateSafe: ORDER BY on a plain column inside `SELECT COUNT(*)`
     // is rejected by PostgreSQL and MySQL under ONLY_FULL_GROUP_BY.
-    this.extraConstraints.push({ apply: (b) => b.orderBy(column, direction), aggregateSafe: false });
-    this.builder.orderBy(column, direction);
+    const qualified = this.qualifyRelatedColumn(column);
+    this.extraConstraints.push({ apply: (b) => b.orderBy(qualified, direction), aggregateSafe: false });
+    this.builder.orderBy(qualified, direction);
     return this;
   }
   limit(value: number): this {
@@ -754,6 +765,7 @@ export abstract class Relation<T extends ModelType = ModelType> {
   }
 
   where(column: ModelColumn<T>, operatorOrValue: any, value?: any): this {
+    column = this.qualifyRelatedColumn(column) as ModelColumn<T>;
     const args: any[] = value !== undefined ? [column, operatorOrValue, value] : [column, operatorOrValue];
     const operator = value !== undefined ? operatorOrValue : "=";
     const whereValue = value !== undefined ? value : operatorOrValue;
@@ -1008,7 +1020,10 @@ export class BelongsTo<T extends ModelType = ModelType> extends Relation<T> {
   }
 }
 
-export class HasManyThrough<T extends ModelType = ModelType> extends Relation<T> {
+export class HasManyThrough<
+  T extends ModelType = ModelType,
+  TResult extends Collection<T> | T | null = Collection<T>,
+> extends Relation<T> {
   protected through: ModelConstructor;
   protected firstKey: string;
   protected secondKey: string;
@@ -1086,11 +1101,11 @@ export class HasManyThrough<T extends ModelType = ModelType> extends Relation<T>
     }
   }
 
-  async getResults(): Promise<Collection<T> | T | null> {
-    return this.builder.get();
+  async getResults(): Promise<TResult> {
+    return this.builder.get() as Promise<TResult>;
   }
 
-  get(): Promise<Collection<T>> { return this.getResults() as Promise<Collection<T>>; }
+  get(): Promise<TResult> { return this.getResults(); }
 
   protected newExistenceQuery(parentQuery: Builder<any>, aggregate: string, callback?: (query: Builder<any>) => void | Builder<any>): Builder<any> {
     const throughTable = this.through.getQualifiedTable(parentQuery.connection);
@@ -1109,7 +1124,7 @@ export class HasManyThrough<T extends ModelType = ModelType> extends Relation<T>
   }
 }
 
-export class HasOneThrough<T extends ModelType = ModelType> extends HasManyThrough<T> {
+export class HasOneThrough<T extends ModelType = ModelType> extends HasManyThrough<T, T | null> {
   async getResults(): Promise<T | null> {
     return this.builder.first();
   }
