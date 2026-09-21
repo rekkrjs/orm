@@ -261,6 +261,7 @@ type LoadedTypeWithNested<F, ElemType> =
   : F extends (...args: any[]) => MorphMany<any> ? Collection<ElemType>
   : F extends (...args: any[]) => MorphOne<any> ? ElemType | null
   : F extends (...args: any[]) => MorphToMany<any, any, any, any> ? Collection<ElemType>
+  : F extends (...args: any[]) => MorphTo<any> ? ElemType | null
   : F extends (...args: any[]) => HasOneThrough<any> ? ElemType | null
   : F extends (...args: any[]) => HasManyThrough<any> ? Collection<ElemType>
   : unknown;
@@ -273,6 +274,7 @@ type RelModelOf<F> =
   : F extends (...args: any[]) => MorphMany<infer R> ? R
   : F extends (...args: any[]) => MorphOne<infer R> ? R
   : F extends (...args: any[]) => MorphToMany<infer R, any, any, any> ? R
+  : F extends (...args: any[]) => MorphTo<infer R> ? R
   : F extends (...args: any[]) => HasOneThrough<infer R> ? R
   : F extends (...args: any[]) => HasManyThrough<infer R> ? R
   : unknown;

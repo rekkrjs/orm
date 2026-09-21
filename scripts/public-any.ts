@@ -21,7 +21,10 @@ import { tmpdir } from "node:os";
 // (`F extends (...args: any[]) => Rel<any>`): fontanería interna que no
 // ensancha nada de lo que el usuario pasa. De hecho estrecha: antes esas dos
 // relaciones caían en el `Relation<infer R>` genérico.
-const TOPE = { retornos: 20, parametros: 265, total: 872 };
+// 2026-09-21 (bis): 265→267 y 872→875 al darle a `MorphTo` la rama que le
+// faltaba en `LoadedTypeWithNested` y `RelModelOf`. Mismo caso que el de
+// arriba: dos ramas condicionales más con la forma de las diez que ya hay.
+const TOPE = { retornos: 20, parametros: 267, total: 875 };
 
 const root = new URL("..", import.meta.url).pathname;
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
