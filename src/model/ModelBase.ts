@@ -40,6 +40,7 @@ import type {
   SaveOptions,
   ModelColumn,
   ModelColumnValue,
+  ModelKey,
   ModelAttributeInputWithout,
   ModelMassAssignmentInput,
   ModelMassAssignmentInputWithout,
@@ -693,21 +694,24 @@ export abstract class Relation<T extends ModelType = ModelType> {
   getForeignKeyName(): string { return this.foreignKey; }
   getLocalKeyName(): string { return this.localKey; }
   first(): Promise<T | null> { return this.builder.first(); }
-  find(id: any): Promise<T | null> { return this.builder.find(id); }
-  whereIn(column: string, values: any[]): this {
+  find(id: ModelKey): Promise<T | null> { return this.builder.find(id); }
+  whereIn<K extends ModelColumn<T>>(column: K, values: ModelColumnValue<T, K>[]): this {
     this.extraConstraints.push({ apply: (b) => b.whereIn(column, values), aggregateSafe: true });
+    this.builder.whereIn(column, values);
     return this;
   }
   orderBy(column: string, direction: "asc" | "desc" = "asc"): this {
     // Not aggregateSafe: ORDER BY on a plain column inside `SELECT COUNT(*)`
     // is rejected by PostgreSQL and MySQL under ONLY_FULL_GROUP_BY.
     this.extraConstraints.push({ apply: (b) => b.orderBy(column, direction), aggregateSafe: false });
+    this.builder.orderBy(column, direction);
     return this;
   }
   limit(value: number): this {
     // Not aggregateSafe: LIMIT inside COUNT(*) caps the result rows, not the
     // rows counted, so it silently reads as a no-op.
     this.extraConstraints.push({ apply: (b) => b.limit(value), aggregateSafe: false });
+    this.builder.limit(value);
     return this;
   }
   count(): Promise<number> { return this.builder.count(); }
@@ -749,7 +753,7 @@ export abstract class Relation<T extends ModelType = ModelType> {
     return this.newExistenceQuery(parentQuery, aggregate, callback).toRawSql();
   }
 
-  where(column: any, operatorOrValue: any, value?: any): this {
+  where(column: ModelColumn<T>, operatorOrValue: any, value?: any): this {
     const args: any[] = value !== undefined ? [column, operatorOrValue, value] : [column, operatorOrValue];
     const operator = value !== undefined ? operatorOrValue : "=";
     const whereValue = value !== undefined ? value : operatorOrValue;

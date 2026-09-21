@@ -1,4 +1,4 @@
-import type { DotPaths, DeepPick } from "../model/ModelBase.js";
+import type { DotPaths, DeepPick, ModelKey } from "../model/ModelBase.js";
 import type { NumericAggregate } from "../query/Builder.js";
 import type {
   AggregateAlias,
@@ -417,14 +417,14 @@ export class Collection<T = any> extends Array<T> {
     return !(this.contains as (...values: any[]) => boolean)(...args);
   }
 
-  modelKeys(): any[] {
+  modelKeys(): ModelKey[] {
     return this.filter(isModelLike).map(modelKey);
   }
 
   find<S extends T>(predicate: (value: T, index: number, obj: T[]) => value is S, thisArg?: any): S | undefined;
   find(predicate: (value: T, index: number, obj: T[]) => unknown, thisArg?: any): T | undefined;
-  find(key: readonly any[]): Collection<T>;
-  find(key: any, defaultValue?: T | null): T | null;
+  find(key: readonly ModelKey[]): Collection<T>;
+  find(key: ModelKey, defaultValue?: T | null): T | null;
   find(keyOrPredicate: any, defaultValue?: any): any {
     if (typeof keyOrPredicate === "function") {
       return Array.prototype.find.call(this, keyOrPredicate, defaultValue);
@@ -435,8 +435,8 @@ export class Collection<T = any> extends Array<T> {
     return this.first((item) => matchesModelKey(item, keyOrPredicate), defaultValue ?? null);
   }
 
-  findOrFail(key: readonly any[]): Collection<T>;
-  findOrFail(key: any): T;
+  findOrFail(key: readonly ModelKey[]): Collection<T>;
+  findOrFail(key: ModelKey): T;
   findOrFail(key: any): T | Collection<T> {
     const found = this.find(key as any);
     const missing = found === null || found === undefined ||

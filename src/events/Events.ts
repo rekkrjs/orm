@@ -1,7 +1,7 @@
 export type EventConstructor<TEvent = unknown> = new (...args: any[]) => TEvent;
-export type EventListener<TEvent> = (event: TEvent) => void | Promise<void>;
+export type EventListener<TEvent> = (event: TEvent) => void;
 export type EventHandlerContract<TEvent> = {
-  handle(event: TEvent): void | Promise<void>;
+  handle(event: TEvent): void;
 };
 export type EventHandlerConstructor<TEvent> = new () => EventHandlerContract<TEvent>;
 export type EventSubscriber<TEvent> =
@@ -23,7 +23,7 @@ type ListenerEntry<TEvent = unknown> = {
  * method can be registered with `Events.listen()`.
  */
 export abstract class EventHandler<TEvent> implements EventHandlerContract<TEvent> {
-  abstract handle(event: TEvent): void | Promise<void>;
+  abstract handle(event: TEvent): void;
 }
 
 export class Events {

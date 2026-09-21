@@ -8,7 +8,7 @@ import { resolveConnection } from "../connection/ExecutionContext.js";
 import { Cache } from "../cache/index.js";
 import { MorphTo } from "../model/MorphRelations.js";
 import type { WhereClause, OrderClause, HavingClause } from "../types/index.js";
-import type { AttachedToRelationName, BelongsToRelationName, DirectJson, EagerLoadDefinition, Model, ModelAttributeInput, ModelMassAssignmentInput, ModelColumn, ModelColumnValue, ModelConstructor, ModelRelationName, MorphToRelationName, SaveOptions, TypedEagerLoad, TypedConstraintMap, TypedConstraintSelection, TypedExistsConstraintMap, ExtractStringPaths, WithLoadedRelations, WithLoadedRelationsFromConstraintMap, WithRelationCount, WithRelationExists, WithRelationExistsMap, RelationConstraintQuery, NestedRelationPath, LiteralUnion, RelationRelatedModel, MorphToConstraintCallback } from "../model/Model.js";
+import type { AttachedToRelationName, BelongsToRelationName, DirectJson, EagerLoadDefinition, Model, ModelAttributeInput, ModelMassAssignmentInput, ModelColumn, ModelColumnValue, ModelConstructor, ModelKey, ModelRelationName, MorphToRelationName, SaveOptions, TypedEagerLoad, TypedConstraintMap, TypedConstraintSelection, TypedExistsConstraintMap, ExtractStringPaths, WithLoadedRelations, WithLoadedRelationsFromConstraintMap, WithRelationCount, WithRelationExists, WithRelationExistsMap, RelationConstraintQuery, NestedRelationPath, LiteralUnion, RelationRelatedModel, MorphToConstraintCallback } from "../model/Model.js";
 import { findRelationMethod, HasMany, Model as BaseModel } from "../model/Model.js";
 import { ObserverRegistry } from "../model/Observer.js";
 import { ModelNotFoundError } from "../model/ModelNotFoundError.js";
@@ -511,28 +511,28 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return this;
   }
 
-  whereKey(value: ModelColumnValue<T, any> | ModelColumnValue<T, any>[]): this {
+  whereKey(value: ModelKey | readonly ModelKey[]): this {
     const key = this.getModelPrimaryKey();
     return Array.isArray(value)
       ? this.whereIn(key as any, value as any[])
       : this.where(key as any, value);
   }
 
-  whereKeyNot(value: ModelColumnValue<T, any> | ModelColumnValue<T, any>[]): this {
+  whereKeyNot(value: ModelKey | readonly ModelKey[]): this {
     const key = this.getModelPrimaryKey();
     return Array.isArray(value)
       ? this.whereNotIn(key as any, value as any[])
       : this.where(key as any, "!=", value);
   }
 
-  orWhereKey(value: ModelColumnValue<T, any> | ModelColumnValue<T, any>[]): this {
+  orWhereKey(value: ModelKey | readonly ModelKey[]): this {
     const key = this.getModelPrimaryKey();
     return Array.isArray(value)
       ? this.whereIn(key as any, value as any[], "or")
       : this.orWhere(key as any, value);
   }
 
-  orWhereKeyNot(value: ModelColumnValue<T, any> | ModelColumnValue<T, any>[]): this {
+  orWhereKeyNot(value: ModelKey | readonly ModelKey[]): this {
     const key = this.getModelPrimaryKey();
     return Array.isArray(value)
       ? this.whereNotIn(key as any, value as any[], "or")
@@ -1146,15 +1146,15 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   }
 
   recursive(parentColumn: string): this;
-  recursive(parentColumn: string, startingId: any): this;
-  recursive(parentColumn: string, startingIds: any[]): this;
+  recursive(parentColumn: string, startingId: ModelKey): this;
+  recursive(parentColumn: string, startingIds: readonly ModelKey[]): this;
   recursive(parentColumn: string, startingPoint?: any | any[]): this {
     return this.configureRecursiveTree("descendants", parentColumn, startingPoint);
   }
 
   descendants(): this;
-  descendants(startingId: any): this;
-  descendants(startingIds: any[]): this;
+  descendants(startingId: ModelKey): this;
+  descendants(startingIds: readonly ModelKey[]): this;
   descendants(startingPoint?: any | any[]): this {
     const relation = this.inferRecursiveRelationMetadata();
     if (!relation) {
@@ -1164,8 +1164,8 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   }
 
   ancestors(): this;
-  ancestors(startingId: any): this;
-  ancestors(startingIds: any[]): this;
+  ancestors(startingId: ModelKey): this;
+  ancestors(startingIds: readonly ModelKey[]): this;
   ancestors(startingPoint?: any | any[]): this {
     const relation = this.inferRecursiveRelationMetadata();
     if (!relation) {
@@ -2470,16 +2470,16 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return result === null ? await callback() : result;
   }
 
-  async find(id: any, column?: ModelColumn<T>): Promise<TResult | null> {
+  async find(id: ModelKey, column?: ModelColumn<T>): Promise<TResult | null> {
     return this.where((column ?? this.getModelPrimaryKey()) as ModelColumn<T>, id).first();
   }
 
-  async findOr<TFallback>(id: any, callback: () => TFallback, column?: ModelColumn<T>): Promise<TResult | Awaited<TFallback>> {
+  async findOr<TFallback>(id: ModelKey, callback: () => TFallback, column?: ModelColumn<T>): Promise<TResult | Awaited<TFallback>> {
     const result = await this.find(id, column);
     return result === null ? await callback() : result;
   }
 
-  async findOrFail(id: any, column?: ModelColumn<T>): Promise<TResult> {
+  async findOrFail(id: ModelKey, column?: ModelColumn<T>): Promise<TResult> {
     const result = await this.find(id, column);
     if (!result) {
       throw new ModelNotFoundError(this.model?.name || "Model", id);
@@ -2487,11 +2487,11 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return result;
   }
 
-  async findSole(id: any): Promise<TResult> {
+  async findSole(id: ModelKey | readonly ModelKey[]): Promise<TResult> {
     return this.whereKey(id).sole();
   }
 
-  async findOrNew(id: any): Promise<T> {
+  async findOrNew(id: ModelKey): Promise<T> {
     const found = await this.find(id);
     return (found as T | null) ?? this.newModelForCreation("findOrNew");
   }
@@ -2617,7 +2617,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return (await this.pluck(column)).join(glue);
   }
 
-  async findMany(ids: any[], column?: ModelColumn<T>): Promise<Collection<TResult>> {
+  async findMany(ids: readonly ModelKey[], column?: ModelColumn<T>): Promise<Collection<TResult>> {
     const key = column || this.getModelPrimaryKey();
     return this.clone().whereIn(key as any, ids as any[]).get() as unknown as Promise<Collection<TResult>>;
   }
@@ -2785,7 +2785,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     });
   }
 
-  async chunk(count: number, callback: (items: Collection<TResult>) => void | Promise<void>): Promise<void> {
+  async chunk(count: number, callback: (items: Collection<TResult>) => void): Promise<void> {
     positiveInteger(count, "Chunk size");
     let page = 1;
     while (true) {
@@ -2797,7 +2797,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     }
   }
 
-  async each(count: number, callback: (item: TResult) => void | Promise<void>): Promise<void> {
+  async each(count: number, callback: (item: TResult) => void): Promise<void> {
     await this.chunk(count, async (items) => {
       for (const item of items) {
         await callback(item);
@@ -2805,7 +2805,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     });
   }
 
-  async chunkById(count: number, callback: (items: Collection<TResult>) => void | Promise<void>, column?: ModelColumn<T>): Promise<void> {
+  async chunkById(count: number, callback: (items: Collection<TResult>) => void, column?: ModelColumn<T>): Promise<void> {
     positiveInteger(count, "Chunk size");
     const model = this.model;
     const idColumn = column ?? ((model ? (model as any).primaryKey : null) || "id") as ModelColumn<T>;
@@ -2827,7 +2827,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     }
   }
 
-  async chunkByIdDesc(count: number, callback: (items: Collection<TResult>) => void | Promise<void>, column?: ModelColumn<T>): Promise<void> {
+  async chunkByIdDesc(count: number, callback: (items: Collection<TResult>) => void, column?: ModelColumn<T>): Promise<void> {
     positiveInteger(count, "Chunk size");
     const idColumn = (column ?? this.getModelPrimaryKey()) as ModelColumn<T>;
     const qualifiedColumn = String(idColumn).includes(".") ? String(idColumn) : `${this.tableName}.${String(idColumn)}`;
@@ -2848,7 +2848,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     }
   }
 
-  async eachById(count: number, callback: (item: TResult) => void | Promise<void>, column?: ModelColumn<T>): Promise<void> {
+  async eachById(count: number, callback: (item: TResult) => void, column?: ModelColumn<T>): Promise<void> {
     await this.chunkById(count, async (items) => {
       for (const item of items) {
         await callback(item);

@@ -128,23 +128,23 @@ export class ModelAggregates<T extends Record<string, any> = any> extends ModelQ
     return (this as any).query().cursorPaginate(perPage, cursor);
   }
 
-  static async chunk<M extends ModelConstructor>(this: M, count: number, callback: (items: Collection<InstanceType<M>>) => void | Promise<void>): Promise<void> {
+  static async chunk<M extends ModelConstructor>(this: M, count: number, callback: (items: Collection<InstanceType<M>>) => void): Promise<void> {
     return (this as any).query().chunk(count, callback);
   }
 
-  static async each<M extends ModelConstructor>(this: M, count: number, callback: (item: InstanceType<M>) => void | Promise<void>): Promise<void> {
+  static async each<M extends ModelConstructor>(this: M, count: number, callback: (item: InstanceType<M>) => void): Promise<void> {
     return (this as any).query().each(count, callback);
   }
 
-  static async chunkById<M extends ModelConstructor>(this: M, count: number, callback: (items: Collection<InstanceType<M>>) => void | Promise<void>, column?: string): Promise<void> {
+  static async chunkById<M extends ModelConstructor>(this: M, count: number, callback: (items: Collection<InstanceType<M>>) => void, column?: string): Promise<void> {
     return (this as any).query().chunkById(count, callback as any, column as any);
   }
 
-  static async chunkByIdDesc<M extends ModelConstructor>(this: M, count: number, callback: (items: Collection<InstanceType<M>>) => void | Promise<void>, column?: string): Promise<void> {
+  static async chunkByIdDesc<M extends ModelConstructor>(this: M, count: number, callback: (items: Collection<InstanceType<M>>) => void, column?: string): Promise<void> {
     return (this as any).query().chunkByIdDesc(count, callback as any, column as any);
   }
 
-  static async eachById<M extends ModelConstructor>(this: M, count: number, callback: (item: InstanceType<M>) => void | Promise<void>, column?: string): Promise<void> {
+  static async eachById<M extends ModelConstructor>(this: M, count: number, callback: (item: InstanceType<M>) => void, column?: string): Promise<void> {
     return (this as any).query().eachById(count, callback as any, column as any);
   }
 

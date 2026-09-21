@@ -18,7 +18,7 @@ export type FactoryStateValue<T = any> =
   | FactoryAttributes<T>
   | ((attributes: FactoryAttributes<T>, sequence: number) => FactoryAttributes<T>);
 export type FactoryState<T = any> = FactoryStateValue<T> | Sequence;
-export type AfterHook<T = any> = (model: T, sequence: number) => void | Promise<void>;
+export type AfterHook<T = any> = (model: T, sequence: number) => void;
 export interface FactoryInsertOptions {
   chunkSize?: number;
 }
@@ -345,8 +345,8 @@ export class Factory<T = any> {
       if (hook.constructor.name === "AsyncFunction") {
         throw new Error("Factory.make() cannot run asynchronous afterMaking hooks. Use create() or insert().");
       }
-      const result = hook(model, sequence);
-      if (result && typeof result.then === "function") {
+      const result: unknown = hook(model, sequence);
+      if (result && typeof (result as PromiseLike<void>).then === "function") {
         void Promise.resolve(result).catch(() => {});
         throw new Error("Factory.make() cannot run asynchronous afterMaking hooks. Use create() or insert().");
       }

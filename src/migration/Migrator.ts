@@ -79,7 +79,7 @@ export interface MigrationEventPayload {
   path?: string;
 }
 
-export type MigrationEventListener = (payload: MigrationEventPayload) => void | Promise<void>;
+export type MigrationEventListener = (payload: MigrationEventPayload) => void;
 
 export class Migrator {
   private static listeners = new Map<MigrationEvent, Set<MigrationEventListener>>();

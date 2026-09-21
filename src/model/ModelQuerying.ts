@@ -6,6 +6,8 @@ import type {
   EagerLoadConstraint,
   ModelAttributeInput,
   ModelColumn,
+  ModelColumnValue,
+  ModelKey,
 } from "./ModelBase.js";
 import { ModelRelations } from "./ModelRelations.js";
 
@@ -14,11 +16,11 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().where(column as any, operator, value);
   }
 
-  static whereKey<M extends ModelConstructor>(this: M, value: any | any[]): Builder<InstanceType<M>> {
+  static whereKey<M extends ModelConstructor>(this: M, value: ModelKey | readonly ModelKey[]): Builder<InstanceType<M>> {
     return (this as any).query().whereKey(value);
   }
 
-  static whereKeyNot<M extends ModelConstructor>(this: M, value: any | any[]): Builder<InstanceType<M>> {
+  static whereKeyNot<M extends ModelConstructor>(this: M, value: ModelKey | readonly ModelKey[]): Builder<InstanceType<M>> {
     return (this as any).query().whereKeyNot(value);
   }
 
@@ -135,22 +137,22 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
   }
 
   static recursive<M extends ModelConstructor>(this: M, parentColumn: string): Builder<InstanceType<M>>;
-  static recursive<M extends ModelConstructor>(this: M, parentColumn: string, startingId: any): Builder<InstanceType<M>>;
-  static recursive<M extends ModelConstructor>(this: M, parentColumn: string, startingIds: any[]): Builder<InstanceType<M>>;
+  static recursive<M extends ModelConstructor>(this: M, parentColumn: string, startingId: ModelKey): Builder<InstanceType<M>>;
+  static recursive<M extends ModelConstructor>(this: M, parentColumn: string, startingIds: readonly ModelKey[]): Builder<InstanceType<M>>;
   static recursive<M extends ModelConstructor>(this: M, parentColumn: string, startingPoint?: any | any[]): Builder<InstanceType<M>> {
     return (this as any).query().recursive(parentColumn, startingPoint);
   }
 
   static descendants<M extends ModelConstructor>(this: M): Builder<InstanceType<M>>;
-  static descendants<M extends ModelConstructor>(this: M, startingId: any): Builder<InstanceType<M>>;
-  static descendants<M extends ModelConstructor>(this: M, startingIds: any[]): Builder<InstanceType<M>>;
+  static descendants<M extends ModelConstructor>(this: M, startingId: ModelKey): Builder<InstanceType<M>>;
+  static descendants<M extends ModelConstructor>(this: M, startingIds: readonly ModelKey[]): Builder<InstanceType<M>>;
   static descendants<M extends ModelConstructor>(this: M, startingPoint?: any | any[]): Builder<InstanceType<M>> {
     return (this as any).query().descendants(startingPoint);
   }
 
   static ancestors<M extends ModelConstructor>(this: M): Builder<InstanceType<M>>;
-  static ancestors<M extends ModelConstructor>(this: M, startingId: any): Builder<InstanceType<M>>;
-  static ancestors<M extends ModelConstructor>(this: M, startingIds: any[]): Builder<InstanceType<M>>;
+  static ancestors<M extends ModelConstructor>(this: M, startingId: ModelKey): Builder<InstanceType<M>>;
+  static ancestors<M extends ModelConstructor>(this: M, startingIds: readonly ModelKey[]): Builder<InstanceType<M>>;
   static ancestors<M extends ModelConstructor>(this: M, startingPoint?: any | any[]): Builder<InstanceType<M>> {
     return (this as any).query().ancestors(startingPoint);
   }
@@ -255,11 +257,11 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().orWhereNot(column as any, value);
   }
 
-  static orWhereIn<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, values: any[]): Builder<InstanceType<M>> {
+  static orWhereIn<M extends ModelConstructor, K extends ModelColumn<InstanceType<M>>>(this: M, column: K, values: ModelColumnValue<InstanceType<M>, K>[]): Builder<InstanceType<M>> {
     return (this as any).query().orWhereIn(column, values);
   }
 
-  static orWhereNotIn<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, values: any[]): Builder<InstanceType<M>> {
+  static orWhereNotIn<M extends ModelConstructor, K extends ModelColumn<InstanceType<M>>>(this: M, column: K, values: ModelColumnValue<InstanceType<M>, K>[]): Builder<InstanceType<M>> {
     return (this as any).query().orWhereNotIn(column, values);
   }
 
@@ -343,39 +345,39 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().orWhereTime(column, operator, value);
   }
 
-  static wherePast<M extends ModelConstructor>(this: M, columns: any | readonly any[]): Builder<InstanceType<M>> {
+  static wherePast<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().wherePast(columns);
   }
 
-  static whereNowOrPast<M extends ModelConstructor>(this: M, columns: any | readonly any[]): Builder<InstanceType<M>> {
+  static whereNowOrPast<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().whereNowOrPast(columns);
   }
 
-  static whereFuture<M extends ModelConstructor>(this: M, columns: any | readonly any[]): Builder<InstanceType<M>> {
+  static whereFuture<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().whereFuture(columns);
   }
 
-  static whereNowOrFuture<M extends ModelConstructor>(this: M, columns: any | readonly any[]): Builder<InstanceType<M>> {
+  static whereNowOrFuture<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().whereNowOrFuture(columns);
   }
 
-  static whereToday<M extends ModelConstructor>(this: M, columns: any | readonly any[]): Builder<InstanceType<M>> {
+  static whereToday<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().whereToday(columns);
   }
 
-  static whereBeforeToday<M extends ModelConstructor>(this: M, columns: any | readonly any[]): Builder<InstanceType<M>> {
+  static whereBeforeToday<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().whereBeforeToday(columns);
   }
 
-  static whereAfterToday<M extends ModelConstructor>(this: M, columns: any | readonly any[]): Builder<InstanceType<M>> {
+  static whereAfterToday<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().whereAfterToday(columns);
   }
 
-  static whereTodayOrBefore<M extends ModelConstructor>(this: M, columns: any | readonly any[]): Builder<InstanceType<M>> {
+  static whereTodayOrBefore<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().whereTodayOrBefore(columns);
   }
 
-  static whereTodayOrAfter<M extends ModelConstructor>(this: M, columns: any | readonly any[]): Builder<InstanceType<M>> {
+  static whereTodayOrAfter<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>> | readonly ModelColumn<InstanceType<M>>[]): Builder<InstanceType<M>> {
     return (this as any).query().whereTodayOrAfter(columns);
   }
 
