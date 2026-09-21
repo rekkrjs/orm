@@ -25,7 +25,7 @@ describe("Cache: non-serializable values", () => {
 
     // And the key is still usable afterwards.
     expect(await Cache.remember("k", () => 42)).toBe(42);
-    expect(await Cache.get("k")).toBe(42);
+    expect(await Cache.get<number>("k")).toBe(42);
   });
 
   test("null is a cacheable value", async () => {
@@ -59,7 +59,7 @@ describe("MemoryCacheStore tag bookkeeping", () => {
     await store.forgetTag("t");
     expect(await store.get("a")).toBeNull();
     expect(await store.get("b")).toBeNull();
-    expect(await store.get("c")).toBe(3);
+    expect(await store.get<number>("c")).toBe(3);
   });
 
   test("a key under two tags is cleaned out of both", async () => {
@@ -95,8 +95,8 @@ describe("MemoryCacheStore tag bookkeeping", () => {
     await store.set("keep", "value", { ttl: 300 });
     await store.set("forever", "value");
     for (let i = 0; i < 200; i++) await store.set(`churn${i}`, i, { ttl: 0.001 });
-    expect(await store.get("keep")).toBe("value");
-    expect(await store.get("forever")).toBe("value");
+    expect(await store.get<string>("keep")).toBe("value");
+    expect(await store.get<string>("forever")).toBe("value");
   });
 });
 

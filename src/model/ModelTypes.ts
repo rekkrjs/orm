@@ -4,6 +4,14 @@ import type { BackedEnumDefinition } from "./BackedEnum.js";
 export type ModelConstructor<T = any> = (new (...args: any[]) => T) & Omit<any, "prototype">;
 export type GlobalScope = (builder: Builder<any>, model: ModelConstructor) => void;
 export type LiteralUnion<T extends string> = T | (string & {});
+/**
+ * A primary key value as it travels through the API: what an `int`, `string` or
+ * `uuid` key column holds. Never a model instance — `find()` and the pivot
+ * methods put this value straight into the query or the pivot row.
+ */
+export type ModelKey = number | string | bigint;
+
+
 export type EagerLoadConstraint = (query: Builder<any>) => void | Builder<any>;
 export interface EagerLoadDefinition {
   name: string;

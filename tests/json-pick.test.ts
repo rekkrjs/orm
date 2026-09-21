@@ -73,7 +73,7 @@ describe("model.json(...keys) — top-level pick", () => {
 
 describe("model.json(...paths) — nested relation pick (hasOne)", () => {
   it("picks nested field from hasOne relation", async () => {
-    const user = await JsonUser.with("social").first() as JsonUser;
+    const user = (await JsonUser.with("social").first())!;
     const j = user.json("id", "name", "social.provider_id");
     expect(Object.keys(j).sort()).toEqual(["id", "name", "social"]);
     expect((j as any).social.provider_id).toBeString();
@@ -81,7 +81,7 @@ describe("model.json(...paths) — nested relation pick (hasOne)", () => {
   });
 
   it("picks multiple fields from hasOne relation", async () => {
-    const user = await JsonUser.with("social").first() as JsonUser;
+    const user = (await JsonUser.with("social").first())!;
     const j = user.json("id", "social.provider", "social.provider_id");
     expect((j as any).social.provider).toBeString();
     expect((j as any).social.provider_id).toBeString();
@@ -89,7 +89,7 @@ describe("model.json(...paths) — nested relation pick (hasOne)", () => {
   });
 
   it("returns null for null relation", async () => {
-    const user = await JsonUser.with("social").find(9999) as JsonUser | null;
+    const user = await JsonUser.with("social").find(9999);
     if (!user) return; // no row
     const j = user.json("id", "social.provider_id");
     expect((j as any).social).toBeNull();
@@ -98,7 +98,7 @@ describe("model.json(...paths) — nested relation pick (hasOne)", () => {
 
 describe("model.json(...paths) — nested relation pick (hasMany)", () => {
   it("picks nested field from hasMany relation", async () => {
-    const user = await JsonUser.with("socials").first() as JsonUser;
+    const user = (await JsonUser.with("socials").first())!;
     const j = user.json("id", "socials.provider_id");
     expect(Array.isArray((j as any).socials)).toBe(true);
     for (const s of (j as any).socials) {
@@ -107,7 +107,7 @@ describe("model.json(...paths) — nested relation pick (hasMany)", () => {
   });
 
   it("picks multiple fields from hasMany relation", async () => {
-    const user = await JsonUser.with("socials").first() as JsonUser;
+    const user = (await JsonUser.with("socials").first())!;
     const j = user.json("socials.provider", "socials.provider_id");
     for (const s of (j as any).socials) {
       expect(s.provider).toBeString();

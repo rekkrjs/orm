@@ -17,8 +17,8 @@ async function runCli(args: string[], options: { input?: string; timeoutMs?: num
     stderr: "pipe",
   });
   if (options.input !== undefined) {
-    proc.stdin.write(options.input);
-    proc.stdin.end();
+    proc.stdin!.write(options.input);
+    proc.stdin!.end();
   }
   const stdout = new Response(proc.stdout).text();
   const stderr = new Response(proc.stderr).text();

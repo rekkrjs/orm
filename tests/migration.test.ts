@@ -364,9 +364,9 @@ export default class CreateEventTestTable extends Migration {
     await Bun.write(filePath, content);
 
     Migrator.clearListeners();
-    Migrator.on("migrating", ({ migration }) => events.push(`migrating:${migration}`));
-    Migrator.on("migrated", ({ migration }) => events.push(`migrated:${migration}`));
-    Migrator.on("schemaDumped", ({ path }) => events.push(`dumped:${path}`));
+    Migrator.on("migrating", ({ migration }) => { events.push(`migrating:${migration}`); });
+    Migrator.on("migrated", ({ migration }) => { events.push(`migrated:${migration}`); });
+    Migrator.on("schemaDumped", ({ path }) => { events.push(`dumped:${path}`); });
 
     const migrator = new Migrator(connection, TEST_MIGRATIONS_DIR);
     await migrator.run();

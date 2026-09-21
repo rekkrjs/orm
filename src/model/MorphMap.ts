@@ -1,13 +1,13 @@
-import type { Model } from "./Model.js";
+import type { ModelConstructor } from "./Model.js";
 
 export class MorphMap {
-  private static map = new Map<string, typeof Model>();
+  private static map = new Map<string, ModelConstructor>();
 
-  static register(name: string, model: typeof Model): void {
+  static register(name: string, model: ModelConstructor): void {
     this.map.set(name, model);
   }
 
-  static get(name: string): typeof Model | undefined {
+  static get(name: string): ModelConstructor | undefined {
     return this.map.get(name);
   }
 

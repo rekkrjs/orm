@@ -3,6 +3,9 @@ import { Model, Schema, Builder } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 class Event extends PermissiveModel {
+  declare id: number;
+  declare name: string;
+  declare happened_at: string;
   static table = "events";
 }
 

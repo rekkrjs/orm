@@ -101,7 +101,7 @@ describe("Benchmark: model query JSON", () => {
     const raw = async () => (await new Builder(connection, "fast_json_bench_users")
       .select("id", "name", "active")
       .orderBy("id")
-      .get()).toArray();
+      .get()).toArray() as Array<{ id: number; name: string; active: number }>;
     const direct = () => FastJsonBenchUser.select("id", "name", "active").orderBy("id").rawJson();
     const general = () => GeneralJsonBenchUser.select("id", "name", "active").orderBy("id").rawJson();
     // SQLite returns date columns as strings; MySQL and PostgreSQL return Dates,
@@ -113,7 +113,7 @@ describe("Benchmark: model query JSON", () => {
     const rawFive = async () => (await new Builder(connection, "fast_json_bench_users")
       .select("id", "name", "active", "created_at", "updated_at")
       .orderBy("id")
-      .get()).toArray();
+      .get()).toArray() as Array<{ id: number; name: string; active: number; created_at: string; updated_at: string }>;
     const hydrated = async () => (await FastJsonBenchUser.select("id", "name", "active").orderBy("id").get()).toJSON();
     const fallback = () => HydratedJsonBenchUser.select("id", "name", "active").orderBy("id").json();
 

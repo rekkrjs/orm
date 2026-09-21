@@ -12,7 +12,7 @@ class BulkUser extends Model {
 
 class BulkUuidUser extends Model {
   static table = "bulk_uuid_users";
-  static keyType = "uuid";
+  static keyType = "uuid" as const;
   static fillable = ["name"];
 }
 

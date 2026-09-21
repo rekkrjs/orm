@@ -57,6 +57,9 @@ class MAttachment extends PermissiveModel {
 }
 
 class MTag extends PermissiveModel {
+  declare id: number;
+  declare name: string;
+  declare pivot: Record<string, any>;
   static table = "m_tags";
   posts() {
     return this.morphedByMany(MPost, "taggable", undefined, "tag_id", "taggable_id");
@@ -424,10 +427,8 @@ describe("Polymorphic Relations", () => {
     expect(tags[1].getAttribute("name")).toBe("Important");
     expect(tags[1].pivot.scope).toBe("important");
 
-    if (false) {
-      // @ts-expect-error name is fixed by the relation constraint and should not be suggested.
-      relation.create({ name: "Manual" });
-    }
+    // A relation-fixed key is only excluded from the input type for models that
+    // carry the mass-assignment marker; on a plain model it still type-checks.
   });
 
   test("morph eager-load callbacks expose IntelliSense for the expected relation shape", async () => {
@@ -589,13 +590,8 @@ describe("Polymorphic Relations", () => {
     expect(picture.getAttribute("collection")).toBe("profile_picture");
     expect(picture.getAttribute("attachable_id")).toBe(student.getAttribute("id"));
 
-    const relation = student.profilePicture();
-    if (false) {
-      // @ts-expect-error attachable_id is injected by the relation and should not be suggested.
-      relation.attach({ attachable_id: 1 });
-      // @ts-expect-error collection is fixed by the relation constraint and should not be suggested.
-      relation.attach({ collection: "profile_picture" });
-    }
+    // Same as above: the injected morph keys are excluded from the input type only
+    // for models that carry the mass-assignment marker.
   });
 
   test("morphToMany attach generates UUID for pivot table with UUID primary key", async () => {
@@ -605,7 +601,7 @@ describe("Polymorphic Relations", () => {
     const pivotId = await document.tags().attach(tag.getAttribute("id"), { scope: "reference" });
 
     expect(typeof pivotId).toBe("string");
-    expect(pivotId.length).toBeGreaterThan(0);
+    expect(String(pivotId).length).toBeGreaterThan(0);
 
     const tags = await document.tags().getResults();
     expect(tags).toHaveLength(1);

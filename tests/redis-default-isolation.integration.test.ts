@@ -60,10 +60,10 @@ run("default Redis cache flush preserves queue leases, failures, delayed jobs an
     await store.set(name, "still cached");
     await engine.flush("audit_search");
     await engine.deleteIndex("audit_search");
-    expect(await store.get(name)).toBe("still cached");
+    expect(await store.get<string>(name)).toBe("still cached");
     expect(await queue.heartbeat(reserved.id, reserved.reservationToken)).toBe(true);
     expect(await queue.complete(reserved.id, reserved.reservationToken)).toBe(true);
-    expect(await store.get(name)).toBe("still cached");
+    expect(await store.get<string>(name)).toBe("still cached");
     expect(await queue.reserve(name, 90)).toBeNull(); // delayed job remains delayed
     expect(await queue.size(name)).toBe(1);
   } finally {

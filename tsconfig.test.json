@@ -5,25 +5,6 @@
     "declaration": false,
     "rootDir": "."
   },
-  "include": [
-    "src/**/*",
-    "bin/**/*",
-    "tests/factory-types.test.ts",
-    "tests/mass-assignment-types.test.ts",
-    "tests/model-config-types.test.ts",
-    "tests/validation-types.test.ts",
-    "tests/search-types.test.ts",
-    "tests/postgres-fts-types.test.ts",
-    "tests/eloquent-ergonomics.test.ts",
-    "tests/laravel-syntax-sugar.test.ts",
-    "tests/laravel-relation-pivot-sugar.test.ts",
-    "tests/laravel-p1-sugar.test.ts",
-    "tests/laravel-p2-static-forwarding.test.ts",
-    "tests/model-timestamps.test.ts",
-    "tests/native-appends.test.ts",
-    "tests/schema-types.test.ts",
-    "tests/schema-enum.test.ts",
-    "tests/backed-enum-types.test.ts"
-  ],
+  "include": ["src/**/*", "bin/**/*", "tests/**/*"],
   "exclude": ["node_modules", "dist"]
 }

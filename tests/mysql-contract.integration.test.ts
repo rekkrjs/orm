@@ -6,12 +6,19 @@ import { createDriverContext, mysqlUrl, type DriverContext } from "./driver-harn
 const run = mysqlUrl ? test.serial : test.skip;
 
 class MysqlExactValue extends PermissiveModel {
+  declare id: string;
+  declare amount: string;
   static override table = "mysql_exact_values";
   static override timestamps = false;
   static override casts = { amount: "decimal:10" };
 }
 
 class MysqlNativeValue extends PermissiveModel {
+  declare id: number;
+  declare payload: any;
+  declare active: boolean | null;
+  declare day_value: Date | null;
+  declare note: string | null;
   static override table = "mysql_native_values";
   static override timestamps = false;
   static override casts = {
@@ -22,6 +29,9 @@ class MysqlNativeValue extends PermissiveModel {
 }
 
 class MysqlPageItem extends PermissiveModel {
+  declare id: number;
+  declare bucket: number;
+  declare label: string;
   static override table = "mysql_page_items";
   static override timestamps = false;
 }

@@ -403,9 +403,9 @@ describe("Validator — sync rules", () => {
     ).validate();
 
     expect(out.tags).toEqual(["admin", "member"]);
-    expect(out.items[0].sku).toBe("A1");
-    expect(out.items[0].qty).toBe(2);
-    expect(out.items[1].qty).toBe(3);
+    expect(out.items![0].sku).toBe("A1");
+    expect(out.items![0].qty).toBe(2);
+    expect(out.items![1].qty).toBe(3);
   });
 
   test("optional nested guardian arrays validate and infer as nested objects", async () => {
@@ -775,7 +775,7 @@ describe("Validator — sync rules", () => {
     }
     const Flags = { open: false, closed: true } as const;
 
-    const file = { name: "avatar.png", type: "image/png", size: 1024, width: 200, height: 100 };
+    const file = { name: "avatar.png", type: "image/png", size: 1024, width: 200, height: 100 } as unknown as ValidationFile;
     const out = await Validator.make(
       {
         start: "2026-05-15",
@@ -822,7 +822,7 @@ describe("Validator — sync rules", () => {
     ).validate();
 
     expect(out.profile.name).toBe("Ada");
-    expect(out.items[1].email).toBe("b@example.com");
+    expect(out.items![1].email).toBe("b@example.com");
     expect(out.avatar).toBe(file);
     expectType<ValidationFile>(out.avatar);
     expectType<string>(out.avatar.name);

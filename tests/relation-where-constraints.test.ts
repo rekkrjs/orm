@@ -5,6 +5,9 @@ import { PermissiveModel, setupTestDb } from "./helpers.js";
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 class RwcUser extends PermissiveModel {
+  declare id: number;
+  declare name: string;
+  declare active: number;
   static table = "rwc_users";
 
   publishedPosts() {
@@ -54,10 +57,15 @@ class RwcProfile extends PermissiveModel {
 }
 
 class RwcRole extends PermissiveModel {
+  declare id: number;
+  declare name: string;
+  declare level: number;
   static table = "rwc_roles";
 }
 
 class RwcTag extends PermissiveModel {
+  declare id: number;
+  declare name: string;
   static table = "rwc_tags";
 }
 

@@ -21,3 +21,10 @@ export async function cleanupSqliteFile(path: string): Promise<void> {
   await rm(`${path}-wal`, { force: true });
   await rm(`${path}-shm`, { force: true });
 }
+
+/**
+ * The public shape of a model: what a loaded relation or a re-wrapped result
+ * keeps. Protected members drop out of those `Omit`-based types, so a loaded
+ * element is never assignable to the class itself — assert against this instead.
+ */
+export type PublicShape<M> = { [K in keyof M]: M[K] };

@@ -27,7 +27,7 @@ describe("DB facade", () => {
   test("DB.table().update()", async () => {
     await DB.table("db_users").where("name", "Bob").update({ active: true });
     const bob = await DB.table("db_users").where("name", "Bob").first();
-    expect(bob.active).toBeTruthy();
+    expect(bob!.active).toBeTruthy();
   });
 
   test("DB.table().count()", async () => {

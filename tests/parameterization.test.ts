@@ -408,6 +408,8 @@ describe("Parameterized Queries", () => {
     Schema.setConnection(connection);
 
     class CursorItem extends PermissiveModel {
+      declare id: number;
+      declare group_name: string;
       static table = "cursor_items";
       static timestamps = false;
     }

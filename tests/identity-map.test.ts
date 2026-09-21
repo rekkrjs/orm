@@ -3,11 +3,18 @@ import { Connection, Model, Schema, IdentityMap, ObserverRegistry } from "../src
 import { setupTestDb } from "./helpers.js";
 
 class User extends Model {
+  declare id: number;
+  declare name: string;
+  declare counter: number;
+  declare created_at: string;
+  declare updated_at: string;
   static table = "users";
   static fillable = ["name", "counter"];
 }
 
 class SoftUser extends Model {
+  declare id: number;
+  declare name: string;
   static table = "identity_soft_users";
   static fillable = ["name"];
   static softDeletes = true;

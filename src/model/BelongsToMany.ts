@@ -3,7 +3,7 @@ import { insertAndResolveKey, type PrimaryKeyColumn } from "./PrimaryKeyResoluti
 import { Schema } from "../schema/Schema.js";
 import { Collection } from "../support/Collection.js";
 import { shouldGeneratePrimaryKeyForColumn, snakeCase } from "../utils.js";
-import type { Model, ModelMassAssignmentInputWithout, ModelConstructor, PivotQueryBuilder, StripTablePrefix } from "./Model.js";
+import type { Model, ModelMassAssignmentInputWithout, ModelConstructor, ModelKey, PivotQueryBuilder, StripTablePrefix } from "./Model.js";
 
 function getModelConstructor(model: Model): typeof Model {
   return Object.getPrototypeOf(model).constructor as typeof Model;
@@ -546,7 +546,7 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
     return this.newExistenceQuery(parentQuery.tableName, aggregate, callback).toRawSql();
   }
 
-  async attach(ids: any | any[], attributes?: Record<string, any>): Promise<any> {
+  async attach(ids: ModelKey | readonly ModelKey[], attributes?: Record<string, any>): Promise<ModelKey | undefined> {
     const idList = Array.isArray(ids) ? ids : [ids];
     const pivotAttributes = {
       ...attributes,
@@ -635,7 +635,7 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
     return created;
   }
 
-  async detach(ids?: any | any[]): Promise<void> {
+  async detach(ids?: ModelKey | readonly ModelKey[]): Promise<void> {
     const connection = this.parent.getConnection();
     const builder = new Builder(connection, this.qualifiedPivotTable())
       .where(this.foreignPivotKey, this.parent.getAttribute(this.parentKey));
@@ -646,7 +646,7 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
     await builder.delete();
   }
 
-  async sync(ids: any | any[], attributes?: Record<string, any>, detachMissing: boolean = true): Promise<{ attached: any[]; detached: any[] }> {
+  async sync(ids: ModelKey | readonly ModelKey[], attributes?: Record<string, any>, detachMissing: boolean = true): Promise<{ attached: ModelKey[]; detached: ModelKey[] }> {
     const idList = Array.isArray(ids) ? ids : [ids];
     const connection = this.parent.getConnection();
     const currentQuery = new Builder(connection, this.qualifiedPivotTable())
@@ -674,7 +674,7 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
     return { attached: toAttach, detached: [] };
   }
 
-  async updateExistingPivot(id: any, attributes: Record<string, any>): Promise<void> {
+  async updateExistingPivot(id: ModelKey, attributes: Record<string, any>): Promise<void> {
     const connection = this.parent.getConnection();
     const builder = new Builder(connection, this.qualifiedPivotTable())
       .where(this.foreignPivotKey, this.parent.getAttribute(this.parentKey))
@@ -683,11 +683,11 @@ export class BelongsToMany<T extends Record<string, any> = Model, RelatedFixed e
     await builder.update(attributes);
   }
 
-  async syncWithoutDetaching(ids: any | any[], attributes?: Record<string, any>): Promise<{ attached: any[]; detached: any[] }> {
+  async syncWithoutDetaching(ids: ModelKey | readonly ModelKey[], attributes?: Record<string, any>): Promise<{ attached: ModelKey[]; detached: ModelKey[] }> {
     return this.sync(ids, attributes, false);
   }
 
-  async toggle(ids: any | any[], attributes?: Record<string, any>): Promise<{ attached: any[]; detached: any[] }> {
+  async toggle(ids: ModelKey | readonly ModelKey[], attributes?: Record<string, any>): Promise<{ attached: ModelKey[]; detached: ModelKey[] }> {
     const idList = Array.isArray(ids) ? ids : [ids];
     const connection = this.parent.getConnection();
     const currentQuery = new Builder(connection, this.qualifiedPivotTable())

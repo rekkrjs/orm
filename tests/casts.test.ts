@@ -27,6 +27,17 @@ class CountingCast implements CastsAttributes {
 }
 
 class CastedModel extends PermissiveModel {
+  declare id: number;
+  declare is_active: boolean | number;
+  declare count: number | string;
+  declare metadata: any;
+  declare score: number;
+  declare tags: string[] | string;
+  declare price: string;
+  declare secret: string;
+  declare code: string;
+  declare happened_at: Date;
+  declare stamped_at: Date;
   static table = "casted";
   static casts = {
     is_active: "boolean",
@@ -43,6 +54,8 @@ class CastedModel extends PermissiveModel {
 }
 
 class CachedCastModel extends PermissiveModel {
+  declare id: number;
+  declare code: string;
   static table = "cached_casted";
   static casts = {
     code: CountingCast,
@@ -50,6 +63,7 @@ class CachedCastModel extends PermissiveModel {
 }
 
 class ConstructorCacheModel extends PermissiveModel {
+  declare metadata: any;
   static casts = { metadata: "json" };
   static attributes = { metadata: { source: "default" } };
 
@@ -233,6 +247,9 @@ describe("Attribute Casting", () => {
 
   test("picks up casts added to or replaced in the static map after the first model was built", () => {
     class LateCastModel extends PermissiveModel {
+      declare id: number;
+      declare first: any;
+      declare second: any;
       static table = "late_casts";
       static casts: Record<string, string> = { first: "json" };
     }
@@ -308,6 +325,7 @@ describe("Attribute Casting", () => {
 
   test("rejects unsupported string casts", () => {
     class InvalidCastModel extends PermissiveModel {
+      declare secret: string;
       static override table = "invalid_casts";
       static override casts = { secret: "unsupported" };
     }

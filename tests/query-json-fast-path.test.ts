@@ -18,6 +18,8 @@ const JsonState = backedEnum({ Active: "active", Disabled: "disabled" });
 let eligibleConstructions = 0;
 
 class FastJsonUser extends PermissiveModel {
+  declare id: number;
+  declare name: string;
   static override table = "fast_json_users";
   static override timestamps = false;
   static override hidden = ["secret"];
@@ -75,6 +77,8 @@ class InvisibleEnumFastJsonUser extends PermissiveModel {
 }
 
 class CountingJsonModel extends PermissiveModel {
+  declare id: number;
+  declare name: string;
   static override table = "fast_json_fallbacks";
   static override timestamps = false;
   static constructions = 0;
@@ -131,6 +135,7 @@ class UnsupportedStringCastJsonModel extends CountingJsonModel {
 }
 
 class DefaultAttributeJsonModel extends CountingJsonModel {
+  declare fallback: string;
   static override attributes = { fallback: "default" };
 }
 
@@ -585,7 +590,10 @@ describe("Builder.rawJson", () => {
 
   test("omits appends and only rejects accessors that reach the output", async () => {
     AppendedJsonModel.constructions = 0;
-    expect(await AppendedJsonModel.query().rawJson()).toEqual([{ id: 1, name: "fallback" }]);
+    // rawJson() omits appends at runtime, but an accessor-backed append is
+    // indistinguishable from a column in the result type, so compare as plain rows.
+    const appended = await AppendedJsonModel.query().rawJson() as Array<Record<string, unknown>>;
+    expect(appended).toEqual([{ id: 1, name: "fallback" }]);
     expect(AppendedJsonModel.constructions).toBe(0);
 
     expect(await AccessorJsonModel.select("id").rawJson()).toEqual([{ id: 1 }]);

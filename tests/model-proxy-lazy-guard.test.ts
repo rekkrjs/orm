@@ -4,6 +4,9 @@ import { getModelTarget } from "../src/model/ModelBase.js";
 import { setupTestDb } from "./helpers.js";
 
 class Product extends Model {
+  declare id: number;
+  declare name: string;
+  declare price: number;
   static table = "products";
   static fillable = ["name", "price"];
 }

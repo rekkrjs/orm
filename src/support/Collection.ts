@@ -612,6 +612,11 @@ export class Collection<T = any> extends Array<T> {
     return this.join(String(valueOrGlue ?? ""));
   }
 
+  min(): T | null;
+  min<V>(key: (item: T) => V): V | null;
+  min<K extends keyof T & CollectionKey>(key: K): T[K] | null;
+  /** Dot paths and keys the item type does not declare cannot be resolved statically. */
+  min(key: CollectionKey): any;
   min<K extends CollectionKey>(key?: K | ((item: T) => any)): any {
     if (this.length === 0) return null;
     return this.reduce<any>((minValue, item) => {
@@ -620,6 +625,11 @@ export class Collection<T = any> extends Array<T> {
     }, key === undefined ? this[0] : typeof key === "function" ? key(this[0]) : valueFor(this[0], key));
   }
 
+  max(): T | null;
+  max<V>(key: (item: T) => V): V | null;
+  max<K extends keyof T & CollectionKey>(key: K): T[K] | null;
+  /** Dot paths and keys the item type does not declare cannot be resolved statically. */
+  max(key: CollectionKey): any;
   max<K extends CollectionKey>(key?: K | ((item: T) => any)): any {
     if (this.length === 0) return null;
     return this.reduce<any>((maxValue, item) => {

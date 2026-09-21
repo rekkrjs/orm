@@ -25,16 +25,19 @@ export type {
   ModelInstanceAttributeKeys,
   BulkModelOptions,
   SaveOptions,
+  ModelKey,
   CastDefinition,
   CastsAttributes,
   AttributeDefinition,
   AccessorMap,
   LiteralUnion,
 } from "./ModelTypes.js";
+import type { Connection } from "../connection/Connection.js";
 import type {
   ModelConstructor,
   EagerLoadConstraint,
   ModelAttributes,
+  SaveOptions,
   ModelColumn,
   ModelColumnValue,
   ModelAttributeInputWithout,
@@ -52,7 +55,7 @@ export function setModelClass(ctor: any): void { _ModelClass = ctor; }
 export function getModelClass(): any { return _ModelClass; }
 
 // Forward reference to Model class (used in types below)
-interface ModelType<T extends Record<string, any> = any> {
+export interface ModelType<T extends Record<string, any> = any> {
   $attributes: T;
   $original: Partial<T>;
   $changes: Partial<T>;
@@ -70,12 +73,12 @@ interface ModelType<T extends Record<string, any> = any> {
   $wasRecentlyCreated: boolean;
   getAttribute(key: string): any;
   setAttribute(key: string, value: any): void;
-  setConnection(connection: any): this;
-  getConnection(): any;
+  setConnection(connection: Connection): this;
+  getConnection(): Connection;
   getModelConstructor(): any;
   fill(attributes: Partial<T>): this;
   forceFill(attributes: Partial<T>): this;
-  save(options?: any): Promise<this>;
+  save(options?: SaveOptions): Promise<this>;
   setRelation(name: string, value: any): this;
   getRelation(name: string): any;
   isInstanceOf<M extends ModelConstructor<any>>(modelClass: M): this is InstanceType<M>;
@@ -169,23 +172,23 @@ type PathToModel<T, Path extends string> =
       : never;
 
 export interface PivotQueryBuilder {
-  wherePivot(column: string, operator: string | any, value?: any): any;
-  orWherePivot(column: string, operator: string | any, value?: any): any;
-  wherePivotIn(column: string, values: any[]): any;
-  wherePivotNotIn(column: string, values: any[]): any;
-  orWherePivotIn(column: string, values: any[]): any;
-  orWherePivotNotIn(column: string, values: any[]): any;
-  wherePivotNull(column: string): any;
-  wherePivotNotNull(column: string): any;
-  orWherePivotNull(column: string): any;
-  orWherePivotNotNull(column: string): any;
-  wherePivotBetween(column: string, values: [any, any]): any;
-  orWherePivotBetween(column: string, values: [any, any]): any;
-  wherePivotNotBetween(column: string, values: [any, any]): any;
-  orWherePivotNotBetween(column: string, values: [any, any]): any;
-  orderByPivot(column: string, direction?: "asc" | "desc"): any;
-  orderByPivotDesc(column: string): any;
-  withPivotValue(column: string, value: any): any;
+  wherePivot(column: string, operator: string | any, value?: any): this;
+  orWherePivot(column: string, operator: string | any, value?: any): this;
+  wherePivotIn(column: string, values: any[]): this;
+  wherePivotNotIn(column: string, values: any[]): this;
+  orWherePivotIn(column: string, values: any[]): this;
+  orWherePivotNotIn(column: string, values: any[]): this;
+  wherePivotNull(column: string): this;
+  wherePivotNotNull(column: string): this;
+  orWherePivotNull(column: string): this;
+  orWherePivotNotNull(column: string): this;
+  wherePivotBetween(column: string, values: [any, any]): this;
+  orWherePivotBetween(column: string, values: [any, any]): this;
+  wherePivotNotBetween(column: string, values: [any, any]): this;
+  orWherePivotNotBetween(column: string, values: [any, any]): this;
+  orderByPivot(column: string, direction?: "asc" | "desc"): this;
+  orderByPivotDesc(column: string): this;
+  withPivotValue(column: string, value: any): this;
 }
 
 type RelationInstanceAtPath<T, Path extends string> =
@@ -972,6 +975,8 @@ export class BelongsTo<T extends ModelType = ModelType> extends Relation<T> {
     return result ?? (this.makeDefault() as T | null);
   }
 
+  get(): Promise<T | null> { return this.getResults(); }
+
   private makeDefault(): T | null {
     if (this.defaultAttributes === undefined) return null;
     const instance = this.newRelatedInstance();
@@ -1176,4 +1181,6 @@ export class HasOne<T extends ModelType = ModelType> extends Relation<T> {
     const result = await this.builder.first();
     return result ?? (this.makeDefault() as T | null);
   }
+
+  get(): Promise<T | null> { return this.getResults(); }
 }

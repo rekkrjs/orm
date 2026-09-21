@@ -52,7 +52,7 @@ describe.serial("live Redis integration", () => {
     await Cache.set("other", { value: 2 }, { tags: ["other"] });
     await Cache.forgetTag("users");
     expect(await Cache.get("profile")).toBeNull();
-    expect(await Cache.get("other")).toEqual({ value: 2 });
+    expect(await Cache.get<{ value: number }>("other")).toEqual({ value: 2 });
   });
 
   runIfRedis("handles named, delayed, retried, and concurrently reserved jobs", async () => {
@@ -91,7 +91,7 @@ describe.serial("live Redis integration", () => {
     await store.set("replaced", 1, { tags: ["old", "second"] });
     await store.set("replaced", 2, { tags: "new" });
     await store.forgetTag("old");
-    expect(await store.get("replaced")).toBe(2);
+    expect(await store.get<number>("replaced")).toBe(2);
     expect(await redis.send("EXISTS", [`${prefix}atomic:tag:second`])).toBe(0);
     await store.set("expires", 1, { ttl: 0.01, tags: "short" });
     await Bun.sleep(30);

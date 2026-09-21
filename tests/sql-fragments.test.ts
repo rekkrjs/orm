@@ -20,7 +20,7 @@ AND flag = ${true}`)
       expect(text).toContain("-- ? preserved\nAND");
       expect(text).toContain("/* ? preserved */");
       expect(query.bindings).toEqual([1, "key", ["a"], ["b"], 2, true, 3, 4, 5, 6]);
-      if (driver === "postgres") expect(text.match(/\$\d+/g)).toEqual(Array.from({ length: 10 }, (_, i) => `$${i + 1}`));
+      if (driver === "postgres") expect([...(text.match(/\$\d+/g) ?? [])]).toEqual(Array.from({ length: 10 }, (_, i) => `$${i + 1}`));
       const { statements } = await connection.pretend(() => query.get());
       expect(statements[0]).toEqual({ sql: text, bindings: query.bindings });
     } finally { await connection.close(); }

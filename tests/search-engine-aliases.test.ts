@@ -68,7 +68,7 @@ describe("Search.configure engine aliases", () => {
   test("passes host and apiKey to the meilisearch alias", async () => {
     const calls: Array<{ url: string; authorization?: string }> = [];
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       calls.push({
         url: String(input),
         authorization: init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)
@@ -113,24 +113,30 @@ describe("Search.configure engine aliases", () => {
     }
   });
 
+  // The config type already rejects each of these combinations; the @ts-expect-error
+  // directives assert that, and the matchers assert the runtime guard behind it.
   test("rejects incompatible alias options", () => {
     expect(() => Search.configure({
       engine: "meilisearch",
+      // @ts-expect-error connection is not a Meilisearch option.
       connection: { url: "sqlite://:memory:" },
     })).toThrow("not supported for the Meilisearch");
 
     expect(() => Search.configure({
       engine: "sqlite",
+      // @ts-expect-error host is a Meilisearch-only option.
       host: "http://search.test",
     })).toThrow("only supported for the Meilisearch");
 
     expect(() => Search.configure({
       engine: "pg",
+      // @ts-expect-error apiKey is a Meilisearch-only option.
       apiKey: "secret",
     })).toThrow("only supported for the Meilisearch");
 
     expect(() => Search.configure({
       engine: new CustomEngine(),
+      // @ts-expect-error host is only supported with the built-in engine aliases.
       host: "http://search.test",
     })).toThrow("only supported with built-in engine aliases");
   });

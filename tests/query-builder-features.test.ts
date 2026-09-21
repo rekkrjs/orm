@@ -3,6 +3,8 @@ import { Model, Schema } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 class Product extends PermissiveModel {
+  declare id: number;
+  declare name: string;
   static table = "products";
 }
 

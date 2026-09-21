@@ -1,5 +1,5 @@
 import { expect, test, describe, beforeAll, afterAll } from "bun:test";
-import { Connection, Schema, Builder, Model } from "../src/index.js";
+import { Collection, Connection, Schema, Builder, Model } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 describe("Advanced Query Builder Features", () => {
@@ -815,11 +815,11 @@ describe("Advanced Query Builder Features", () => {
     });
 
     test("getTree materializes recursive results into the matching hasMany relation", async () => {
-      const tree = await Folder
+      const tree = (await Folder
         .recursive("parent_id")
         .orderBy("depth")
         .orderBy("name")
-        .getTree();
+        .getTree()) as Collection<Folder>;
 
       expect(tree).toHaveLength(1);
       expect(tree[0]).toBeInstanceOf(Folder);
@@ -850,11 +850,11 @@ describe("Advanced Query Builder Features", () => {
     });
 
     test("getTree returns one model or null for one starting point", async () => {
-      const root = await Folder
+      const root = (await Folder
         .recursive("parent_id", 1)
         .orderBy("depth")
         .orderBy("name")
-        .getTree();
+        .getTree()) as Folder | null;
 
       expect(root).toBeInstanceOf(Folder);
       expect(root?.getAttribute("name")).toBe("Root");
@@ -863,16 +863,16 @@ describe("Advanced Query Builder Features", () => {
         "Billing",
       ]);
 
-      const missing = await Folder.recursive("parent_id", 999).getTree();
+      const missing = (await Folder.recursive("parent_id", 999).getTree()) as Folder | null;
       expect(missing).toBeNull();
     });
 
     test("getTree returns a collection for multiple starting points", async () => {
-      const tree = await Folder
+      const tree = (await Folder
         .recursive("parent_id", [2, 3])
         .orderBy("depth")
         .orderBy("name")
-        .getTree();
+        .getTree()) as Collection<Folder>;
 
       expect(tree.map((folder) => folder.getAttribute("name"))).toEqual([
         "Admissions",
@@ -882,12 +882,12 @@ describe("Advanced Query Builder Features", () => {
     });
 
     test("getTree supports a max depth", async () => {
-      const tree = await Folder
+      const tree = (await Folder
         .recursive("parent_id")
         .maxDepth(1)
         .orderBy("depth")
         .orderBy("name")
-        .getTree();
+        .getTree()) as Collection<Folder>;
 
       expect(tree).toHaveLength(1);
       expect(tree[0].getRelation("items").map((folder: Folder) => folder.getAttribute("name"))).toEqual([
@@ -898,12 +898,12 @@ describe("Advanced Query Builder Features", () => {
     });
 
     test("getTree can exclude the root and promote its children", async () => {
-      const tree = await Folder
+      const tree = (await Folder
         .descendants(1)
         .excludeRoot()
         .orderByDepth()
         .orderBy("name")
-        .getTree();
+        .getTree()) as Collection<Folder>;
 
       expect(tree).toHaveLength(2);
       expect(tree.map((folder) => folder.getAttribute("name"))).toEqual([

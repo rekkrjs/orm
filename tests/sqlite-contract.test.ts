@@ -3,6 +3,12 @@ import { PermissiveModel } from "./helpers.js";
 import { Connection, Model, Schema, TypeMapper } from "../src/index.js";
 
 class SqliteNativeValue extends PermissiveModel {
+  declare id: number;
+  declare metadata: any;
+  declare tags: any;
+  declare active: boolean | null;
+  declare day_value: Date | null;
+  declare note: string | null;
   static override table = "sq_contract_native_values";
   static override timestamps = false;
   static override casts = {
@@ -14,6 +20,8 @@ class SqliteNativeValue extends PermissiveModel {
 }
 
 class SqliteExactText extends PermissiveModel {
+  declare exact_id: string;
+  declare amount: string;
   static override table = "sq_contract_exact_text";
   static override timestamps = false;
   static override primaryKey = "exact_id";

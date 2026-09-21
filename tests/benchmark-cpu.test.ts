@@ -11,6 +11,9 @@ function setupDb() {
 }
 
 class BenchUser extends Model {
+  declare id: number;
+  declare name: string;
+  declare score: number;
   static table = "bench_users";
   static fillable = ["name", "email", "active", "score"];
   static casts = { active: "boolean", score: "number" };
@@ -126,6 +129,7 @@ describe("Benchmark: CPU Optimizations", () => {
 
   test("Observer dispatch x5000 (event-indexed dispatch)", async () => {
     class TestUser extends Model {
+      declare name: string;
       static table = "bench_users";
       static fillable = ["name"];
     }

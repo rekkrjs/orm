@@ -4,6 +4,7 @@ import type { FullTextOptions } from "../fulltext.js";
 import type {
   ModelConstructor,
   EagerLoadConstraint,
+  ModelAttributeInput,
   ModelColumn,
 } from "./ModelBase.js";
 import { ModelRelations } from "./ModelRelations.js";
@@ -41,11 +42,11 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().orderByDesc(column);
   }
 
-  static reorder<M extends ModelConstructor>(this: M, column?: any, direction?: "asc" | "desc"): Builder<InstanceType<M>> {
+  static reorder<M extends ModelConstructor>(this: M, column?: ModelColumn<InstanceType<M>>, direction?: "asc" | "desc"): Builder<InstanceType<M>> {
     return (this as any).query().reorder(column, direction);
   }
 
-  static reorderDesc<M extends ModelConstructor>(this: M, column?: any): Builder<InstanceType<M>> {
+  static reorderDesc<M extends ModelConstructor>(this: M, column?: ModelColumn<InstanceType<M>>): Builder<InstanceType<M>> {
     return (this as any).query().reorderDesc(column);
   }
 
@@ -53,11 +54,11 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().groupBy(...columns);
   }
 
-  static having<M extends ModelConstructor>(this: M, column: any, operator: string, value: any): Builder<InstanceType<M>> {
+  static having<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator: string, value: any): Builder<InstanceType<M>> {
     return (this as any).query().having(column, operator, value);
   }
 
-  static orHaving<M extends ModelConstructor>(this: M, column: any, operator: string, value: any): Builder<InstanceType<M>> {
+  static orHaving<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator: string, value: any): Builder<InstanceType<M>> {
     return (this as any).query().orHaving(column, operator, value);
   }
 
@@ -69,19 +70,19 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().orHavingRaw(sql, bindings);
   }
 
-  static havingBetween<M extends ModelConstructor>(this: M, column: any, values: readonly [any, any]): Builder<InstanceType<M>> {
+  static havingBetween<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, values: readonly [any, any]): Builder<InstanceType<M>> {
     return (this as any).query().havingBetween(column, values);
   }
 
-  static havingNotBetween<M extends ModelConstructor>(this: M, column: any, values: readonly [any, any]): Builder<InstanceType<M>> {
+  static havingNotBetween<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, values: readonly [any, any]): Builder<InstanceType<M>> {
     return (this as any).query().havingNotBetween(column, values);
   }
 
-  static orHavingBetween<M extends ModelConstructor>(this: M, column: any, values: readonly [any, any]): Builder<InstanceType<M>> {
+  static orHavingBetween<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, values: readonly [any, any]): Builder<InstanceType<M>> {
     return (this as any).query().orHavingBetween(column, values);
   }
 
-  static orHavingNotBetween<M extends ModelConstructor>(this: M, column: any, values: readonly [any, any]): Builder<InstanceType<M>> {
+  static orHavingNotBetween<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, values: readonly [any, any]): Builder<InstanceType<M>> {
     return (this as any).query().orHavingNotBetween(column, values);
   }
 
@@ -129,7 +130,7 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().unionAll(query);
   }
 
-  static withRecursive<M extends ModelConstructor>(this: M, name: string, anchor: Builder<any> | string, recursive: Builder<any> | string): Builder<InstanceType<M>> {
+  static withRecursive<M extends ModelConstructor>(this: M, name: string, anchor: Builder<any, any, any> | string, recursive: Builder<any, any, any> | string): Builder<InstanceType<M>> {
     return (this as any).query().withRecursive(name, anchor, recursive);
   }
 
@@ -218,11 +219,11 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().whereNotBetween(column, values);
   }
 
-  static whereBetweenColumns<M extends ModelConstructor>(this: M, column: any, values: readonly [any, any]): Builder<InstanceType<M>> {
+  static whereBetweenColumns<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, values: readonly [ModelColumn<InstanceType<M>>, ModelColumn<InstanceType<M>>]): Builder<InstanceType<M>> {
     return (this as any).query().whereBetweenColumns(column, values);
   }
 
-  static whereNotBetweenColumns<M extends ModelConstructor>(this: M, column: any, values: readonly [any, any]): Builder<InstanceType<M>> {
+  static whereNotBetweenColumns<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, values: readonly [ModelColumn<InstanceType<M>>, ModelColumn<InstanceType<M>>]): Builder<InstanceType<M>> {
     return (this as any).query().whereNotBetweenColumns(column, values);
   }
 
@@ -246,19 +247,19 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().orWhere(column as any, operator, value);
   }
 
-  static whereNot<M extends ModelConstructor>(this: M, column: any, value?: any): Builder<InstanceType<M>> {
+  static whereNot<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>> | ModelAttributeInput<InstanceType<M>>, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().whereNot(column as any, value);
   }
 
-  static orWhereNot<M extends ModelConstructor>(this: M, column: any, value?: any): Builder<InstanceType<M>> {
+  static orWhereNot<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>> | ModelAttributeInput<InstanceType<M>>, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().orWhereNot(column as any, value);
   }
 
-  static orWhereIn<M extends ModelConstructor>(this: M, column: any, values: any[]): Builder<InstanceType<M>> {
+  static orWhereIn<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, values: any[]): Builder<InstanceType<M>> {
     return (this as any).query().orWhereIn(column, values);
   }
 
-  static orWhereNotIn<M extends ModelConstructor>(this: M, column: any, values: any[]): Builder<InstanceType<M>> {
+  static orWhereNotIn<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, values: any[]): Builder<InstanceType<M>> {
     return (this as any).query().orWhereNotIn(column, values);
   }
 
@@ -278,11 +279,11 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().orWhereNotBetween(column, values);
   }
 
-  static orWhereBetweenColumns<M extends ModelConstructor>(this: M, column: any, values: readonly [any, any]): Builder<InstanceType<M>> {
+  static orWhereBetweenColumns<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, values: readonly [ModelColumn<InstanceType<M>>, ModelColumn<InstanceType<M>>]): Builder<InstanceType<M>> {
     return (this as any).query().orWhereBetweenColumns(column, values);
   }
 
-  static orWhereNotBetweenColumns<M extends ModelConstructor>(this: M, column: any, values: readonly [any, any]): Builder<InstanceType<M>> {
+  static orWhereNotBetweenColumns<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, values: readonly [ModelColumn<InstanceType<M>>, ModelColumn<InstanceType<M>>]): Builder<InstanceType<M>> {
     return (this as any).query().orWhereNotBetweenColumns(column, values);
   }
 
@@ -302,43 +303,43 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().orWhereNotExists(sql);
   }
 
-  static whereDate<M extends ModelConstructor>(this: M, column: any, operator?: any, value?: any): Builder<InstanceType<M>> {
+  static whereDate<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator?: any, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().whereDate(column, operator, value);
   }
 
-  static orWhereDate<M extends ModelConstructor>(this: M, column: any, operator?: any, value?: any): Builder<InstanceType<M>> {
+  static orWhereDate<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator?: any, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().orWhereDate(column, operator, value);
   }
 
-  static whereDay<M extends ModelConstructor>(this: M, column: any, operator?: any, value?: any): Builder<InstanceType<M>> {
+  static whereDay<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator?: any, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().whereDay(column, operator, value);
   }
 
-  static orWhereDay<M extends ModelConstructor>(this: M, column: any, operator?: any, value?: any): Builder<InstanceType<M>> {
+  static orWhereDay<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator?: any, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().orWhereDay(column, operator, value);
   }
 
-  static whereMonth<M extends ModelConstructor>(this: M, column: any, operator?: any, value?: any): Builder<InstanceType<M>> {
+  static whereMonth<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator?: any, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().whereMonth(column, operator, value);
   }
 
-  static orWhereMonth<M extends ModelConstructor>(this: M, column: any, operator?: any, value?: any): Builder<InstanceType<M>> {
+  static orWhereMonth<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator?: any, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().orWhereMonth(column, operator, value);
   }
 
-  static whereYear<M extends ModelConstructor>(this: M, column: any, operator?: any, value?: any): Builder<InstanceType<M>> {
+  static whereYear<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator?: any, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().whereYear(column, operator, value);
   }
 
-  static orWhereYear<M extends ModelConstructor>(this: M, column: any, operator?: any, value?: any): Builder<InstanceType<M>> {
+  static orWhereYear<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator?: any, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().orWhereYear(column, operator, value);
   }
 
-  static whereTime<M extends ModelConstructor>(this: M, column: any, operator?: any, value?: any): Builder<InstanceType<M>> {
+  static whereTime<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator?: any, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().whereTime(column, operator, value);
   }
 
-  static orWhereTime<M extends ModelConstructor>(this: M, column: any, operator?: any, value?: any): Builder<InstanceType<M>> {
+  static orWhereTime<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>, operator?: any, value?: any): Builder<InstanceType<M>> {
     return (this as any).query().orWhereTime(column, operator, value);
   }
 
@@ -438,35 +439,35 @@ export class ModelQuerying<T extends Record<string, any> = any> extends ModelRel
     return (this as any).query().orWhereFullText(columns, value, options);
   }
 
-  static whereAll<M extends ModelConstructor>(this: M, columns: any[], operator: string, value: any): Builder<InstanceType<M>> {
+  static whereAll<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>>[], operator: string, value: any): Builder<InstanceType<M>> {
     return (this as any).query().whereAll(columns, operator, value);
   }
 
-  static whereAny<M extends ModelConstructor>(this: M, columns: any[], operator: string, value: any): Builder<InstanceType<M>> {
+  static whereAny<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>>[], operator: string, value: any): Builder<InstanceType<M>> {
     return (this as any).query().whereAny(columns, operator, value);
   }
 
-  static whereNone<M extends ModelConstructor>(this: M, columns: any[], operator: string, value: any): Builder<InstanceType<M>> {
+  static whereNone<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>>[], operator: string, value: any): Builder<InstanceType<M>> {
     return (this as any).query().whereNone(columns, operator, value);
   }
 
-  static orWhereAny<M extends ModelConstructor>(this: M, columns: any[], operator: string, value: any): Builder<InstanceType<M>> {
+  static orWhereAny<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>>[], operator: string, value: any): Builder<InstanceType<M>> {
     return (this as any).query().orWhereAny(columns, operator, value);
   }
 
-  static orWhereAll<M extends ModelConstructor>(this: M, columns: any[], operator: string, value: any): Builder<InstanceType<M>> {
+  static orWhereAll<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>>[], operator: string, value: any): Builder<InstanceType<M>> {
     return (this as any).query().orWhereAll(columns, operator, value);
   }
 
-  static orWhereNone<M extends ModelConstructor>(this: M, columns: any[], operator: string, value: any): Builder<InstanceType<M>> {
+  static orWhereNone<M extends ModelConstructor>(this: M, columns: ModelColumn<InstanceType<M>>[], operator: string, value: any): Builder<InstanceType<M>> {
     return (this as any).query().orWhereNone(columns, operator, value);
   }
 
-  static latest<M extends ModelConstructor>(this: M, column?: any): Builder<InstanceType<M>> {
+  static latest<M extends ModelConstructor>(this: M, column?: ModelColumn<InstanceType<M>>): Builder<InstanceType<M>> {
     return (this as any).query().latest(column);
   }
 
-  static oldest<M extends ModelConstructor>(this: M, column?: any): Builder<InstanceType<M>> {
+  static oldest<M extends ModelConstructor>(this: M, column?: ModelColumn<InstanceType<M>>): Builder<InstanceType<M>> {
     return (this as any).query().oldest(column);
   }
 

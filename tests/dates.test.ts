@@ -75,6 +75,7 @@ describe("Date handling", () => {
 
   test("date casts store calendar days and decode them at UTC midnight", () => {
     class CalendarDay extends PermissiveModel {
+      declare day: Date;
       static override casts = { day: "date" };
       static override timestamps = false;
     }
@@ -101,6 +102,7 @@ describe("Date handling", () => {
 
   test("reading a stored calendar day does not make it dirty", () => {
     class CalendarDay extends PermissiveModel {
+      declare day: Date;
       static override casts = { day: "date" };
       static override timestamps = false;
     }
@@ -162,6 +164,7 @@ describe("Date handling", () => {
 
   test("MySQL leaves a serialized calendar date as text", () => {
     class CalendarDay extends PermissiveModel {
+      declare day: Date;
       static override casts = { day: "date" };
       static override timestamps = false;
     }

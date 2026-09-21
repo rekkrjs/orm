@@ -1036,7 +1036,7 @@ export class RuleBuilder<TValue = unknown, TPresence extends Presence = "require
    * Run a custom boolean predicate against the value.
    * Example: `rule().can((value) => value !== "")`
    */
-  can(callback: (value: unknown, ctx: any) => boolean | Promise<boolean>): this {
+  can(callback: (value: unknown, ctx: ValidationContext) => boolean | Promise<boolean>): this {
     return this.push(new CanRule(callback));
   }
   /**
@@ -1052,8 +1052,8 @@ export class RuleBuilder<TValue = unknown, TPresence extends Presence = "require
    */
   custom(
     name: string,
-    validate: (value: unknown, ctx: any) => boolean | Promise<boolean>,
-    message?: string | ((ctx: any) => string),
+    validate: (value: unknown, ctx: ValidationContext) => boolean | Promise<boolean>,
+    message?: string | ((ctx: ValidationContext) => string),
   ): this {
     return this.push(new CustomRule(name, validate, message));
   }
@@ -1071,6 +1071,14 @@ export class RuleBuilder<TValue = unknown, TPresence extends Presence = "require
    * RuleBuilder; child errors are surfaced with composed paths (e.g.
    * `meta.email`). Unknown keys are stripped by default.
    */
+  object<S extends Record<string, RuleBuilder<any, any>>>(
+    shape: S,
+    mode: "passthrough",
+  ): RuleBuilder<{ [K in keyof S]: InferRuleValue<S[K]> } & Record<string, unknown>, TPresence>;
+  object<S extends Record<string, RuleBuilder<any, any>>>(
+    shape: S,
+    mode?: "strip",
+  ): RuleBuilder<{ [K in keyof S]: InferRuleValue<S[K]> }, TPresence>;
   object<S extends Record<string, RuleBuilder<any, any>>>(
     shape: S,
     mode?: "strip" | "passthrough",

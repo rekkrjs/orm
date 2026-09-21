@@ -57,7 +57,9 @@ describe("sveltekit route() validation response", () => {
       request: new Request("http://localhost/test", { method: "POST", body: form }),
     } as any);
 
-    expect(result).toEqual({
+    // The handler's return type does not model the validation-failure envelope
+    // that configureSvelteKit().fail() produces, so compare the raw value.
+    expect(result as unknown).toEqual({
       status: 422,
       body: {
         issues: {
@@ -256,7 +258,7 @@ describe("sveltekit route() validation response", () => {
     const action = route()
       .bind(async () => record, "announcement")
       .action(async (event) => {
-        const hasCan = typeof (event.locals.user as any).can === "function";
+        const hasCan = typeof (event.locals as any).user?.can === "function";
         return { hasCan };
       });
 

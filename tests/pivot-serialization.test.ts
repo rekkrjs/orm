@@ -8,6 +8,7 @@ import { PermissiveModel, setupTestDb, teardownTestDb } from "./helpers.js";
 // break from the proxy side, and the failure mode is silent data loss in APIs.
 
 class PsRole extends PermissiveModel.define<{ id: number; title: string }>("ps_roles") {
+  declare pivot: Record<string, any>;
   static override timestamps = false;
 }
 

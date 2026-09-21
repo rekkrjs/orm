@@ -3,6 +3,8 @@ import { Builder, DB, Model, Schema, TransactionContext } from "../src/index.js"
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 class User extends PermissiveModel {
+  declare id: number;
+  declare name: string;
   static override table = "users";
 }
 

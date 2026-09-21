@@ -18,6 +18,7 @@ import type {
   WithRelationExistsMap,
   AggregateAlias,
   AggregateLoaded,
+  AggregateValueForRelation,
   AggregateConstraint,
   AggregateColumn,
   RelationConstraintQuery,
@@ -36,6 +37,7 @@ import type {
   LoadMorphRelationName,
 } from "./ModelBase.js";
 import { Builder } from "../query/Builder.js";
+import type { NumericAggregate } from "../query/Builder.js";
 import { Collection } from "../support/Collection.js";
 import type { Factory } from "../seeding/Factory.js";
 
@@ -49,6 +51,7 @@ export { InvalidEnumValueError } from "./InvalidEnumValueError.js";
 export type {
   ModelConstructor,
   GlobalScope,
+  ModelKey,
   EagerLoadConstraint,
   EagerLoadDefinition,
   EagerLoadInput,
@@ -74,6 +77,7 @@ export type {
   ModelInstanceAttributeKeys,
 } from "./ModelTypes.js";
 export type {
+  ModelType,
   ModelRelationValue,
   MorphToRelationName,
   BelongsToRelationName,
@@ -388,9 +392,9 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
   }
 
   static with<M extends ModelConstructor, Rs extends ReadonlyArray<TypedEagerLoad<InstanceType<M>>>>(this: M, relations: Rs): Builder<InstanceType<M>, WithLoadedRelations<InstanceType<M>, ExtractStringPaths<Rs[number]>>>;
-  static with<M extends ModelConstructor, Rs extends ReadonlyArray<TypedEagerLoad<InstanceType<M>>>>(this: M, ...relations: Rs): Builder<InstanceType<M>, WithLoadedRelations<InstanceType<M>, ExtractStringPaths<Rs[number]>>>;
   static with<M extends ModelConstructor, K extends string & NestedRelationPath<InstanceType<M>>>(this: M, constraint: TypedConstraintSelection<InstanceType<M>, K>): Builder<InstanceType<M>, WithLoadedRelationsFromConstraintMap<InstanceType<M>, TypedConstraintSelection<InstanceType<M>, K>>>;
   static with<M extends ModelConstructor, R extends TypedConstraintMap<InstanceType<M>> & object>(this: M, constraint: R): Builder<InstanceType<M>, WithLoadedRelationsFromConstraintMap<InstanceType<M>, R>>;
+  static with<M extends ModelConstructor, Rs extends ReadonlyArray<TypedEagerLoad<InstanceType<M>>>>(this: M, ...relations: Rs): Builder<InstanceType<M>, WithLoadedRelations<InstanceType<M>, ExtractStringPaths<Rs[number]>>>;
   static with<M extends ModelConstructor, R extends string & NestedRelationPath<InstanceType<M>>>(this: M, relation: R): Builder<InstanceType<M>, WithLoadedRelations<InstanceType<M>, R>>;
   static with<M extends ModelConstructor>(this: M, relation: LiteralUnion<string & NestedRelationPath<InstanceType<M>>>): Builder<InstanceType<M>, WithLoadedRelations<InstanceType<M>, string>>;
   static with<M extends ModelConstructor, R extends string & MorphToRelationName<InstanceType<M>>>(this: M, relation: R, callback: MorphToConstraintCallback): Builder<InstanceType<M>, WithLoadedRelations<InstanceType<M>, R>>;
@@ -492,9 +496,9 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
     return this as any;
   }
 
-  async loadSum<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>>(relationName: R, column: C, callback: AggregateConstraint<this, R>): Promise<this>;
-  async loadSum<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string | undefined = undefined>(relationName: R, column: C, alias?: A): Promise<this>;
-  async loadSum<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string>(relationName: R, column: C, alias: A, callback: AggregateConstraint<this, R>): Promise<this>;
+  async loadSum<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>>(relationName: R, column: C, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, undefined, `sum_${string & C}`>, NumericAggregate | null>>;
+  async loadSum<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string | undefined = undefined>(relationName: R, column: C, alias?: A): Promise<AggregateLoaded<this, AggregateAlias<R, A, `sum_${string & C}`>, NumericAggregate | null>>;
+  async loadSum<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string>(relationName: R, column: C, alias: A, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, A, `sum_${string & C}`>, NumericAggregate | null>>;
   async loadSum(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, callback: EagerLoadConstraint): Promise<this>;
   async loadSum<A extends string | undefined = undefined>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias?: A): Promise<this>;
   async loadSum<A extends string>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias: A, callback: EagerLoadConstraint): Promise<this>;
@@ -504,9 +508,9 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
     return this as any;
   }
 
-  async loadAvg<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>>(relationName: R, column: C, callback: AggregateConstraint<this, R>): Promise<this>;
-  async loadAvg<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string | undefined = undefined>(relationName: R, column: C, alias?: A): Promise<this>;
-  async loadAvg<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string>(relationName: R, column: C, alias: A, callback: AggregateConstraint<this, R>): Promise<this>;
+  async loadAvg<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>>(relationName: R, column: C, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, undefined, `avg_${string & C}`>, NumericAggregate | null>>;
+  async loadAvg<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string | undefined = undefined>(relationName: R, column: C, alias?: A): Promise<AggregateLoaded<this, AggregateAlias<R, A, `avg_${string & C}`>, NumericAggregate | null>>;
+  async loadAvg<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string>(relationName: R, column: C, alias: A, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, A, `avg_${string & C}`>, NumericAggregate | null>>;
   async loadAvg(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, callback: EagerLoadConstraint): Promise<this>;
   async loadAvg<A extends string | undefined = undefined>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias?: A): Promise<this>;
   async loadAvg<A extends string>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias: A, callback: EagerLoadConstraint): Promise<this>;
@@ -516,9 +520,9 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
     return this as any;
   }
 
-  async loadMin<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>>(relationName: R, column: C, callback: AggregateConstraint<this, R>): Promise<this>;
-  async loadMin<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string | undefined = undefined>(relationName: R, column: C, alias?: A): Promise<this>;
-  async loadMin<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string>(relationName: R, column: C, alias: A, callback: AggregateConstraint<this, R>): Promise<this>;
+  async loadMin<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>>(relationName: R, column: C, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, undefined, `min_${string & C}`>, AggregateValueForRelation<this, R, C>>>;
+  async loadMin<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string | undefined = undefined>(relationName: R, column: C, alias?: A): Promise<AggregateLoaded<this, AggregateAlias<R, A, `min_${string & C}`>, AggregateValueForRelation<this, R, C>>>;
+  async loadMin<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string>(relationName: R, column: C, alias: A, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, A, `min_${string & C}`>, AggregateValueForRelation<this, R, C>>>;
   async loadMin(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, callback: EagerLoadConstraint): Promise<this>;
   async loadMin<A extends string | undefined = undefined>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias?: A): Promise<this>;
   async loadMin<A extends string>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias: A, callback: EagerLoadConstraint): Promise<this>;
@@ -528,9 +532,9 @@ export class Model<T extends Record<string, any> = any> extends ModelAggregates<
     return this as any;
   }
 
-  async loadMax<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>>(relationName: R, column: C, callback: AggregateConstraint<this, R>): Promise<this>;
-  async loadMax<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string | undefined = undefined>(relationName: R, column: C, alias?: A): Promise<this>;
-  async loadMax<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string>(relationName: R, column: C, alias: A, callback: AggregateConstraint<this, R>): Promise<this>;
+  async loadMax<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>>(relationName: R, column: C, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, undefined, `max_${string & C}`>, AggregateValueForRelation<this, R, C>>>;
+  async loadMax<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string | undefined = undefined>(relationName: R, column: C, alias?: A): Promise<AggregateLoaded<this, AggregateAlias<R, A, `max_${string & C}`>, AggregateValueForRelation<this, R, C>>>;
+  async loadMax<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string>(relationName: R, column: C, alias: A, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, A, `max_${string & C}`>, AggregateValueForRelation<this, R, C>>>;
   async loadMax(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, callback: EagerLoadConstraint): Promise<this>;
   async loadMax<A extends string | undefined = undefined>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias?: A): Promise<this>;
   async loadMax<A extends string>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias: A, callback: EagerLoadConstraint): Promise<this>;

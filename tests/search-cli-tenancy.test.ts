@@ -53,7 +53,7 @@ describe("Tenant-aware tenantScope inside CLI helpers", () => {
     await runWithTenant("42", async () => {
       seen = TenantContext.current()?.tenantId ?? null;
     });
-    expect(seen).toBe("42");
+    expect<string | null>(seen).toBe("42");
   });
 
   test("runWithTenant is no-op when no tenant id passed", async () => {

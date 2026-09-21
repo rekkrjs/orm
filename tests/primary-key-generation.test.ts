@@ -7,7 +7,7 @@ class DefaultedKey extends Model {
   static table = "defaulted_keys";
   static primaryKey = "id";
   static incrementing = false;
-  static keyType = "string";
+  static keyType: "int" | "string" | "uuid" = "string";
   static fillable = ["name"];
   static timestamps = false;
 }
@@ -16,7 +16,7 @@ class RoundTripKey extends Model {
   static table = "roundtrip_keys";
   static primaryKey = "id";
   static incrementing = false;
-  static keyType = "string";
+  static keyType = "string" as const;
   static fillable = ["name"];
   static timestamps = false;
 }
@@ -33,7 +33,7 @@ class BulkDefaultKey extends Model {
   static table = "bulk_default_keys";
   static primaryKey = "id";
   static incrementing = false;
-  static keyType = "string";
+  static keyType = "string" as const;
   static fillable = ["name"];
   static timestamps = false;
 }
@@ -42,7 +42,7 @@ class WithoutRowidKey extends Model {
   static table = "without_rowid_keys";
   static primaryKey = "id";
   static incrementing = false;
-  static keyType = "string";
+  static keyType = "string" as const;
   static fillable = ["name"];
   static timestamps = false;
 }
@@ -51,7 +51,7 @@ class UlidKey extends Model {
   static table = "ulid_keys";
   static primaryKey = "id";
   static incrementing = false;
-  static keyType = "string";
+  static keyType = "string" as const;
   static fillable = ["id", "name"];
   static timestamps = false;
 }
@@ -60,7 +60,7 @@ class ApplicationGeneratedKey extends Model {
   static table = "application_generated_keys";
   static primaryKey = "id";
   static incrementing = false;
-  static keyType = "string";
+  static keyType = "string" as const;
   static fillable = ["name"];
   static timestamps = false;
 
@@ -204,7 +204,7 @@ describe("Primary key auto-generation", () => {
   test("an explicit uuid keyType still opts in regardless of the column", async () => {
     class ForcedUuid extends DefaultedKey {
       static override table = "defaulted_keys";
-      static override keyType = "uuid";
+      static override keyType = "uuid" as const;
     }
     expect(await (ForcedUuid as any).shouldAutoGeneratePrimaryKey()).toBe(true);
   });

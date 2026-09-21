@@ -9,13 +9,14 @@ import type {
   ModelConstructor,
   BulkModelOptions,
   SaveOptions,
+  ModelKey,
   ModelAttributeInput,
   ModelColumn,
   ModelMassAssignmentInput,
 } from "./ModelBase.js";
 import { ModelCore } from "./ModelCore.js";
 import { formatIso, shouldGeneratePrimaryKeyForColumn } from "../utils.js";
-import type { Connection } from "../connection/Connection.js";
+import type { Connection, WriteResult } from "../connection/Connection.js";
 import { insertAndResolveKey, type PrimaryKeyColumn } from "./PrimaryKeyResolution.js";
 import { isBackedEnumDefinition } from "./BackedEnum.js";
 import { normalizeHydratedCastValue } from "./ModelJsonRow.js";
@@ -95,7 +96,7 @@ export async function bulkInsertModelRecords<M extends ModelConstructor>(
   model: M,
   records: ModelAttributeInput<InstanceType<M>>[],
   options: BulkInsertModelRecordsOptions,
-): Promise<any> {
+): Promise<InstanceType<M>[] | WriteResult | undefined> {
   const chunkSize = validateBulkInsertChunkSize(options.chunkSize);
   if (records.length === 0) return;
 
@@ -281,7 +282,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     this: M,
     records: ModelMassAssignmentInput<InstanceType<M>> | ModelMassAssignmentInput<InstanceType<M>>[],
     options: BulkModelOptions = {}
-  ): Promise<any> {
+  ): Promise<InstanceType<M>[] | WriteResult | undefined> {
     const list = Array.isArray(records) ? records : [records];
     return await bulkInsertModelRecords(this, list as any, {
       trusted: false,
@@ -294,24 +295,24 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     this: M,
     attributes: ModelAttributeInput<InstanceType<M>>,
     idColumn: ModelColumn<InstanceType<M>> = "id"
-  ): Promise<any> {
+  ): Promise<number | string | bigint | null> {
     return (this as any).query().insertGetId(attributes, idColumn);
   }
 
   static async insertOrIgnore<M extends ModelConstructor>(
     this: M,
     records: ModelAttributeInput<InstanceType<M>> | ModelAttributeInput<InstanceType<M>>[]
-  ): Promise<any> {
+  ): Promise<WriteResult | undefined> {
     return (this as any).query().insertOrIgnore(records);
   }
 
   static async upsert<M extends ModelConstructor>(
     this: M,
     records: ModelMassAssignmentInput<InstanceType<M>> | ModelMassAssignmentInput<InstanceType<M>>[],
-    uniqueBy: any | any[],
-    updateColumns?: any[],
+    uniqueBy: ModelColumn<InstanceType<M>> | ModelColumn<InstanceType<M>>[],
+    updateColumns?: ModelColumn<InstanceType<M>>[],
     options: Omit<BulkModelOptions, "events"> = {}
-  ): Promise<any> {
+  ): Promise<WriteResult | undefined> {
     const timestampColumns = timestampsEnabled(this)
       ? (this as any).getTimestampColumns() as TimestampColumns
       : null;
@@ -462,19 +463,19 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     return models;
   }
 
-  static async find<M extends ModelConstructor>(this: M, id: any): Promise<InstanceType<M> | null> {
+  static async find<M extends ModelConstructor>(this: M, id: ModelKey): Promise<InstanceType<M> | null> {
     return (this as any).query().find(id, this.primaryKey);
   }
 
-  static async findOr<M extends ModelConstructor, TFallback>(this: M, id: any, callback: () => TFallback): Promise<InstanceType<M> | Awaited<TFallback>> {
+  static async findOr<M extends ModelConstructor, TFallback>(this: M, id: ModelKey, callback: () => TFallback): Promise<InstanceType<M> | Awaited<TFallback>> {
     return (this as any).query().findOr(id, callback, this.primaryKey);
   }
 
-  static async findMany<M extends ModelConstructor>(this: M, ids: any[]): Promise<Collection<InstanceType<M>>> {
+  static async findMany<M extends ModelConstructor>(this: M, ids: readonly ModelKey[]): Promise<Collection<InstanceType<M>>> {
     return (this as any).query().findMany(ids, this.primaryKey);
   }
 
-  static async findOrFail<M extends ModelConstructor>(this: M, id: any): Promise<InstanceType<M>> {
+  static async findOrFail<M extends ModelConstructor>(this: M, id: ModelKey): Promise<InstanceType<M>> {
     const result = await (this as any).find(id);
     if (!result) {
       throw new ModelNotFoundError(this.name, id);

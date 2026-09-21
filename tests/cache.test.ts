@@ -50,11 +50,11 @@ class CustomCacheStore implements CacheStore {
 async function exerciseStore(store: CacheStore) {
   await store.set("a", { id: 1 }, { tags: ["group:a"] });
   await store.set("b", { id: 2 }, { tags: ["group:a", "group:b"] });
-  expect(await store.get("a")).toEqual({ id: 1 });
+  expect(await store.get<{ id: number }>("a")).toEqual({ id: 1 });
 
   await store.forget("a");
   expect(await store.get("a")).toBeNull();
-  expect(await store.get("b")).toEqual({ id: 2 });
+  expect(await store.get<{ id: number }>("b")).toEqual({ id: 2 });
 
   await store.forgetTag("group:a");
   expect(await store.get("b")).toBeNull();
@@ -99,7 +99,7 @@ describe("Cache stores", () => {
     expect(first).toEqual({ value: 1 });
     expect(second).toEqual({ value: 1 });
     expect(calls).toBe(1);
-    expect(await store.get("app:payload")).toEqual({ value: 1 });
+    expect(await store.get<{ value: number }>("app:payload")).toEqual({ value: 1 });
 
     await Cache.forgetTag("payloads");
     expect(await Cache.get("payload")).toBeNull();
@@ -125,7 +125,7 @@ describe("Cache stores", () => {
 
     const direct = await Cache.remember("direct", "world", { tags: "direct-tag" });
     expect(direct).toBe("world");
-    expect(await Cache.get("direct")).toBe("world");
+    expect(await Cache.get<string>("direct")).toBe("world");
     await Cache.forgetTag("direct-tag");
     expect(await Cache.get("direct")).toBeNull();
 
@@ -166,7 +166,7 @@ describe("Cache stores", () => {
     });
 
     await Cache.set("key", "value");
-    expect(await store.get("tenant:key")).toBe("value");
+    expect(await store.get<string>("tenant:key")).toBe("value");
 
     await Cache.set("tagged", "value", { tags: ["lookup"] });
     await Cache.forgetTag("lookup");
@@ -175,11 +175,15 @@ describe("Cache stores", () => {
 });
 
 class CachedWidget extends PermissiveModel {
+  declare id: number;
+  declare name: string;
   static table = "cached_widgets";
   static timestamps = false;
 }
 
 class CachedAuthor extends PermissiveModel {
+  declare id: number;
+  declare name: string;
   static table = "cached_authors";
   static timestamps = false;
 
@@ -189,6 +193,9 @@ class CachedAuthor extends PermissiveModel {
 }
 
 class CachedBook extends PermissiveModel {
+  declare id: number;
+  declare author_id: number;
+  declare title: string;
   static table = "cached_books";
   static timestamps = false;
 
@@ -376,6 +383,8 @@ describe("Query builder cache", () => {
 });
 
 class ObservedCachedWidget extends PermissiveModel {
+  declare id: number;
+  declare name: string;
   static table = "observed_cached_widgets";
   static timestamps = false;
 }

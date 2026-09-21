@@ -5,22 +5,32 @@ import { PermissiveModel, setupTestDb } from "./helpers.js";
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 class PushUser extends PermissiveModel {
+  declare id: number;
+  declare name: string;
   static table = "push_users";
   posts() { return this.hasMany(PushPost, "push_user_id"); }
 }
 
 class PushPost extends PermissiveModel {
+  declare id: number;
+  declare push_user_id: number | null;
+  declare title: string;
   static table = "push_posts";
   author() { return this.belongsTo(PushUser, "push_user_id"); }
   comments() { return this.hasMany(PushComment, "push_post_id"); }
 }
 
 class PushComment extends PermissiveModel {
+  declare id: number;
+  declare push_post_id: number | null;
+  declare body: string;
   static table = "push_comments";
   post() { return this.belongsTo(PushPost, "push_post_id"); }
 }
 
 class KeyedTicket extends PermissiveModel {
+  declare code: string;
+  declare subject: string;
   static table = "keyed_tickets";
   static primaryKey = "code";
   static incrementing = false;
@@ -28,18 +38,30 @@ class KeyedTicket extends PermissiveModel {
 }
 
 class Preference extends PermissiveModel {
+  declare id: number;
+  declare label: string;
+  declare settings: { theme: string };
+  declare active: boolean;
   static table = "preferences";
   static casts = { settings: "json", active: "boolean" };
 }
 
 /** Strict mode is set on this class only — never on `Model`. */
 class StrictArticle extends PermissiveModel {
+  declare id: number;
+  declare title: string;
+  declare body?: string | null;
+  declare views?: number;
+  declare created_at?: string;
   static table = "strict_articles";
   static casts = { views: "number" };
   author() { return this.belongsTo(PushUser, "push_user_id"); }
 }
 
 class LooseArticle extends PermissiveModel {
+  declare id: number;
+  declare title: string;
+  declare body?: string | null;
   static table = "strict_articles";
 }
 
@@ -118,8 +140,8 @@ describe("push()", () => {
 
     const loaded = (await PushComment.with("post.author").find(comment.id))!;
     loaded.body = "Nested, edited";
-    loaded.post.title = "Deep, edited";
-    loaded.post.author.name = "Grace Hopper";
+    loaded.post!.title = "Deep, edited";
+    loaded.post!.author!.name = "Grace Hopper";
     await loaded.push();
 
     expect((await PushComment.find(comment.id))!.body).toBe("Nested, edited");

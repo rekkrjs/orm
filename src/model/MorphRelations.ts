@@ -11,6 +11,7 @@ import type {
   MorphCountLoadMap,
   MorphEagerLoadMap,
   MorphRelationInput,
+  ModelKey,
   PivotQueryBuilder,
   StripTablePrefix,
 } from "./Model.js";
@@ -990,7 +991,7 @@ export class MorphToMany<
     return shouldGeneratePrimaryKeyForColumn(await this.pivotPrimaryKeyColumn(primaryKey));
   }
 
-  async attach(ids: any | any[], attributes?: Record<string, any>): Promise<any> {
+  async attach(ids: ModelKey | readonly ModelKey[], attributes?: Record<string, any>): Promise<ModelKey | undefined> {
     const idList = Array.isArray(ids) ? ids : [ids];
     const pivotAttributes = {
       ...attributes,

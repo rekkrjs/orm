@@ -9,6 +9,8 @@ function setupDb() {
 }
 
 class BenchUser extends Model {
+  declare id: number;
+  declare name: string;
   static table = "bench_users";
   static fillable = ["name", "email", "active", "role"];
   static casts = { active: "boolean" };

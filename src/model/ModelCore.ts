@@ -20,6 +20,7 @@ import type {
   CastsAttributes,
   AccessorMap,
   ModelAttributeInput,
+  ModelKey,
   ModelMassAssignmentInput,
 } from "./ModelBase.js";
 import { formatDecimal, formatIso, snakeCase } from "../utils.js";
@@ -492,7 +493,7 @@ export class ModelCore<T extends Record<string, any> = any> {
     return this.getModelConstructor().primaryKey;
   }
 
-  getKey(): any {
+  getKey(): ModelKey {
     return this.getAttribute(this.getKeyName());
   }
 
@@ -559,6 +560,7 @@ export class ModelCore<T extends Record<string, any> = any> {
     return casted;
   }
 
+  setAttribute<K extends keyof T>(key: K, value: T[K]): void;
   setAttribute<K extends keyof T>(key: K, value: T[K]): void;
   setAttribute(key: string, value: any): void;
   setAttribute(key: string | keyof T, value: any): void {

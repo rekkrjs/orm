@@ -53,10 +53,10 @@ describe.serial("Builder.forceCreate", () => {
   test("bypasses mass assignment while preserving save behavior and the builder connection", async () => {
     const events: string[] = [];
     ObserverRegistry.register(BuilderForceRecord, {
-      creating: () => events.push("creating"),
-      saving: () => events.push("saving"),
-      created: () => events.push("created"),
-      saved: () => events.push("saved"),
+      creating: () => { events.push("creating"); },
+      saving: () => { events.push("saving"); },
+      created: () => { events.push("created"); },
+      saved: () => { events.push("saved"); },
     });
 
     let writes = 0;
@@ -101,7 +101,7 @@ describe.serial("Builder.forceCreate", () => {
   test("passes save options through and validates backed enums", async () => {
     const events: string[] = [];
     ObserverRegistry.register(BuilderForceRecord, {
-      creating: () => events.push("creating"),
+      creating: () => { events.push("creating"); },
     });
 
     await BuilderForceRecord.on(builderConnection).forceCreate({

@@ -3,6 +3,10 @@ import { PermissiveModel } from "./helpers.js";
 import { Collection, Connection, Model, Schema, collect } from "../src/index.js";
 
 class CollectionUser extends PermissiveModel {
+  declare id: number;
+  declare name: string;
+  declare role: string;
+  declare score: number;
   static table = "collection_users";
   static timestamps = false;
 }
@@ -52,15 +56,15 @@ describe("Collection", () => {
     expect(items.first()?.name).toBe("Ada");
     expect(items.last()?.name).toBe("Grace");
     expect(items.isNotEmpty()).toBe(true);
-    expect(items.pluck("name")).toEqual(["Ada", "Linus", "Grace"]);
-    expect(items.where("role", "user").pluck("name")).toEqual(["Linus", "Grace"]);
-    expect(items.whereIn("score", [10, 15]).pluck("name")).toEqual(["Ada", "Grace"]);
+    expect(items.pluck("name").all()).toEqual(["Ada", "Linus", "Grace"]);
+    expect(items.where("role", "user").pluck("name").all()).toEqual(["Linus", "Grace"]);
+    expect(items.whereIn("score", [10, 15]).pluck("name").all()).toEqual(["Ada", "Grace"]);
     expect(items.keyBy("name").Ada.score).toBe(10);
-    expect(items.groupBy("role").user.pluck("name")).toEqual(["Linus", "Grace"]);
-    expect(items.sortBy("score").pluck("name")).toEqual(["Ada", "Grace", "Linus"]);
-    expect(items.sortByDesc("score").pluck("name")).toEqual(["Linus", "Grace", "Ada"]);
-    expect(items.take(2).pluck("name")).toEqual(["Ada", "Linus"]);
-    expect(items.skip(1).pluck("name")).toEqual(["Linus", "Grace"]);
+    expect(items.groupBy("role").user.pluck("name").all()).toEqual(["Linus", "Grace"]);
+    expect(items.sortBy("score").pluck("name").all()).toEqual(["Ada", "Grace", "Linus"]);
+    expect(items.sortByDesc("score").pluck("name").all()).toEqual(["Linus", "Grace", "Ada"]);
+    expect(items.take(2).pluck("name").all()).toEqual(["Ada", "Linus"]);
+    expect(items.skip(1).pluck("name").all()).toEqual(["Linus", "Grace"]);
     expect(items.contains("name", "Ada")).toBe(true);
     expect(items.firstWhere("role", "user")?.name).toBe("Linus");
     expect(items.count()).toBe(3);
@@ -74,7 +78,7 @@ describe("Collection", () => {
     const users = await CollectionUser.orderBy("id").get();
     expect(users).toBeInstanceOf(Collection);
     expect(users[0].getAttribute("name")).toBe("Ada");
-    expect(users.pluck("name")).toEqual(["Ada", "Linus", "Grace"]);
+    expect(users.pluck("name").all()).toEqual(["Ada", "Linus", "Grace"]);
     expect(users.all()).toBeArray();
 
     const allUsers = await CollectionUser.all();
@@ -88,7 +92,7 @@ describe("Collection", () => {
 
     expect(users.modelKeys()).toEqual([1, 2, 3]);
     expect(users.find(2)?.getAttribute("name")).toBe("Linus");
-    expect(users.find([1, 3]).pluck("name")).toEqual(["Ada", "Grace"]);
+    expect(users.find([1, 3]).pluck("name").all()).toEqual(["Ada", "Grace"]);
     expect(users.find((user) => user.getAttribute("score") > 10)?.getAttribute("name")).toBe("Linus");
     expect(users.findOrFail(1).getAttribute("name")).toBe("Ada");
     expect(users.findOrFail([1, 3]).modelKeys()).toEqual([1, 3]);
@@ -151,7 +155,7 @@ describe("Collection", () => {
       ]);
 
       await missingUsers.loadCount("posts");
-      expect(missingUsers.pluck("posts_count")).toEqual([1, 2]);
+      expect(missingUsers.pluck("posts_count").all()).toEqual([1, 2]);
     } finally {
       await first.close();
       await second.close();
@@ -176,9 +180,9 @@ describe("Collection", () => {
     expect(users.makeVisible("role")).toBe(users);
     expect(users.every((user) => user.toJSON().role !== undefined)).toBe(true);
 
-    expect(users.append("display_name")).toBe(users);
+    expect<unknown>(users.append("display_name")).toBe(users);
     expect(users.every((user) => user.getAppends().includes("display_name"))).toBe(true);
-    expect(users.setAppends(["summary"])).toBe(users);
+    expect<unknown>(users.setAppends(["summary"])).toBe(users);
     expect(users.every((user) => user.getAppends().includes("summary"))).toBe(true);
   });
 
@@ -230,7 +234,7 @@ describe("Collection", () => {
   test("paginator data and chunk callbacks use collections", async () => {
     const page = await CollectionUser.orderBy("id").paginate(2, 1);
     expect(page.data).toBeInstanceOf(Collection);
-    expect(page.data.pluck("name")).toEqual(["Ada", "Linus"]);
+    expect(page.data.pluck("name").all()).toEqual(["Ada", "Linus"]);
 
     const chunks: Collection<CollectionUser>[] = [];
     await CollectionUser.orderBy("id").chunk(2, (items) => {
@@ -238,8 +242,8 @@ describe("Collection", () => {
       chunks.push(items);
     });
     expect(chunks).toHaveLength(2);
-    expect(chunks[0].pluck("name")).toEqual(["Ada", "Linus"]);
-    expect(chunks[1].pluck("name")).toEqual(["Grace"]);
+    expect(chunks[0].pluck("name").all()).toEqual(["Ada", "Linus"]);
+    expect(chunks[1].pluck("name").all()).toEqual(["Grace"]);
   });
 
   test("reports itself as an Array so consumers dispatching on constructor.name agree", () => {
@@ -248,6 +252,6 @@ describe("Collection", () => {
     expect(items.constructor.name).toBe("Array");
     expect(Array.isArray(items)).toBe(true);
     expect(items).toBeInstanceOf(Collection);
-    expect(items.pluck("id")).toEqual([1]);
+    expect(items.pluck("id").all()).toEqual([1]);
   });
 });

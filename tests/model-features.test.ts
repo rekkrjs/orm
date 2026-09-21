@@ -5,6 +5,9 @@ import { PermissiveModel, setupTestDb } from "./helpers.js";
 function expectType<T>(_value: T): void {}
 
 class Post extends PermissiveModel {
+  declare id: number;
+  declare title: string;
+  declare slug?: string | null;
   static table = "posts";
 
   comments() {
@@ -13,10 +16,15 @@ class Post extends PermissiveModel {
 }
 
 class Comment extends PermissiveModel {
+  declare id: number;
+  declare post_id: number;
+  declare body: string;
   static table = "comments";
 }
 
 class Vote extends PermissiveModel {
+  declare id: number;
+  declare count: number;
   static table = "votes";
   static timestamps = false;
 }

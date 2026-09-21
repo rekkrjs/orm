@@ -186,7 +186,7 @@ describe("Relations", () => {
     await CountryPost.create({ country_user_id: user.getAttribute("id"), title: "Through A" });
     await CountryPost.create({ country_user_id: user.getAttribute("id"), title: "Through B" });
 
-    const posts = await country.posts().getResults();
+    const posts = await country.posts().get();
     expect(posts).toBeInstanceOf(Collection);
     expect(posts).toHaveLength(2);
     expect(posts.map((post) => post.getAttribute("title"))).toEqual(["Through A", "Through B"]);

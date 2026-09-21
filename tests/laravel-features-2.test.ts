@@ -5,6 +5,10 @@ import { PermissiveModel, setupTestDb } from "./helpers.js";
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 class Article extends PermissiveModel {
+  declare id: number;
+  declare title: string | null;
+  declare slug: string | null;
+  declare secret: string | null;
   static table = "lf2_articles";
   static fillable = ["title", "slug"];
 }
@@ -27,6 +31,9 @@ class LfUser extends PermissiveModel {
 }
 
 class LfRole extends PermissiveModel {
+  declare id: number;
+  declare label: string;
+  declare pivot: Record<string, any>;
   static table = "lf2_roles";
 }
 

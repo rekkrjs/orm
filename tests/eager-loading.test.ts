@@ -1,10 +1,12 @@
 import { expect, test, describe, beforeAll } from "bun:test";
 import { Collection, Model, Schema } from "../src/index.js";
-import { PermissiveModel, setupTestDb } from "./helpers.js";
+import { PermissiveModel, setupTestDb, type PublicShape } from "./helpers.js";
 
 function expectType<T>(_value: T): void {}
 
 class EAuthor extends PermissiveModel {
+  declare id: number;
+  declare name: string;
   static table = "e_authors";
   static timestamps = false;
   books() {
@@ -16,6 +18,10 @@ class EAuthor extends PermissiveModel {
 }
 
 class EBook extends PermissiveModel {
+  declare id: number;
+  declare author_id: number;
+  declare title: string;
+  declare published: boolean;
   static table = "e_books";
   static timestamps = false;
   author() {
@@ -27,11 +33,17 @@ class EBook extends PermissiveModel {
 }
 
 class EChapter extends PermissiveModel {
+  declare id: number;
+  declare book_id: number;
+  declare title: string;
   static table = "e_chapters";
   static timestamps = false;
 }
 
 class EProfile extends PermissiveModel {
+  declare id: number;
+  declare author_id: number;
+  declare bio: string | null;
   static table = "e_profiles";
   static timestamps = false;
   author() {
@@ -169,7 +181,7 @@ describe("Eager Loading", () => {
     expect(found!.getRelation("books")).toBeUndefined();
     const loaded = await found!.loadMissing("books");
     const books = found!.getRelation("books");
-    expect(loaded).toBe(found!);
+    expect<unknown>(loaded).toBe(found!);
     expect(books).toHaveLength(1);
 
     await EBook.create({ author_id: author.getAttribute("id"), title: "Later book" });
@@ -199,7 +211,7 @@ describe("Eager Loading", () => {
   test("loadMissing exposes loaded relation types", () => {
     const assertTypes = (author: TypedEAuthor): void => {
       author.loadMissing("books").then((loaded) => {
-        expectType<Collection<TypedEBook>>(loaded.books);
+        expectType<Collection<PublicShape<TypedEBook>>>(loaded.books);
       });
     };
 
@@ -260,7 +272,7 @@ describe("Eager Loading", () => {
     try {
       const authors = await EAuthor.with("books.chapters").whereIn("id", [first.id, second.id]).get();
       expect(authors).toHaveLength(2);
-      expect(authors.flatMap((author) => author.books).map((book) => book.chapters[0].title)).toEqual([
+      expect(authors.flatMap((author) => author.books).map((book) => book!.chapters[0].title)).toEqual([
         "Chapter A",
         "Chapter B",
       ]);
@@ -295,7 +307,7 @@ describe("Eager Loading", () => {
     expect(json.books).toHaveLength(1);
     expect(json.books[0].title).toBe("Book K");
     expect(json.profile).toBeInstanceOf(Object);
-    expect(json.profile.bio).toBe("Bio K");
+    expect(json.profile!.bio).toBe("Bio K");
   });
 
   test("json includes null relation for missing hasOne", async () => {

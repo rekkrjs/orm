@@ -41,6 +41,8 @@ class ContractPost extends PermissiveModel {
 }
 
 class ContractDefault extends PermissiveModel {
+  declare id: number;
+  declare value: string | null;
   static table = "contract_defaults";
   static timestamps = false;
 }

@@ -120,7 +120,7 @@ describe.serial("Database-assigned primary keys", () => {
     class ExpressionKey extends Model {
       static override timestamps = false;
       static override primaryKey = "id";
-      static override keyType = "string";
+      static override keyType = "string" as const;
       static override incrementing = false;
       static override fillable = ["name"];
     }

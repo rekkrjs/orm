@@ -125,7 +125,7 @@ pgTest("withTenant isolates overlapping scopes with out-of-order exits", async (
 pgTest("RLS reentry preserves a logical tenant ID distinct from its PostgreSQL value", async () => {
   const db = new Connection({ url: postgres!, max: 1 });
   await ConnectionManager.setTenantResolver(async () => ({
-    strategy: "rls", connection: db, tenantId: "uuid-for-acme",
+    strategy: "rls", name: "rls:scope-isolation", connection: db, tenantId: "uuid-for-acme",
   }));
   try {
     await DB.tenant("acme", async () => {

@@ -6,12 +6,20 @@ import { createDriverContext, postgresUrl, type DriverContext } from "./driver-h
 const run = postgresUrl ? test.serial : test.skip;
 
 class PostgresExactValue extends PermissiveModel {
+  declare id: string;
+  declare amount: string;
   static override table = "postgres_exact_values";
   static override timestamps = false;
   static override casts = { amount: "decimal:10" };
 }
 
 class PostgresNativeValue extends PermissiveModel {
+  declare id: number;
+  declare metadata: any;
+  declare tags: any;
+  declare active: boolean | null;
+  declare day_value: Date | null;
+  declare note: string | null;
   static override table = "postgres_native_values";
   static override timestamps = false;
   static override casts = {
@@ -23,6 +31,9 @@ class PostgresNativeValue extends PermissiveModel {
 }
 
 class PostgresPageItem extends PermissiveModel {
+  declare id: number;
+  declare bucket: number;
+  declare label: string;
   static override table = "postgres_page_items";
   static override timestamps = false;
 }

@@ -31,8 +31,8 @@ async function runCli(
     stderr: "pipe",
   });
   if (options.input !== undefined) {
-    proc.stdin.write(options.input);
-    proc.stdin.end();
+    proc.stdin!.write(options.input);
+    proc.stdin!.end();
   }
 
   const stdout = new Response(proc.stdout).text();

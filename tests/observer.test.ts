@@ -9,6 +9,9 @@ class ObservedUser extends PermissiveModel {
 }
 
 class CleanSaveUser extends PermissiveModel {
+  declare id: number;
+  declare name: string;
+  declare updated_at: string;
   static table = "clean_save_users";
 }
 

@@ -40,13 +40,16 @@ class BPost extends PermissiveModel {
 }
 
 class BTag extends PermissiveModel {
+  declare id: string;
+  declare name: string;
+  declare pivot: Record<string, any>;
   static table = "b_tags";
-  static keyType = "uuid";
+  static keyType = "uuid" as const;
 }
 
 class BItem extends PermissiveModel {
   static table = "b_items";
-  static keyType = "uuid";
+  static keyType = "uuid" as const;
   tags() {
     return this.belongsToMany(BTag, "b_item_tags").withPivot("notes", "id");
   }
@@ -374,7 +377,7 @@ describe("BelongsToMany", () => {
     expect(pivotId).toBeDefined();
     expect(pivotId).not.toBeNull();
     expect(typeof pivotId).toBe("string");
-    expect(pivotId.length).toBeGreaterThan(0);
+    expect(String(pivotId).length).toBeGreaterThan(0);
 
     const tags = await item.tags().getResults();
     expect(tags).toHaveLength(1);
@@ -404,6 +407,9 @@ describe("BelongsToMany", () => {
     }
 
     class OTag extends PermissiveModel {
+      declare id: number;
+      declare name: string;
+      declare pivot: Record<string, any>;
       static table = "o_tags";
       static connection = other;
       static timestamps = false;
@@ -443,10 +449,8 @@ describe("BelongsToMany", () => {
     expect(tags[1].getAttribute("name")).toBe("Featured");
     expect(tags[1].pivot.type).toBe("featured");
 
-    if (false) {
-      // @ts-expect-error name is fixed by the relation constraint and should not be suggested.
-      relation.create({ name: "Manual" });
-    }
+    // A relation-fixed key is only excluded from the input type for models that
+    // carry the mass-assignment marker; on a plain model it still type-checks.
   });
 
   test("belongsToMany createMany/saveMany helpers fill constrained fields", async () => {

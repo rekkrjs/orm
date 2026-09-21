@@ -1,6 +1,7 @@
 import { SqlFragment } from "./SqlFragment.js";
 import { formatIso } from "../utils.js";
 import { Connection } from "../connection/Connection.js";
+import type { WriteResult } from "../connection/Connection.js";
 import { UniqueConstraintViolationError } from "../connection/UniqueConstraintViolationError.js";
 import { TransactionContext } from "../connection/TransactionContext.js";
 import { resolveConnection } from "../connection/ExecutionContext.js";
@@ -1314,9 +1315,9 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return this;
   }
 
+  with<Rs extends ReadonlyArray<TypedEagerLoad<T>>>(relations: Rs): Builder<T, WithLoadedRelations<TResult, ExtractStringPaths<Rs[number]>>, TSelected>;
   with<K extends string & NestedRelationPath<T>>(constraint: TypedConstraintSelection<T, K>): Builder<T, WithLoadedRelationsFromConstraintMap<TResult, TypedConstraintSelection<T, K>>, TSelected>;
   with<R extends TypedConstraintMap<T> & object>(constraint: R): Builder<T, WithLoadedRelationsFromConstraintMap<TResult, R>, TSelected>;
-  with<Rs extends ReadonlyArray<TypedEagerLoad<T>>>(relations: Rs): Builder<T, WithLoadedRelations<TResult, ExtractStringPaths<Rs[number]>>, TSelected>;
   with<Rs extends ReadonlyArray<TypedEagerLoad<T>>>(...relations: Rs): Builder<T, WithLoadedRelations<TResult, ExtractStringPaths<Rs[number]>>, TSelected>;
   with<R extends string & NestedRelationPath<T>>(relation: R): Builder<T, WithLoadedRelations<TResult, R>, TSelected>;
   with(relation: LiteralUnion<string & NestedRelationPath<T>>): Builder<T, WithLoadedRelations<TResult, string>, TSelected>;
@@ -2133,7 +2134,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     }
   }
 
-  toSqlWithEagerLoads(models: Model[]): string {
+  toSqlWithEagerLoads(models: T[]): string {
     if (!this.model || this.eagerLoads.length === 0) return this.toRawSql();
     if (models.length === 0) throw new Error("toSqlWithEagerLoads requires at least one model");
 
@@ -3142,7 +3143,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return (Array.isArray(serialized) ? serialized : [serialized]).map((record) => this.definedRecord(record));
   }
 
-  async insert(data: ModelAttributeInput<T> | ModelAttributeInput<T>[]): Promise<any> {
+  async insert(data: ModelAttributeInput<T> | ModelAttributeInput<T>[]): Promise<WriteResult | undefined> {
     const records = this.definedRecords(data);
     if (records.length === 0) return;
 
@@ -3166,7 +3167,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return await this.connection.run(sql, bindings);
   }
 
-  async insertGetId(data: ModelAttributeInput<T>, idColumn: ModelColumn<T> = "id"): Promise<any> {
+  async insertGetId(data: ModelAttributeInput<T>, idColumn: ModelColumn<T> = "id"): Promise<number | string | bigint | null> {
     const records = this.definedRecords(data);
     if (records.length === 0) return null;
 
@@ -3207,7 +3208,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return await this.connection.runAndGetMysqlInsertId(sql, bindings);
   }
 
-  async insertOrIgnore(data: ModelAttributeInput<T> | ModelAttributeInput<T>[]): Promise<any> {
+  async insertOrIgnore(data: ModelAttributeInput<T> | ModelAttributeInput<T>[]): Promise<WriteResult | undefined> {
     const records = this.definedRecords(data);
     if (records.length === 0) return;
 
@@ -3237,7 +3238,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return await this.connection.run(sql, bindings);
   }
 
-  async upsert(data: ModelAttributeInput<T> | ModelAttributeInput<T>[], uniqueBy: ModelColumn<T> | ModelColumn<T>[], updateColumns?: ModelColumn<T>[]): Promise<any> {
+  async upsert(data: ModelAttributeInput<T> | ModelAttributeInput<T>[], uniqueBy: ModelColumn<T> | ModelColumn<T>[], updateColumns?: ModelColumn<T>[]): Promise<WriteResult | undefined> {
     const records = this.definedRecords(data);
     if (records.length === 0) return;
 
@@ -3280,7 +3281,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return columns;
   }
 
-  async update(data: ModelAttributeInput<T>): Promise<any> {
+  async update(data: ModelAttributeInput<T>): Promise<WriteResult | undefined> {
     data = this.definedRecords(data)[0]!;
     if (Object.keys(data).length === 0) return;
     const limited = this.limitValue !== undefined;
@@ -3302,7 +3303,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return result;
   }
 
-  private async performUpdate(data: ModelAttributeInput<T>): Promise<any> {
+  private async performUpdate(data: ModelAttributeInput<T>): Promise<WriteResult> {
     this.bindings = [];
     this.parameterize = true;
     const sets = Object.entries(data).map(([key, value]) => {
@@ -3320,7 +3321,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return await this.connection.run(sql, this.bindings);
   }
 
-  async delete(): Promise<any> {
+  async delete(): Promise<WriteResult> {
     const model = this.model as any;
     if (!model?.softDeletes) return await this.forceDelete();
 
@@ -3342,7 +3343,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return result;
   }
 
-  async forceDelete(): Promise<any> {
+  async forceDelete(): Promise<WriteResult> {
     const dispatch = this.shouldDispatchObservers();
     const limited = Boolean(this.model) && this.limitValue !== undefined;
     const affectedIds = this.model && (limited || dispatch || IdentityMap.current())
@@ -3359,7 +3360,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return result;
   }
 
-  private async performDelete(): Promise<any> {
+  private async performDelete(): Promise<WriteResult> {
     this.bindings = [];
     this.parameterize = true;
     const whereSql = this.compileWheres();
@@ -3422,7 +3423,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     }
   }
 
-  async increment(column: ModelColumn<T>, amount: number = 1, extra: ModelAttributeInput<T> = {}): Promise<any> {
+  async increment(column: ModelColumn<T>, amount: number = 1, extra: ModelAttributeInput<T> = {}): Promise<WriteResult> {
     if (typeof amount !== "number" || !Number.isFinite(amount)) {
       throw new Error("Increment amount must be a finite number.");
     }
@@ -3441,7 +3442,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return result;
   }
 
-  private async performIncrement(column: ModelColumn<T>, amount: number, extra: ModelAttributeInput<T>): Promise<any> {
+  private async performIncrement(column: ModelColumn<T>, amount: number, extra: ModelAttributeInput<T>): Promise<WriteResult> {
     this.bindings = [];
     this.parameterize = true;
     const sets = [`${this.grammar.wrap(column)} = ${this.grammar.wrap(column)} + ${this.addBinding(amount)}`];
@@ -3455,11 +3456,11 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return await this.connection.run(sql.trim(), this.bindings);
   }
 
-  async decrement(column: ModelColumn<T>, amount: number = 1, extra: ModelAttributeInput<T> = {}): Promise<any> {
+  async decrement(column: ModelColumn<T>, amount: number = 1, extra: ModelAttributeInput<T> = {}): Promise<WriteResult> {
     return this.increment(column, -amount, extra);
   }
 
-  async restore(): Promise<any> {
+  async restore(): Promise<WriteResult | undefined> {
     const model = this.model as any;
     if (!model?.softDeletes) {
       throw new Error("restore() is only available for soft deleting models");

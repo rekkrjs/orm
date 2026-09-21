@@ -4,6 +4,7 @@ import type {
   ChildRelationName,
   ModelAttributeInput,
   ModelConstructor,
+  ModelType,
 } from "../model/Model.js";
 import { Model, __registerModelFactory } from "../model/Model.js";
 import type { Connection } from "../connection/Connection.js";
@@ -38,9 +39,9 @@ export class Sequence {
   }
 }
 
-type BelongsToParent = { factoryOrModel: Factory<any> | Model; relation?: string };
+type BelongsToParent = { factoryOrModel: Factory<any> | ModelType; relation?: string };
 type HasChildren = { factory: Factory<any>; relation: string };
-type AttachedModels = Factory<any> | Model | readonly Model[];
+type AttachedModels = Factory<any> | ModelType | readonly ModelType[];
 type HasAttached = { factoryOrModels: AttachedModels; pivot: Record<string, any>; relation: string };
 
 /**
@@ -132,7 +133,7 @@ export class Factory<T = any> {
     return this.state(() => ({ [model.deletedAtColumn]: new Date() } as FactoryAttributes<T>));
   }
 
-  recycle(models: Model | readonly Model[]): this {
+  recycle(models: ModelType | readonly ModelType[]): this {
     const next = this.clone();
     for (const model of Array.isArray(models) ? models : [models]) {
       if (!(model instanceof Model) || !model.$exists) {
@@ -146,7 +147,7 @@ export class Factory<T = any> {
   }
 
   /** belongsTo parent — a model instance or another Factory (created lazily). */
-  for<R extends string & BelongsToRelationName<T>>(parent: Factory<any> | Model, relation?: R): this {
+  for<R extends string & BelongsToRelationName<T>>(parent: Factory<any> | ModelType, relation?: R): this {
     const next = this.clone();
     next.belongsToParents = [...next.belongsToParents, { factoryOrModel: parent, relation }];
     return next;
@@ -352,7 +353,7 @@ export class Factory<T = any> {
     }
   }
 
-  private resolveBelongsToKeys(parent: Model, relation?: string): { foreignKey: string; ownerKey: string } {
+  private resolveBelongsToKeys(parent: ModelType, relation?: string): { foreignKey: string; ownerKey: string } {
     if (relation) {
       const probe = new this.model() as any;
       const rel = probe[relation]();

@@ -1,14 +1,21 @@
 import { expect, test, describe, beforeAll } from "bun:test";
-import { Model, ModelNotFoundError, Schema, type Connection } from "../src/index.js";
+import { Model, ModelNotFoundError, Schema, type Connection, type ModelConstructor } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 function expectType<T>(_value: T): void {}
 
 class TestUser extends PermissiveModel {
+  declare id: number;
+  declare name: string;
+  declare email?: string | null;
   static table = "test_users";
 }
 
 class DefaultUser extends PermissiveModel {
+  declare id: number;
+  declare name: string;
+  declare active: boolean;
+  declare role: string;
   static table = "default_users";
   static casts = {
     active: "boolean",
@@ -21,6 +28,8 @@ class DefaultUser extends PermissiveModel {
 }
 
 class UuidUser extends PermissiveModel {
+  declare id: string;
+  declare name: string;
   static table = "uuid_users";
 }
 
@@ -54,9 +63,13 @@ class InstanceHiddenUser extends PermissiveModel {
 class OverrideHydrationUser extends TestUser {
   static hydrateCalls = 0;
 
-  static override hydrate(row: Record<string, any>, connection?: Connection): OverrideHydrationUser {
-    this.hydrateCalls++;
-    return super.hydrate({ ...row, hydrated_by_override: true }, connection) as OverrideHydrationUser;
+  static override hydrate<M extends ModelConstructor>(
+    this: M,
+    row: Record<string, any>,
+    connection?: Connection
+  ): InstanceType<M> {
+    (this as unknown as typeof OverrideHydrationUser).hydrateCalls++;
+    return super.hydrate({ ...row, hydrated_by_override: true }, connection) as InstanceType<M>;
   }
 }
 

@@ -3,6 +3,8 @@ import { Connection, ConnectionManager, DB, Model, TenantContext, TransactionCon
 import { Cache, MemoryCacheStore } from "../src/cache/index.js";
 
 class Item extends Model {
+  declare id: number;
+  declare name: string;
   static table = "context_items";
   static timestamps = false;
   static guarded: string[] = [];

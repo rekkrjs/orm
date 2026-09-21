@@ -182,7 +182,7 @@ describe.serial("Laravel P2 static forwarding", () => {
     });
     expect(Number(id)).toBe(6);
 
-    const inserted = await P2User.find(id);
+    const inserted = await P2User.find(id!);
     expect(inserted?.getAttribute("active")).toBe(true);
     expect(inserted?.getAttribute("secret")).toBe("bypasses fillable");
 

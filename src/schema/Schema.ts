@@ -395,9 +395,9 @@ export class Schema {
     );
   }
 
-  static async hasIndex(table: string, indexOrColumns: string | string[]): Promise<boolean> {
+  static async hasIndex(table: string, indexOrColumns: string | string[], conn?: Connection): Promise<boolean> {
     const expectedColumns = Array.isArray(indexOrColumns) ? indexOrColumns : undefined;
-    const indexes = await this.getIndexes(table);
+    const indexes = await this.getIndexes(table, conn);
     if (!expectedColumns) {
       return indexes.some((index) => index.name === indexOrColumns);
     }
@@ -486,9 +486,9 @@ export class Schema {
     return this.groupForeignKeyRows(rows as any[], "constraint_name", "column_name", "referenced_table_name", "referenced_column_name", "delete_rule", "update_rule");
   }
 
-  static async hasForeignKey(table: string, keyOrColumns: string | string[]): Promise<boolean> {
+  static async hasForeignKey(table: string, keyOrColumns: string | string[], conn?: Connection): Promise<boolean> {
     const expectedColumns = Array.isArray(keyOrColumns) ? keyOrColumns : undefined;
-    const foreignKeys = await this.getForeignKeys(table);
+    const foreignKeys = await this.getForeignKeys(table, conn);
     if (!expectedColumns) {
       return foreignKeys.some((fk) => fk.name === keyOrColumns);
     }

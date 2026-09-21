@@ -48,6 +48,20 @@ function isUniqueConstraintViolation(
   }
 }
 
+/**
+ * What a driver hands back for a write. bun:sql returns an array of whatever
+ * the statement returned (empty unless it has a RETURNING clause) carrying its
+ * own metadata: MySQL fills `affectedRows`, Postgres and SQLite fill `count`.
+ * That split is why the portable number comes from `affectedRows()`.
+ */
+export interface WriteResult extends Array<Record<string, any>> {
+  count?: number;
+  command?: string;
+  affectedRows?: number | null;
+  insertId?: number | string | null;
+  lastInsertRowid?: number | bigint | null;
+}
+
 export class Connection {
   /** Every driver the ORM has a grammar for. Anything else is rejected up front. */
   static readonly SUPPORTED_DRIVERS = ["sqlite", "mysql", "postgres"] as const;
@@ -507,23 +521,23 @@ export class Connection {
   }
 
   /** Driver metadata only: MySQL reports changed rows; other drivers may count matched rows. */
-  affectedRows(result: any): number {
+  affectedRows(result: WriteResult | any): number {
     // WORKAROUND(bun-sql-write-count): see .tmp_hacks/bun-sql-write-count.md.
     return Number((this.driverName === "mysql" ? result?.affectedRows : result?.count) ?? 0);
   }
 
-  async query(sqlString: string, bindings?: any[]): Promise<any[]> {
+  async query<TRow = any>(sqlString: string, bindings?: any[]): Promise<TRow[]> {
     const connection = resolveConnection(this);
     return await connection.use(() => connection.execute(sqlString, bindings));
   }
 
-  async run(sqlString: string, bindings?: any[]): Promise<any> {
+  async run(sqlString: string, bindings?: any[]): Promise<WriteResult> {
     const connection = resolveConnection(this);
     return await connection.use(() => connection.execute(sqlString, bindings));
   }
 
   /** MySQL's result metadata rounds large AUTO_INCREMENT ids; read the exact id on the same session. */
-  async runAndGetMysqlInsertId(sqlString: string, bindings?: any[]): Promise<any> {
+  async runAndGetMysqlInsertId(sqlString: string, bindings?: any[]): Promise<number | string | bigint | null> {
     const effective = resolveConnection(this);
     if (effective !== this) return effective.runAndGetMysqlInsertId(sqlString, bindings);
     return this.use(() => this.mysqlInsertId(sqlString, bindings));

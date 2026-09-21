@@ -23,6 +23,9 @@ class FPost extends PermissiveModel {
 }
 
 class FRole extends PermissiveModel {
+  declare id: number;
+  declare name: string;
+  declare pivot: Record<string, any>;
   static table = "f_roles";
 }
 
@@ -236,16 +239,16 @@ describe("Factory (class-based, Laravel parity)", () => {
   });
 
   test("state methods on the factory class", async () => {
-    const admin = (await FUser.factory().admin().create()) as FUser;
+    const admin = (await FUser.factory<FUserFactory>().admin().create()) as FUser;
     expect(admin.getAttribute("role")).toBe("admin");
 
-    const inactive = FUser.factory().inactive().make() as FUser;
+    const inactive = FUser.factory<FUserFactory>().inactive().make() as FUser;
     expect(inactive.getAttribute("active")).toBe(false);
     expect(inactive.getAttribute("name")).toBe("Inactive 1");
   });
 
   test("precedence: definition -> state -> override", () => {
-    const u = FUser.factory().admin().make({ role: "owner" }) as FUser;
+    const u = FUser.factory<FUserFactory>().admin().make({ role: "owner" }) as FUser;
     expect(u.getAttribute("role")).toBe("owner");
   });
 
@@ -664,7 +667,7 @@ describe("Factory (class-based, Laravel parity)", () => {
   });
 
   test("immutability: chained builders return new factories, base untouched", () => {
-    const base = FUser.factory();
+    const base = FUser.factory<FUserFactory>();
     const derived = base.count(5).admin();
     expect((base.make() as FUser).getAttribute("role")).toBe("member");
     expect(Array.isArray(base.make())).toBe(false);
@@ -673,7 +676,7 @@ describe("Factory (class-based, Laravel parity)", () => {
   });
 
   test("chained state methods compose (admin + inactive)", () => {
-    const u = FUser.factory().admin().inactive().make() as FUser;
+    const u = FUser.factory<FUserFactory>().admin().inactive().make() as FUser;
     expect(u.getAttribute("role")).toBe("admin");
     expect(u.getAttribute("active")).toBe(false);
   });
