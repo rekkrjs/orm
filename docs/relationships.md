@@ -12,6 +12,10 @@ class User extends Model {
 
 const posts = await user.posts().get();             // Collection<Post>
 const drafts = await user.posts().where("published", false).get();
+
+// `whereIn`, `orderBy` and `limit` chain the same way.
+const recent = await user.posts().whereIn("status", ["draft", "review"])
+  .orderBy("created_at", "desc").limit(5).get();
 ```
 
 The query builder methods available on a relation include filters (`where`), ordering (`orderBy`), eager loads (`with`), and write helpers (`create`, `save`, `attach`). All foreign keys are filled in for you so you don't repeat IDs.
@@ -266,10 +270,27 @@ class Country extends Model {
 }
 
 // Usage
-const posts = await country.posts().get(); // all posts by users in this country
+const posts = await country.posts().get();      // Collection<Post>
+const latest = await country.latestPost().get(); // Post | null — a model, not a collection
 
 // Override keys: hasManyThrough(Final, Through, throughFK, finalFK, localKey, throughKey)
 this.hasManyThrough(Post, User, "country_uuid", "author_id", "uuid", "id");
+```
+
+A through relation queries with a `JOIN`, so a column present in both tables
+would be ambiguous. Constraints chained on the relation qualify it for you:
+
+```ts
+await country.posts().where("title", "Hello").get();   // posts.title
+```
+
+Inside a `whereHas()` callback you get a plain query builder over that join, so
+there you qualify it yourself — the same as in Eloquent:
+
+```ts
+await Country.whereHas("posts", (query) => {
+  query.where("posts.title", "Hello");
+}).get();
 ```
 
 ## belongsToMany (Many-to-Many)

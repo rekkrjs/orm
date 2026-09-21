@@ -148,8 +148,11 @@ Mapping:
 
 | Relation type | Loaded type |
 |---|---|
-| `hasMany`, `belongsToMany`, `morphMany`, `morphToMany` | `Collection<R>` |
-| `hasOne`, `belongsTo`, `morphOne`, `morphTo` | `R \| null` |
+| `hasMany`, `belongsToMany`, `morphMany`, `morphToMany`, `hasManyThrough` | `Collection<R>` |
+| `hasOne`, `belongsTo`, `morphOne`, `morphTo`, `hasOneThrough` | `R \| null` |
+
+A `morphTo` loads as `Model | null` rather than a concrete class, because its
+target changes from row to row.
 
 Aggregates like `withCount`, `withSum`, and `withExists` add typed scalar fields:
 

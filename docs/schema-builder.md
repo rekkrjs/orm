@@ -586,6 +586,12 @@ if (await Schema.hasColumn("users", "phone")) {
 const indexes = await Schema.getIndexes("posts");
 const foreignKeys = await Schema.getForeignKeys("posts");
 const exists = await Schema.hasIndex("posts", ["user_id", "created_at"]);
+
+// All four accept an optional connection as their last argument. Without it
+// they inspect the default one, which is rarely what you want under
+// multi-connection or multi-tenant setups.
+await Schema.hasIndex("posts", "posts_user_id_index", tenant);
+await Schema.hasForeignKey("posts", ["user_id"], tenant);
 ```
 
 Each introspected index has a `type` of `"index"`, `"unique"`, or
