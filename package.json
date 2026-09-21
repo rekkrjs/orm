@@ -112,7 +112,7 @@
   "scripts": {
     "build": "rm -rf ./dist && tsc",
     "prepack": "bun run build",
-    "test": "tsc -p tsconfig.test.json && bun test --parallel --path-ignore-patterns='**/benchmark*'",
+    "test": "tsc -p tsconfig.test.json && bun test --parallel --path-ignore-patterns='**/benchmark*' && bun run scripts/public-any.ts --check",
     "bench": "bun test tests/benchmark*.test.ts",
     "bench:record": "bun run scripts/benchmark-history.ts",
     "bench:runtime": "bun run scripts/benchmark-runtime.ts",

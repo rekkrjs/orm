@@ -6,13 +6,14 @@ import { ModelNotFoundError } from "./ModelNotFoundError.js";
 import { Collection } from "../support/Collection.js";
 import { findRelationMethod, getModelTarget } from "./ModelBase.js";
 import type {
-  ModelConstructor,
   BulkModelOptions,
-  SaveOptions,
-  ModelKey,
   ModelAttributeInput,
   ModelColumn,
+  ModelColumnValue,
+  ModelConstructor,
+  ModelKey,
   ModelMassAssignmentInput,
+  SaveOptions,
 } from "./ModelBase.js";
 import { ModelCore } from "./ModelCore.js";
 import { formatIso, shouldGeneratePrimaryKeyForColumn } from "../utils.js";
@@ -491,6 +492,8 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     return (this as any).query().firstOr(callback);
   }
 
+  static firstWhere<M extends ModelConstructor, K extends ModelColumn<InstanceType<M>>>(this: M, column: K, value: ModelColumnValue<InstanceType<M>, K>): Promise<InstanceType<M> | null>;
+  static firstWhere<M extends ModelConstructor, K extends ModelColumn<InstanceType<M>>>(this: M, column: K, operator: string, value: ModelColumnValue<InstanceType<M>, K>): Promise<InstanceType<M> | null>;
   static firstWhere<M extends ModelConstructor>(this: M, column: any, operator: any, value?: any): Promise<InstanceType<M> | null> {
     return (this as any).query().firstWhere(column, operator, value);
   }

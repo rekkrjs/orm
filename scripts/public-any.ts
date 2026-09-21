@@ -1,38 +1,90 @@
-// Mide los `any` de la frontera pública: recorre los .d.ts alcanzables desde
-// los entrypoints de `exports` en package.json y cuenta en miembros públicos.
-import { readFileSync, existsSync } from "node:fs";
-import { dirname, resolve, relative } from "node:path";
+/**
+ * Mide los `any` de la frontera pública: emite las declaraciones, recorre los
+ * `.d.ts` alcanzables desde los entrypoints de `exports` en package.json y
+ * cuenta los `any` que ve quien consume el paquete.
+ *
+ *   bun run scripts/public-any.ts            cifras
+ *   bun run scripts/public-any.ts --list     además, cada firma culpable
+ *   bun run scripts/public-any.ts --check    trinquete: falla si alguna sube
+ *
+ * El trinquete corre dentro de `bun run test`. Si baja, baja el tope: el
+ * criterio es que estos números sólo se mueven hacia abajo. Subirlos pide una
+ * razón escrita, no un ajuste silencioso.
+ */
+import { readFileSync, existsSync, rmSync, mkdtempSync } from "node:fs";
+import { dirname, resolve, relative, join } from "node:path";
+import { tmpdir } from "node:os";
+
+const TOPE = { retornos: 20, parametros: 259, total: 864 };
 
 const root = new URL("..", import.meta.url).pathname;
-const pkg = JSON.parse(readFileSync(root + "package.json", "utf8"));
-const entries = Object.values(pkg.exports as Record<string, { types: string }>)
-  .map((e) => root + e.types.replace(/^\.\//, "").replace(/^src\//, "dist/src/").replace(/\.ts$/, ".d.ts"));
+const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
-const seen = new Set<string>();
-const queue = [...entries];
-while (queue.length) {
-  const file = queue.pop()!;
-  if (seen.has(file) || !existsSync(file)) continue;
-  seen.add(file);
-  const src = readFileSync(file, "utf8");
-  for (const m of src.matchAll(/from ['"](\.[^'"]+)['"]/g)) {
-    const base = resolve(dirname(file), m[1]!).replace(/\.js$/, "");
-    for (const cand of [base + ".d.ts", base + "/index.d.ts"]) if (existsSync(cand)) queue.push(cand);
+const out = mkdtempSync(join(tmpdir(), "public-any-"));
+try {
+  const tsc = Bun.spawnSync(["bunx", "tsc", "--emitDeclarationOnly", "--declaration", "--outDir", out], { cwd: root });
+  if (tsc.exitCode !== 0) {
+    console.error(tsc.stdout.toString() + tsc.stderr.toString());
+    process.exit(1);
   }
-}
 
-let total = 0, rets = 0, params = 0;
-const retHits: string[] = [], paramHits: string[] = [];
-for (const file of [...seen].sort()) {
-  const lines = readFileSync(file, "utf8").split("\n");
-  lines.forEach((line, i) => {
-    if (/^\s*(private|\/\/|\*|\/\*)/.test(line)) return;
-    total += (line.match(/\bany\b/g) ?? []).length;
-    const where = `${relative(root, file)}:${i + 1}`;
-    if (/\):\s*any\b|\):\s*Promise<any>/.test(line)) { rets++; retHits.push(`${where}  ${line.trim()}`); }
-    const p = (line.match(/[(,]\s*\.{0,3}[A-Za-z_$][\w$]*\??:\s*any\b/g) ?? []).length;
-    if (p) { params += p; paramHits.push(`${where}  ${line.trim()}`); }
-  });
+  const entries = Object.values(pkg.exports as Record<string, { types: string }>)
+    .map((e) => join(out, e.types.replace(/^\.\//, "").replace(/\.ts$/, ".d.ts")));
+
+  const seen = new Set<string>();
+  const queue = [...entries];
+  while (queue.length) {
+    const file = queue.pop()!;
+    if (seen.has(file) || !existsSync(file)) continue;
+    seen.add(file);
+    for (const m of readFileSync(file, "utf8").matchAll(/from ['"](\.[^'"]+)['"]/g)) {
+      const base = resolve(dirname(file), m[1]!).replace(/\.js$/, "");
+      for (const cand of [base + ".d.ts", base + "/index.d.ts"]) if (existsSync(cand)) queue.push(cand);
+    }
+  }
+
+  let total = 0, retornos = 0, parametros = 0;
+  const retHits: string[] = [], paramHits: string[] = [];
+  for (const file of [...seen].sort()) {
+    readFileSync(file, "utf8").split("\n").forEach((line, i) => {
+      if (/^\s*(private|\/\/|\*|\/\*)/.test(line)) return;
+      total += (line.match(/\bany\b/g) ?? []).length;
+      const donde = `${relative(out, file)}:${i + 1}`;
+      if (/\):\s*any\b|\):\s*Promise<any>/.test(line)) { retornos++; retHits.push(`${donde}  ${line.trim()}`); }
+      const p = (line.match(/[(,]\s*\.{0,3}[A-Za-z_$][\w$]*\??:\s*any\b/g) ?? []).length;
+      if (p) { parametros += p; paramHits.push(`${donde}  ${line.trim()}`); }
+    });
+  }
+
+  const medido = { retornos, parametros, total };
+  console.log(`ficheros públicos: ${seen.size}`);
+  for (const k of ["retornos", "parametros", "total"] as const) {
+    console.log(`${k}: ${medido[k]}${medido[k] === TOPE[k] ? "" : ` (tope ${TOPE[k]})`}`);
+  }
+  if (process.argv.includes("--list")) {
+    console.log("\n== retornos ==\n" + retHits.join("\n") + "\n\n== parámetros ==\n" + paramHits.join("\n"));
+  }
+
+  if (process.argv.includes("--check")) {
+    const subidas = (["retornos", "parametros", "total"] as const).filter((k) => medido[k] > TOPE[k]);
+    if (subidas.length) {
+      console.error(
+        `\n✗ La frontera pública ha ganado \`any\`: ${subidas.map((k) => `${k} ${TOPE[k]} → ${medido[k]}`).join(", ")}.\n` +
+        `  Mira cuál con \`bun run scripts/public-any.ts --list\`. Si es deliberado, sube TOPE con una nota.`
+      );
+      process.exit(1);
+    }
+    const bajadas = (["retornos", "parametros", "total"] as const).filter((k) => medido[k] < TOPE[k]);
+    if (bajadas.length) {
+      console.error(
+        `\n✗ La frontera pública ha mejorado y el tope se ha quedado viejo: ` +
+        `${bajadas.map((k) => `${k} ${TOPE[k]} → ${medido[k]}`).join(", ")}.\n` +
+        `  Baja TOPE en scripts/public-any.ts para que el trinquete no ceda lo ganado.`
+      );
+      process.exit(1);
+    }
+    console.log("\n✓ Frontera pública sin `any` nuevos.");
+  }
+} finally {
+  rmSync(out, { recursive: true, force: true });
 }
-console.log(`ficheros públicos: ${seen.size}\nretornos any: ${rets}\nparámetros any: ${params}\nany totales: ${total}`);
-if (process.argv[2] === "--list") console.log("\n== retornos ==\n" + retHits.join("\n") + "\n\n== parámetros ==\n" + paramHits.join("\n"));

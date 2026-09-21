@@ -1,38 +1,86 @@
 import { Builder, type NumericAggregate } from "../query/Builder.js";
 import { Collection } from "../support/Collection.js";
 import type {
-  ModelConstructor,
-  ModelColumn,
-  ModelColumnValue,
+  AggregateAlias,
+  AggregateColumn,
+  AggregateConstraint,
+  AggregateLoaded,
+  AggregateValueForRelation,
   EagerLoadConstraint,
   EagerLoadInput,
+  ExtractStringPaths,
+  LiteralUnion,
+  LoadMorphRelationName,
+  ModelColumn,
+  ModelColumnValue,
+  ModelConstructor,
+  ModelRelationName,
   MorphEagerLoadMap,
-  AggregateConstraint,
+  NestedRelationPath,
+  StrictTypedEagerLoad,
+  TypedConstraintCallback,
+  TypedExistsConstraintMap,
+  WithLoadedRelations,
+  WithRelationCount,
+  WithRelationExists,
+  WithRelationExistsMap,
 } from "./ModelBase.js";
+import type { Model } from "./Model.js";
 import { ModelQuerying } from "./ModelQuerying.js";
 
 export class ModelAggregates<T extends Record<string, any> = any> extends ModelQuerying<T> {
-  // Static aggregate query builders
-  static withCount<M extends ModelConstructor>(this: M, relationName: string, alias?: string): Builder<InstanceType<M>> {
+  static withCount<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>, A extends string | undefined = undefined>(this: M, relationName: R, alias?: A): Builder<InstanceType<M>, WithRelationCount<InstanceType<M>, R, A>>;
+  static withCount<M extends ModelConstructor, A extends string | undefined = undefined>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, alias?: A): Builder<InstanceType<M>, WithRelationCount<InstanceType<M>, string, A>>;
+  static withCount<M extends ModelConstructor>(this: M, relationName: string, alias?: string): Builder<InstanceType<M>, WithRelationCount<InstanceType<M>, string, string | undefined>> {
     return (this as any).query().withCount(relationName, alias);
   }
 
+  static withExists<M extends ModelConstructor, R extends TypedExistsConstraintMap<InstanceType<M>> & object>(this: M, relations: R): Builder<InstanceType<M>, WithRelationExistsMap<InstanceType<M>, R>>;
+  static withExists<M extends ModelConstructor, R extends Record<string, ((query: Builder<any>) => any) | undefined>>(this: M, relations: R): Builder<InstanceType<M>, WithRelationExistsMap<InstanceType<M>, R>>;
+  static withExists<M extends ModelConstructor, R extends string & NestedRelationPath<InstanceType<M>>>(this: M, relationName: R, callback?: TypedConstraintCallback<InstanceType<M>, R>): Builder<InstanceType<M>, WithRelationExists<InstanceType<M>, R>>;
+  static withExists<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & NestedRelationPath<InstanceType<M>>>, callback?: (query: Builder<any>) => any): Builder<InstanceType<M>, WithRelationExists<InstanceType<M>, string>>;
+  static withExists<M extends ModelConstructor, R extends string & NestedRelationPath<InstanceType<M>>, A extends string>(this: M, relationName: R, alias: A, callback?: TypedConstraintCallback<InstanceType<M>, R>): Builder<InstanceType<M>, WithRelationExists<InstanceType<M>, R, A>>;
+  static withExists<M extends ModelConstructor, A extends string>(this: M, relationName: LiteralUnion<string & NestedRelationPath<InstanceType<M>>>, alias: A, callback?: (query: Builder<any>) => any): Builder<InstanceType<M>, WithRelationExists<InstanceType<M>, string, A>>;
   static withExists<M extends ModelConstructor>(this: M, relationOrMap: any, aliasOrCallback?: any, callback?: any): any {
     return (this as any).query().withExists(relationOrMap, aliasOrCallback, callback);
   }
 
+  static withSum<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: AggregateColumn<InstanceType<M>, R>, callback: AggregateConstraint<InstanceType<M>, R>): Builder<InstanceType<M>>;
+  static withSum<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: AggregateColumn<InstanceType<M>, R>, alias?: string): Builder<InstanceType<M>>;
+  static withSum<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: AggregateColumn<InstanceType<M>, R>, alias: string, callback: AggregateConstraint<InstanceType<M>, R>): Builder<InstanceType<M>>;
+  static withSum<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, callback: EagerLoadConstraint): Builder<InstanceType<M>>;
+  static withSum<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, alias?: string): Builder<InstanceType<M>>;
+  static withSum<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, alias: string, callback: EagerLoadConstraint): Builder<InstanceType<M>>;
   static withSum<M extends ModelConstructor>(this: M, relationName: string, column: string, aliasOrCallback?: string | EagerLoadConstraint, callback?: EagerLoadConstraint): Builder<InstanceType<M>> {
     return (this as any).query().withSum(relationName, column, aliasOrCallback as any, callback as any);
   }
 
+  static withAvg<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: AggregateColumn<InstanceType<M>, R>, callback: AggregateConstraint<InstanceType<M>, R>): Builder<InstanceType<M>>;
+  static withAvg<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: AggregateColumn<InstanceType<M>, R>, alias?: string): Builder<InstanceType<M>>;
+  static withAvg<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: AggregateColumn<InstanceType<M>, R>, alias: string, callback: AggregateConstraint<InstanceType<M>, R>): Builder<InstanceType<M>>;
+  static withAvg<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, callback: EagerLoadConstraint): Builder<InstanceType<M>>;
+  static withAvg<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, alias?: string): Builder<InstanceType<M>>;
+  static withAvg<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, alias: string, callback: EagerLoadConstraint): Builder<InstanceType<M>>;
   static withAvg<M extends ModelConstructor>(this: M, relationName: string, column: string, aliasOrCallback?: string | EagerLoadConstraint, callback?: EagerLoadConstraint): Builder<InstanceType<M>> {
     return (this as any).query().withAvg(relationName, column, aliasOrCallback as any, callback as any);
   }
 
+  static withMin<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: AggregateColumn<InstanceType<M>, R>, callback: AggregateConstraint<InstanceType<M>, R>): Builder<InstanceType<M>>;
+  static withMin<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: AggregateColumn<InstanceType<M>, R>, alias?: string): Builder<InstanceType<M>>;
+  static withMin<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: AggregateColumn<InstanceType<M>, R>, alias: string, callback: AggregateConstraint<InstanceType<M>, R>): Builder<InstanceType<M>>;
+  static withMin<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, callback: EagerLoadConstraint): Builder<InstanceType<M>>;
+  static withMin<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, alias?: string): Builder<InstanceType<M>>;
+  static withMin<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, alias: string, callback: EagerLoadConstraint): Builder<InstanceType<M>>;
   static withMin<M extends ModelConstructor>(this: M, relationName: string, column: string, aliasOrCallback?: string | EagerLoadConstraint, callback?: EagerLoadConstraint): Builder<InstanceType<M>> {
     return (this as any).query().withMin(relationName, column, aliasOrCallback as any, callback as any);
   }
 
+  static withMax<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: AggregateColumn<InstanceType<M>, R>, callback: AggregateConstraint<InstanceType<M>, R>): Builder<InstanceType<M>>;
+  static withMax<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: AggregateColumn<InstanceType<M>, R>, alias?: string): Builder<InstanceType<M>>;
+  static withMax<M extends ModelConstructor, R extends string & ModelRelationName<InstanceType<M>>>(this: M, relationName: R, column: AggregateColumn<InstanceType<M>, R>, alias: string, callback: AggregateConstraint<InstanceType<M>, R>): Builder<InstanceType<M>>;
+  static withMax<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, callback: EagerLoadConstraint): Builder<InstanceType<M>>;
+  static withMax<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, alias?: string): Builder<InstanceType<M>>;
+  static withMax<M extends ModelConstructor>(this: M, relationName: LiteralUnion<string & ModelRelationName<InstanceType<M>>>, column: string, alias: string, callback: EagerLoadConstraint): Builder<InstanceType<M>>;
   static withMax<M extends ModelConstructor>(this: M, relationName: string, column: string, aliasOrCallback?: string | EagerLoadConstraint, callback?: EagerLoadConstraint): Builder<InstanceType<M>> {
     return (this as any).query().withMax(relationName, column, aliasOrCallback as any, callback as any);
   }
@@ -164,46 +212,73 @@ export class ModelAggregates<T extends Record<string, any> = any> extends ModelQ
     return (this as any).query().lazyByIdDesc(count, column as any) as AsyncGenerator<InstanceType<M>>;
   }
 
-  // Instance load methods
+  // Typed instance load overloads
+  async load<R extends string & NestedRelationPath<this>>(relation: R, ...relations: R[]): Promise<WithLoadedRelations<this, R>>;
+  async load<Rs extends ReadonlyArray<StrictTypedEagerLoad<this>>>(relations: Rs): Promise<WithLoadedRelations<this, ExtractStringPaths<Rs[number]>>>;
+  async load<Rs extends ReadonlyArray<StrictTypedEagerLoad<this>>>(...relations: Rs): Promise<WithLoadedRelations<this, ExtractStringPaths<Rs[number]>>>;
   async load(...relations: (EagerLoadInput | EagerLoadInput[])[]): Promise<this> {
-    const constructor = this.getModelConstructor() as typeof ModelAggregates;
+    const constructor = this.getModelConstructor() as typeof Model;
     await constructor.eagerLoadRelations([this] as any, relations as any);
     return this;
   }
 
-  async loadMorph(relationName: string, relations: MorphEagerLoadMap): Promise<this> {
-    const constructor = this.getModelConstructor() as typeof ModelAggregates;
+  async loadMorph<R extends LoadMorphRelationName<this>>(relationName: R, relations: MorphEagerLoadMap): Promise<this> {
+    const constructor = this.getModelConstructor() as typeof Model;
     await constructor.loadMorph([this] as any, relationName as string, relations);
     return this;
   }
 
-  async loadCount(relationName: string, alias?: string): Promise<this> {
-    const constructor = this.getModelConstructor() as typeof ModelAggregates;
+  async loadCount<R extends string & ModelRelationName<this>, A extends string | undefined = undefined>(relationName: R, alias?: A): Promise<AggregateLoaded<this, AggregateAlias<R, A, "count">, number>> {
+    const constructor = this.getModelConstructor() as typeof Model;
     await constructor.loadCount([this] as any, relationName as string, alias as string | undefined);
     return this as any;
   }
 
+  async loadSum<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>>(relationName: R, column: C, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, undefined, `sum_${string & C}`>, NumericAggregate | null>>;
+  async loadSum<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string | undefined = undefined>(relationName: R, column: C, alias?: A): Promise<AggregateLoaded<this, AggregateAlias<R, A, `sum_${string & C}`>, NumericAggregate | null>>;
+  async loadSum<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string>(relationName: R, column: C, alias: A, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, A, `sum_${string & C}`>, NumericAggregate | null>>;
+  async loadSum(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, callback: EagerLoadConstraint): Promise<this>;
+  async loadSum<A extends string | undefined = undefined>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias?: A): Promise<this>;
+  async loadSum<A extends string>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias: A, callback: EagerLoadConstraint): Promise<this>;
   async loadSum(relationName: string, column: string, aliasOrCallback?: string | AggregateConstraint<this, any>, callback?: AggregateConstraint<this, any>): Promise<any> {
-    const constructor = this.getModelConstructor() as typeof ModelAggregates;
-    await constructor.loadSum([this] as any, relationName as string, column as string, aliasOrCallback as any, callback as any);
+    const constructor = this.getModelConstructor() as typeof Model;
+    await constructor.loadSum([this] as any, relationName, column, aliasOrCallback as any, callback as any);
     return this as any;
   }
 
+  async loadAvg<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>>(relationName: R, column: C, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, undefined, `avg_${string & C}`>, NumericAggregate | null>>;
+  async loadAvg<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string | undefined = undefined>(relationName: R, column: C, alias?: A): Promise<AggregateLoaded<this, AggregateAlias<R, A, `avg_${string & C}`>, NumericAggregate | null>>;
+  async loadAvg<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string>(relationName: R, column: C, alias: A, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, A, `avg_${string & C}`>, NumericAggregate | null>>;
+  async loadAvg(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, callback: EagerLoadConstraint): Promise<this>;
+  async loadAvg<A extends string | undefined = undefined>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias?: A): Promise<this>;
+  async loadAvg<A extends string>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias: A, callback: EagerLoadConstraint): Promise<this>;
   async loadAvg(relationName: string, column: string, aliasOrCallback?: string | AggregateConstraint<this, any>, callback?: AggregateConstraint<this, any>): Promise<any> {
-    const constructor = this.getModelConstructor() as typeof ModelAggregates;
-    await constructor.loadAvg([this] as any, relationName as string, column as string, aliasOrCallback as any, callback as any);
+    const constructor = this.getModelConstructor() as typeof Model;
+    await constructor.loadAvg([this] as any, relationName, column, aliasOrCallback as any, callback as any);
     return this as any;
   }
 
+  async loadMin<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>>(relationName: R, column: C, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, undefined, `min_${string & C}`>, AggregateValueForRelation<this, R, C>>>;
+  async loadMin<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string | undefined = undefined>(relationName: R, column: C, alias?: A): Promise<AggregateLoaded<this, AggregateAlias<R, A, `min_${string & C}`>, AggregateValueForRelation<this, R, C>>>;
+  async loadMin<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string>(relationName: R, column: C, alias: A, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, A, `min_${string & C}`>, AggregateValueForRelation<this, R, C>>>;
+  async loadMin(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, callback: EagerLoadConstraint): Promise<this>;
+  async loadMin<A extends string | undefined = undefined>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias?: A): Promise<this>;
+  async loadMin<A extends string>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias: A, callback: EagerLoadConstraint): Promise<this>;
   async loadMin(relationName: string, column: string, aliasOrCallback?: string | AggregateConstraint<this, any>, callback?: AggregateConstraint<this, any>): Promise<any> {
-    const constructor = this.getModelConstructor() as typeof ModelAggregates;
-    await constructor.loadMin([this] as any, relationName as string, column as string, aliasOrCallback as any, callback as any);
+    const constructor = this.getModelConstructor() as typeof Model;
+    await constructor.loadMin([this] as any, relationName, column, aliasOrCallback as any, callback as any);
     return this as any;
   }
 
+  async loadMax<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>>(relationName: R, column: C, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, undefined, `max_${string & C}`>, AggregateValueForRelation<this, R, C>>>;
+  async loadMax<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string | undefined = undefined>(relationName: R, column: C, alias?: A): Promise<AggregateLoaded<this, AggregateAlias<R, A, `max_${string & C}`>, AggregateValueForRelation<this, R, C>>>;
+  async loadMax<R extends string & ModelRelationName<this>, C extends AggregateColumn<this, R>, A extends string>(relationName: R, column: C, alias: A, callback: AggregateConstraint<this, R>): Promise<AggregateLoaded<this, AggregateAlias<R, A, `max_${string & C}`>, AggregateValueForRelation<this, R, C>>>;
+  async loadMax(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, callback: EagerLoadConstraint): Promise<this>;
+  async loadMax<A extends string | undefined = undefined>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias?: A): Promise<this>;
+  async loadMax<A extends string>(relationName: LiteralUnion<string & ModelRelationName<this>>, column: string, alias: A, callback: EagerLoadConstraint): Promise<this>;
   async loadMax(relationName: string, column: string, aliasOrCallback?: string | AggregateConstraint<this, any>, callback?: AggregateConstraint<this, any>): Promise<any> {
-    const constructor = this.getModelConstructor() as typeof ModelAggregates;
-    await constructor.loadMax([this] as any, relationName as string, column as string, aliasOrCallback as any, callback as any);
+    const constructor = this.getModelConstructor() as typeof Model;
+    await constructor.loadMax([this] as any, relationName, column, aliasOrCallback as any, callback as any);
     return this as any;
   }
 }
