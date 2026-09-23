@@ -10,11 +10,11 @@ Redis clients and needs no dependencies at all. On Node.js it uses the built-in
 | Runtime | Version | Declared in |
 |---|---|---|
 | [Bun](https://bun.com) | `1.4.1` or newer | `engines.bun` |
-| [Node.js](https://nodejs.org) | `24.15.0` or newer | `engines.node` |
+| [Node.js](https://nodejs.org) | `24.21.0` or newer | `engines.node` |
 
-Node.js 24.15 is the first release whose `node:sqlite` no longer prints an
-experimental warning; earlier 24.x releases work but write that warning to
-stderr, which breaks the CLI's `--json` output.
+Node.js 24.21 is the oldest release CI runs the suite on. Releases before 24.15
+also write an experimental `node:sqlite` warning to stderr, which breaks the
+CLI's `--json` output.
 
 ## Drivers
 

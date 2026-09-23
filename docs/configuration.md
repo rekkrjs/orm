@@ -208,7 +208,7 @@ connection: { driver: "postgres", host: "localhost", database: "mydb" }
 
 Credentials in this form are handed to the driver verbatim instead of being assembled into a URL, so usernames and passwords containing `/`, `?`, `#`, `@` or `%` need no escaping. The `url` form is parsed as a URL and still requires percent-encoded credentials.
 
-For PostgreSQL, `prepare` defaults to `false`. ORM generates dynamic SQL for model queries, validation checks, migrations, and schema-qualified tenant queries; disabling named prepared statements avoids intermittent stale-plan errors after schema changes or when a long-running server reuses pooled connections. Set `prepare: true` only when you know your Postgres deployment benefits from Bun's persisted named prepared statements and your query result shapes are stable. On Node.js `prepare` has no effect: `pg` sends unnamed statements.
+For PostgreSQL, `prepare` defaults to `false`. ORM generates dynamic SQL for model queries, validation checks, migrations, and schema-qualified tenant queries; disabling named prepared statements avoids intermittent stale-plan errors after schema changes or when a long-running server reuses pooled connections. Set `prepare: true` only when you know your Postgres deployment benefits from Bun's persisted named prepared statements and your query result shapes are stable. On Node.js `prepare: true` does the same through `pg`, naming up to 1000 distinct statements; later ones run unnamed. For MySQL, Node.js ignores `prepare`: `mysql2` prepares every statement that carries bindings.
 
 For PostgreSQL, the pool `max` defaults to `10` when unset (`Connection.defaultPostgresPoolMax`). Override per-connection with `max`, or globally before constructing connections:
 

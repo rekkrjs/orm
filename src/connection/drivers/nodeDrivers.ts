@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import type { SQLInputValue } from "node:sqlite";
+import type { SQLInputValue, SQLOutputValue } from "node:sqlite";
 import type { ConnectionConfig } from "../../types/index.js";
 import type { DriverName, ReservedSqlDriver, SqlDriver } from "./SqlDriver.js";
 
@@ -23,7 +23,7 @@ function peer<T>(id: string, packageName: string, engine: string): T {
   }
 }
 
-interface NodeDriverOptions { max?: number; bigint?: boolean }
+interface NodeDriverOptions { max?: number; bigint?: boolean; prepare?: boolean }
 
 /** Write metadata rides on the rows array, non-enumerable as in bun:sql: it never shows up when the rows are logged or compared. */
 function withMeta<T extends unknown[]>(rows: T, meta: Record<string, unknown>): T {
@@ -99,17 +99,23 @@ function nodeSqliteDriver(url: string, { bigint }: NodeDriverOptions): SqlDriver
         db.exec(sql);
         return withMeta([], { count: 0 });
       }
-      if (statement.columns().length) {
-        // Copied into plain objects: node:sqlite rows have a null prototype.
-        const rows = statement.all(...params).map((row) => {
-          const plain: Record<string, unknown> = {};
-          for (const key in row) {
-            const value = typeof row[key] === "bigint" ? narrowInteger(row[key], bigint) : row[key];
+      const columns = statement.columns().map((column) => column.name);
+      if (columns.length) {
+        // Read as arrays and built into plain objects here: node:sqlite's own rows
+        // have a null prototype, and copying them costs a third of the read.
+        // A repeated name is set once, at its last position with its last value, as bun:sql does.
+        const kept = columns.flatMap((name, i) => columns.lastIndexOf(name) === i ? [i] : []);
+        statement.setReturnArrays(true);
+        const rows = (statement.all(...params) as unknown as SQLOutputValue[][]).map((values) => {
+          const row: Record<string, unknown> = {};
+          for (const i of kept) {
+            let value = values[i];
+            if (typeof value === "bigint") value = narrowInteger(value, bigint);
             // Defined, not assigned: assigning "__proto__" drops the column, or with a BLOB swaps the row's prototype.
-            if (key === "__proto__") Object.defineProperty(plain, key, { value, enumerable: true, writable: true, configurable: true });
-            else plain[key] = value;
+            if (columns[i] === "__proto__") Object.defineProperty(row, "__proto__", { value, enumerable: true, writable: true, configurable: true });
+            else row[columns[i]!] = value;
           }
-          return plain;
+          return row;
         });
         return withMeta(rows, { count: rows.length });
       }
@@ -140,18 +146,30 @@ function nodeSqliteDriver(url: string, { bigint }: NodeDriverOptions): SqlDriver
 
 // @ts-ignore -- an optional peer: a project that typechecks this source (a git install) may not have it.
 type Pg = typeof import("pg");
-type PgQueryable = { query(sql: string, values?: any[]): Promise<any> };
+type PgQueryable = { query(query: string | { name: string; text: string }, values?: any[]): Promise<any> };
 
-async function pgRun(target: PgQueryable, sql: string, bindings: any[] = []): Promise<any> {
+async function pgRun(target: PgQueryable, sql: string, bindings: any[] = [], nameFor?: (sql: string) => string | undefined): Promise<any> {
   // Without bindings pg uses the simple protocol, which (like bun:sql) runs a
   // multi-statement string and answers with one result per statement.
-  const result = await target.query(sql, bindings.length ? bindings.map((value) => value ?? null) : undefined);
+  const values = bindings.length ? bindings.map((value) => value ?? null) : undefined;
+  // A named statement is parsed and planned once per session, as with bun:sql's prepare: true.
+  const name = values && nameFor?.(sql);
+  const result = await target.query(name ? { name, text: sql } : sql, values);
   const rows = (single: any) => withMeta(single.rows, { count: single.rowCount ?? 0, command: single.command });
   return Array.isArray(result) ? result.map(rows) : rows(result);
 }
 
-function nodePostgresDriver(config: ConnectionConfig, url: string | undefined, { max, bigint }: NodeDriverOptions): SqlDriver {
+function nodePostgresDriver(config: ConnectionConfig, url: string | undefined, { max, bigint, prepare }: NodeDriverOptions): SqlDriver {
   const pg = peer<Pg>("pg", "pg", "PostgreSQL");
+  // ponytail: the first 1000 distinct statements get a name and the rest run
+  // unnamed, which bounds what each session holds on the server; an LRU with
+  // DEALLOCATE if an app's hot set outgrows it.
+  const names = new Map<string, string>();
+  const nameFor = prepare ? (sql: string) => {
+    let name = names.get(sql);
+    if (name === undefined && names.size < 1000) names.set(sql, name = `orm_${names.size}`);
+    return name;
+  } : undefined;
   const parseTimestamptz = pg.types.getTypeParser(pg.types.builtins.TIMESTAMPTZ);
   // bun:sql reads zone-less timestamps and dates as UTC; pg reads them in the process time zone.
   const asUtc = (offset: string) => (value: string) =>
@@ -200,7 +218,7 @@ function nodePostgresDriver(config: ConnectionConfig, url: string | undefined, {
   const reserve = async (): Promise<ReservedSqlDriver> => {
     const { client, done } = await checkout();
     return {
-      unsafe: (sql, bindings) => pgRun(client, sql, bindings),
+      unsafe: (sql, bindings) => pgRun(client, sql, bindings, nameFor),
       release: () => done(false),
       close: async () => done(true),
     };
@@ -210,7 +228,7 @@ function nodePostgresDriver(config: ConnectionConfig, url: string | undefined, {
     async unsafe(sql, bindings) {
       const { client, done } = await checkout();
       try {
-        return await pgRun(client, sql, bindings);
+        return await pgRun(client, sql, bindings, nameFor);
       } finally {
         done(false);
       }
@@ -231,9 +249,17 @@ async function mysqlRun(target: MysqlQueryable, sql: string, bindings: any[] = [
   // Server-side prepared statements whenever there are bindings, as bun:sql
   // does. Client-side escaping breaks under NO_BACKSLASH_ESCAPES, and the
   // statements that cannot be prepared (SAVEPOINT, BEGIN) take no bindings.
-  const [result] = bindings.length
-    ? await target.execute(sql, bindings.map((value) => value ?? null))
-    : await target.query(sql);
+  let result;
+  try {
+    [result] = bindings.length
+      ? await target.execute(sql, bindings.map((value) => value ?? null))
+      : await target.query(sql);
+  } catch (error) {
+    // With trace: false the stack ends in mysql2's packet parser. Captured
+    // again here, on the error path only, it carries the awaiting callers, as pg's does.
+    if (error instanceof Error) Error.captureStackTrace(error);
+    throw error;
+  }
   return Array.isArray(result)
     ? withMeta(result, { count: result.length })
     : withMeta([], { count: 0, affectedRows: result.affectedRows, lastInsertRowid: result.insertId });
@@ -276,6 +302,9 @@ function nodeMysqlDriver(config: ConnectionConfig, url: string | undefined, { ma
     supportBigNumbers: true,
     bigNumberStrings: false,
     flags: ["-FOUND_ROWS"],
+    // mysql2 captures a stack trace on every query to decorate errors that
+    // never come: a quarter of the CPU of a point query. Errors keep message and code.
+    trace: false,
     ...(bigint
       ? { typeCast: (field: any, next: () => unknown) => {
           if (field.type !== "LONGLONG") return next();
@@ -337,6 +366,7 @@ export function createNodeRedisClient(url?: string) {
     zcard: (key: string): Promise<number> => hold(() => client.zcard(key)),
     smembers: (key: string): Promise<string[]> => hold(() => client.smembers(key)),
     send: (command: string, args: string[]): Promise<any> => hold(() => client.call(command, ...args)),
-    close: async (): Promise<void> => { await client.quit(); },
+    // Held like any command: with the socket unref'd, Node would exit mid-QUIT and never settle the await.
+    close: async (): Promise<void> => { await hold(() => client.quit()); },
   };
 }

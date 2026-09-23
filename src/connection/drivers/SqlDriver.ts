@@ -34,7 +34,7 @@ export function createDriver(driverName: DriverName, config: ConnectionConfig, u
   const prepare = config.prepare ?? (driverName === "postgres" ? false : undefined);
   const max = config.max ?? (driverName === "postgres" ? defaultPostgresPoolMax : undefined);
   const bigint = config.bigint;
-  if (typeof Bun === "undefined") return createNodeDriver(driverName, config, url, { max, bigint });
+  if (typeof Bun === "undefined") return createNodeDriver(driverName, config, url, { max, bigint, prepare });
 
   if (driverName === "sqlite") return new Bun.SQL(url!);
   if ("driver" in config) {

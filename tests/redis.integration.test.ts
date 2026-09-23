@@ -119,4 +119,21 @@ describe.serial("live Redis integration", () => {
     expect(result.stdout.trim()).toBe("settled PONG");
     expect(result.exitCode).toBe(0);
   }, 15_000);
+
+  runIfRedis("holds the process open until close() settles, on a used and on a never-used client", async () => {
+    const script = `
+      const { resolveRedisClient } = await import(${JSON.stringify(pathToFileURL(ormModule("src/queue/RedisQueueDriver.ts")).href)});
+      const used = resolveRedisClient(${JSON.stringify(redisUrl)});
+      await used.send("PING", []);
+      await used.close();
+      console.log("used closed");
+      await resolveRedisClient(${JSON.stringify(redisUrl)}).close();
+      console.log("idle closed");
+    `;
+    const result = await runProcess(evalCommand(script), { timeoutMs: 10_000 });
+    expect(result.timedOut).toBe(false);
+    expect(result.stderr).toBe("");
+    expect(result.stdout.trim().split("\n")).toEqual(["used closed", "idle closed"]);
+    expect(result.exitCode).toBe(0);
+  }, 15_000);
 });

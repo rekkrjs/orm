@@ -4,7 +4,7 @@
 
 ### Node.js support
 
-- ORM runs on Node.js 24.15 or newer as well as on Bun, with the same API and
+- ORM runs on Node.js 24.21 or newer as well as on Bun, with the same API and
   CLI. SQLite uses the built-in `node:sqlite`; PostgreSQL, MySQL and Redis use
   `pg`, `mysql2` and `ioredis`, declared as optional peer dependencies. On Bun
   nothing changes: the driver is still `bun:sql`, and there are still no
@@ -20,6 +20,8 @@
 - `resolveRedisClient()` is exported from `@rekkr/orm/cache` and
   `@rekkr/orm/queue`: the default Redis client on either runtime, for wiring a
   `RedisCacheStore` or `RedisQueueDriver` by hand.
+- `prepare: true` works on Node.js too: PostgreSQL statements with bindings
+  are named and planned once per session, as on Bun. The default stays `false`.
 
 ### Breaking
 

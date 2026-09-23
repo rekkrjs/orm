@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "./harness.js";
+import { afterAll, beforeAll, describe, expect, isBun, test } from "./harness.js";
 import { createNodeDriver } from "../src/connection/drivers/nodeDrivers.js";
 import type { SqlDriver } from "../src/connection/drivers/SqlDriver.js";
 import { mysqlUrl, postgresUrl, type ServerDriver } from "./driver-harness.js";
@@ -46,6 +46,12 @@ describe("node:sqlite adapter", () => {
     expect(Object.getOwnPropertyDescriptor(blob, "__proto__")?.value).toEqual(new Uint8Array([0]));
     expect(blob.b).toBe(2);
     expect(Object.keys(Object.prototype)).toEqual([]);
+  });
+
+  test("a repeated column name keeps its last value at its last position, as bun:sql does", async () => {
+    const [row] = await rowsOf(driver, "SELECT 1 AS a, 2 AS b, 3 AS a");
+    expect(Object.keys(row)).toEqual(["b", "a"]);
+    expect(row).toEqual({ a: 3, b: 2 });
   });
 
   test("runs every statement of a script, and refuses to bind into one", async () => {
@@ -239,6 +245,16 @@ for (const { engine, url, session, kill, alive } of servers) {
       }
     });
 
+    // V8's async stack traces: on Bun these adapters never run, and JavaScriptCore links fewer awaits.
+    test.skipIf(isBun)("a failed query's stack reaches back to the code that awaited it", async () => {
+      const placeholder = engine === "postgres" ? "$1" : "?";
+      async function applicationCallsite() {
+        await driver.unsafe(`SELECT * FROM ${table}_missing WHERE value = ${placeholder}`, ["x"]);
+      }
+      const error = await applicationCallsite().then(() => undefined, (caught: Error) => caught);
+      expect(error?.stack).toContain("applicationCallsite");
+    });
+
     test("with bigint: true, integers past 2^53 come back as bigint", async () => {
       const bigints = createNodeDriver(engine, { url: url! }, url, { max: 1, bigint: true });
       try {
@@ -271,6 +287,38 @@ describe.skipIf(!postgresUrl)("postgres adapter URL options", () => {
       await driver.close();
     }
   });
+});
+
+describe.skipIf(!postgresUrl)("postgres adapter prepare", () => {
+  const named = async (driver: SqlDriver) => (await rowsOf(driver, "SELECT statement FROM pg_prepared_statements ORDER BY statement")).map((row) => row.statement);
+
+  test("prepare: true names each distinct bound statement once per session, as bun:sql does; without it none is named", async () => {
+    for (const prepare of [true, false]) {
+      // One session, so the pooled calls and the catalog read all land on it.
+      const driver = createNodeDriver("postgres", { url: postgresUrl! }, postgresUrl, { max: 1, prepare });
+      try {
+        expect(await rowsOf(driver, "SELECT $1::int AS n", [1])).toEqual([{ n: 1 }]);
+        expect(await rowsOf(driver, "SELECT $1::int AS n", [2])).toEqual([{ n: 2 }]);
+        // Unbound SQL keeps the simple protocol, which runs multi-statement strings: never named.
+        await driver.unsafe("SELECT 1; SELECT 2");
+        expect(await named(driver)).toEqual(prepare ? ["SELECT $1::int AS n"] : []);
+      } finally {
+        await driver.close();
+      }
+    }
+  });
+
+  test("prepare: true stops naming at its cap, and the statements past it still run", async () => {
+    const driver = createNodeDriver("postgres", { url: postgresUrl! }, postgresUrl, { max: 1, prepare: true });
+    try {
+      for (let i = 0; i < 1000; i++) await driver.unsafe(`SELECT $1::int AS n${i}`, [i]);
+      expect(await rowsOf(driver, "SELECT $1::int AS past_cap", [7])).toEqual([{ past_cap: 7 }]);
+      expect(await named(driver)).toHaveLength(1000);
+      expect(await named(driver)).not.toContain("SELECT $1::int AS past_cap");
+    } finally {
+      await driver.close();
+    }
+  }, 30_000);
 });
 
 describe.skipIf(!mysqlUrl)("mysql adapter URL options", () => {

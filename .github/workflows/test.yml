@@ -48,8 +48,8 @@ jobs:
       - if: matrix.runtime == 'node'
         uses: actions/setup-node@v4
         with:
-          # The oldest release package.json accepts: the first 24.x whose node:sqlite no longer warns.
-          node-version: 24.15.0
+          # The oldest release package.json accepts.
+          node-version: 24.21.0
       - run: bun install --frozen-lockfile
       - run: bun run scripts/verify-services.ts
       - run: bun run build

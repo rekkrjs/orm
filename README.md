@@ -4,7 +4,7 @@
 >
 > ```bash
 > bun add github:rekkrjs/orm#v4.1.0                         # Bun
-> npm install --allow-git=all github:rekkrjs/orm#v5.0.0     # Node.js 24.15+
+> npm install --allow-git=all github:rekkrjs/orm#v5.0.0     # Node.js 24.21+
 > ```
 >
 > The package is installed directly from its public GitHub repository. On
@@ -46,7 +46,7 @@ An **Eloquent-inspired ORM** for [Bun](https://bun.com) and [Node.js](https://no
 
 ```bash
 bun add github:rekkrjs/orm#v4.1.0                         # Bun
-npm install --allow-git=all github:rekkrjs/orm#v5.0.0     # Node.js 24.15+
+npm install --allow-git=all github:rekkrjs/orm#v5.0.0     # Node.js 24.21+
 npm install pg                                            # Node.js + PostgreSQL
 ```
 
