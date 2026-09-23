@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test, evalCommand, isBun, ormModule, runProcess, writeText } from "./harness.js";
 import { isUniqueConstraintViolation } from "../src/connection/UniqueConstraintViolationError.js";
 import { PermissiveModel } from "./helpers.js";
-import { mkdtemp, rm } from "fs/promises";
+import { mkdtemp, readdir, rm } from "fs/promises";
+import { tmpdir } from "os";
 import { join } from "path";
 import { pathToFileURL } from "url";
 import {
@@ -681,6 +682,25 @@ export default class CreateContractMigrated extends Migration {
         await session.close();
       }
     });
+
+    if (driver === "sqlite") {
+      // `orm make:migration` builds its Connection before it creates the database's directory.
+      run("reports a file it cannot open on the first statement, not when the connection is built", async () => {
+        const dir = await mkdtemp(join(tmpdir(), "orm-sqlite-open-"));
+        try {
+          const unopenable = new Connection({ url: `sqlite://${join(dir, "missing", "app.db")}` });
+          try {
+            await expect(unopenable.query("SELECT 1 AS one")).rejects.toThrow("unable to open database file");
+            // The failed open created neither the directory nor the file.
+            expect(await readdir(dir)).toEqual([]);
+          } finally {
+            await unopenable.close();
+          }
+        } finally {
+          await rm(dir, { recursive: true, force: true });
+        }
+      });
+    }
 
     if (driver !== "sqlite") {
       run("resolves omitted driver fields from the adapter's environment variables", async () => {

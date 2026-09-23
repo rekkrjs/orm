@@ -229,9 +229,9 @@ on machines that only have SQLite available.
 
 ## Required integration services
 
-CI runs the suite twice, against SQLite, PostgreSQL 16, MySQL 8.4 and Redis 7:
-on Bun 1.4.1 with `bun:test`, and on Node.js 24.21 with vitest, through the
-Node.js drivers. Run `bun scripts/verify-services.ts` before
+CI runs the suite against SQLite, PostgreSQL 16, MySQL 8.4 and Redis 7: on
+Bun 1.4.1 with `bun:test`, and with vitest through the Node.js drivers on
+Node.js 24.21, the newest 24.x and 26. Run `bun scripts/verify-services.ts` before
 `bun run build && bun run test`, with `POSTGRES_TEST_URL`, `MYSQL_TEST_URL` and
 `REDIS_TEST_URL` set to dedicated test services. Missing/unreachable required
 services fail preparation. `bun audit` checks the development dependency graph

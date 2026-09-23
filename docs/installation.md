@@ -44,7 +44,7 @@ registry yet: the registry package is not a release from this repository.
 ### Bun
 
 ```bash
-bun add github:rekkrjs/orm#v4.1.0
+bun add github:rekkrjs/orm#v5.0.0
 ```
 
 Bun runs the package's TypeScript source through the `bun` export condition, so
@@ -55,7 +55,7 @@ A branch, tag, or commit works the same way:
 
 ```bash
 bun add github:rekkrjs/orm                # default branch
-bun add github:rekkrjs/orm#<tag>          # e.g. v4.1.0
+bun add github:rekkrjs/orm#<tag>          # e.g. v5.0.0
 bun add github:rekkrjs/orm#<commit-sha>   # exact commit
 ```
 
@@ -234,5 +234,5 @@ installed without running its build. Allow the build (see
 GitHub repository and tag are reachable:
 
 ```bash
-git ls-remote https://github.com/rekkrjs/orm.git refs/tags/v4.1.0
+git ls-remote https://github.com/rekkrjs/orm.git refs/tags/v5.0.0
 ```

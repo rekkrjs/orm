@@ -33,7 +33,7 @@
         "./src/index.ts"
       ],
       "bun": "./src/index.ts",
-      "import": "./dist/src/index.js"
+      "default": "./dist/src/index.js"
     },
     "./validation": {
       "types": [
@@ -41,7 +41,7 @@
         "./src/validation/index.ts"
       ],
       "bun": "./src/validation/index.ts",
-      "import": "./dist/src/validation/index.js"
+      "default": "./dist/src/validation/index.js"
     },
     "./cache": {
       "types": [
@@ -49,7 +49,7 @@
         "./src/cache/index.ts"
       ],
       "bun": "./src/cache/index.ts",
-      "import": "./dist/src/cache/index.js"
+      "default": "./dist/src/cache/index.js"
     },
     "./events": {
       "types": [
@@ -57,7 +57,7 @@
         "./src/events/index.ts"
       ],
       "bun": "./src/events/index.ts",
-      "import": "./dist/src/events/index.js"
+      "default": "./dist/src/events/index.js"
     },
     "./queue": {
       "types": [
@@ -65,7 +65,7 @@
         "./src/queue/index.ts"
       ],
       "bun": "./src/queue/index.ts",
-      "import": "./dist/src/queue/index.js"
+      "default": "./dist/src/queue/index.js"
     },
     "./commands": {
       "types": [
@@ -73,7 +73,7 @@
         "./src/commands/index.ts"
       ],
       "bun": "./src/commands/index.ts",
-      "import": "./dist/src/commands/index.js"
+      "default": "./dist/src/commands/index.js"
     },
     "./search": {
       "types": [
@@ -81,7 +81,7 @@
         "./src/search/index.ts"
       ],
       "bun": "./src/search/index.ts",
-      "import": "./dist/src/search/index.js"
+      "default": "./dist/src/search/index.js"
     },
     "./sveltekit": {
       "types": [
@@ -89,7 +89,7 @@
         "./src/sveltekit/index.ts"
       ],
       "bun": "./src/sveltekit/index.ts",
-      "import": "./dist/src/sveltekit/index.js"
+      "default": "./dist/src/sveltekit/index.js"
     },
     "./policies": {
       "types": [
@@ -97,7 +97,7 @@
         "./src/policies/index.ts"
       ],
       "bun": "./src/policies/index.ts",
-      "import": "./dist/src/policies/index.js"
+      "default": "./dist/src/policies/index.js"
     }
   },
   "typesVersions": {

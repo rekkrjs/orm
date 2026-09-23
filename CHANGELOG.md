@@ -20,6 +20,9 @@
 - `resolveRedisClient()` is exported from `@rekkr/orm/cache` and
   `@rekkr/orm/queue`: the default Redis client on either runtime, for wiring a
   `RedisCacheStore` or `RedisQueueDriver` by hand.
+- `require("@rekkr/orm")` and its subpaths load on Node.js, for CommonJS
+  projects and tools such as Jest, and hand back the same module as `import`,
+  so both share one `configureOrm()` state.
 - `prepare: true` works on Node.js too: PostgreSQL statements with bindings
   are named and planned once per session, as on Bun. The default stays `false`.
 

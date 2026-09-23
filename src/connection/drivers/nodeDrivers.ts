@@ -79,18 +79,32 @@ function nodeSqliteDriver(url: string, { bigint }: NodeDriverOptions): SqlDriver
   const { DatabaseSync } = process.getBuiltinModule("node:sqlite") as typeof import("node:sqlite");
   const [path, query] = url.replace(/^sqlite:(?:\/\/)?/, "").split("?", 2);
   const db = new DatabaseSync(path || ":memory:", {
+    open: false,
     readOnly: new URLSearchParams(query).get("mode") === "ro",
     // As bun:sql's SQLite: foreign keys are left to the ORM's own PRAGMA, and
     // a double-quoted name that matches no column reads as a string literal.
     enableForeignKeyConstraints: false,
     enableDoubleQuotedStringLiterals: true,
   });
+  // As bun:sql, the file is opened now but a failure is reported by the first
+  // statement: `orm make:migration` builds a Connection before it creates the
+  // database's directory, and never runs a statement on it.
+  let openError: unknown;
+  try {
+    db.open();
+  } catch (error) {
+    openError = error;
+  }
+  const open = () => {
+    if (openError) throw openError;
+    return db;
+  };
 
   const driver: SqlDriver = {
     async unsafe(sql, bindings = []) {
       // node:sqlite binds neither booleans nor undefined; bun:sql sends 1/0 and NULL.
       const params = bindings.map((value) => value === undefined ? null : typeof value === "boolean" ? Number(value) : value) as SQLInputValue[];
-      const statement = db.prepare(sql);
+      const statement = open().prepare(sql);
       statement.setReadBigInts(true);
       // prepare() compiles the first statement only and would drop the rest of a script silently.
       const tail = sql.slice(sql.indexOf(statement.sourceSQL) + statement.sourceSQL.length);
@@ -125,7 +139,7 @@ function nodeSqliteDriver(url: string, { bigint }: NodeDriverOptions): SqlDriver
     // One physical connection, as in bun:sql: a second begin() while one is
     // open fails with "cannot start a transaction within a transaction".
     async begin(callback) {
-      db.exec("BEGIN");
+      open().exec("BEGIN");
       try {
         const result = await callback(driver);
         db.exec("COMMIT");

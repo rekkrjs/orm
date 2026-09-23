@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test, readText, ormCli, ormModule, runProcess } from "./harness.js";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { pathToFileURL } from "url";
@@ -201,4 +202,31 @@ export default {
     expect(removed.exitCode).toBe(1);
     expect(removed.stderr).toContain("Unknown command");
   });
+});
+
+// The shipped defaults: `orm init` points SQLite at ./database/app.db, and
+// nothing has created ./database/ when make:migration builds its Connection.
+describe.serial("a project fresh from orm init", () => {
+  let project: string;
+
+  beforeAll(async () => {
+    project = await mkdtemp(join(process.cwd(), "tests", ".tmp-init-"));
+  });
+
+  afterAll(async () => {
+    await rm(project, { recursive: true, force: true });
+  });
+
+  test("runs make:migration, migrate and migrate:status on the generated config", async () => {
+    // A DATABASE_URL in the environment would replace the template's SQLite default.
+    const env = { DATABASE_URL: "" };
+    expect(await runCli(project, ["init"], env)).toMatchObject({ exitCode: 0 });
+    expect(await runCli(project, ["make:migration", "create_posts_table"], env)).toMatchObject({ exitCode: 0 });
+    const [migration] = await readdir(join(project, "database", "migrations"));
+    expect(migration).toMatch(/^\d{14}_create_posts_table\.ts$/);
+
+    expect(await runCli(project, ["migrate"], env)).toMatchObject({ exitCode: 0, stdout: expect.stringContaining(`Migrated:  database/migrations/${migration}`) });
+    expect(existsSync(join(project, "database", "app.db"))).toBe(true);
+    expect(await runCli(project, ["migrate:status"], env)).toMatchObject({ exitCode: 0, stdout: expect.stringContaining(migration!.replace(/\.ts$/, "")) });
+  }, 30_000);
 });

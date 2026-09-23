@@ -8,7 +8,7 @@ Estimated time: ten minutes.
 
 ```bash
 bun init -y
-bun add github:rekkrjs/orm#v4.1.0
+bun add github:rekkrjs/orm#v5.0.0
 ```
 
 If you are using TypeScript, make sure `tsconfig.json` has `"target": "ESNext"`, `"module": "ESNext"`, and `"moduleResolution": "bundler"`. See [Installation](./installation.md) for the full setup.

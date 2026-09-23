@@ -4,7 +4,7 @@ permissions:
   contents: read
 jobs:
   test:
-    name: test (${{ matrix.runtime }})
+    name: test (${{ matrix.runtime }}${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -13,7 +13,12 @@ jobs:
         # The same suite on each runtime, against the same three databases and
         # Redis: Bun runs it with bun:test over bun:sql, Node.js with vitest
         # over the node:sqlite, pg, mysql2 and ioredis adapters (tests/harness.ts).
-        runtime: [bun, node]
+        include:
+          - runtime: bun
+          # The oldest release package.json accepts, the newest 24.x, and 26.
+          - { runtime: node, node: 24.21.0 }
+          - { runtime: node, node: 24 }
+          - { runtime: node, node: 26 }
     services:
       postgres:
         image: postgres:16
@@ -48,8 +53,7 @@ jobs:
       - if: matrix.runtime == 'node'
         uses: actions/setup-node@v4
         with:
-          # The oldest release package.json accepts.
-          node-version: 24.21.0
+          node-version: ${{ matrix.node }}
       - run: bun install --frozen-lockfile
       - run: bun run scripts/verify-services.ts
       - run: bun run build
