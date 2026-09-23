@@ -37,8 +37,9 @@ try {
     process.exit(1);
   }
 
-  const entries = Object.values(pkg.exports as Record<string, { types: string }>)
-    .map((e) => join(out, e.types.replace(/^\.\//, "").replace(/\.ts$/, ".d.ts")));
+  // The first `types` target is the emitted declaration; the second, the source a git install falls back to.
+  const entries = Object.values(pkg.exports as Record<string, { types: string[] }>)
+    .map((e) => join(out, e.types[0]!.replace(/^\.\/dist\//, "")));
 
   const seen = new Set<string>();
   const queue = [...entries];

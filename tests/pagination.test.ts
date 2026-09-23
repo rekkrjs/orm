@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll } from "bun:test";
+import { expect, test, describe, beforeAll } from "./harness.js";
 import { Builder, Collection, Model, Schema, type RelationConstraintQuery } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
@@ -215,8 +215,8 @@ describe("Pagination", () => {
     const _cursorParentId: CursorRow["parent_id"] extends number | null ? true : false = true;
     simpleJson.has_more_pages;
     cursorJson.next_cursor;
-    expect(simpleJson.data).toBeArray();
-    expect(cursorJson.data).toBeArray();
+    expect(Array.isArray(simpleJson.data)).toBe(true);
+    expect(Array.isArray(cursorJson.data)).toBe(true);
     expect(typeof simpleJson.has_more_pages).toBe("boolean");
     expect(cursorJson.next_cursor === null || typeof cursorJson.next_cursor === "string").toBe(true);
     // @ts-expect-error paginator data rows should not admit unknown model fields.

@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { inspect } from "node:util";
+import { describe, expect, test, isBun } from "./harness.js";
 import { relayStdoutToStderr, writeToStdout } from "../src/cli/StdoutContract.js";
 
 /**
@@ -28,7 +29,7 @@ function capture(): Captured {
   process.stdout.write = ((chunk: any) => { stdout.push(String(chunk)); return true; }) as any;
   process.stderr.write = ((chunk: any) => { stderr.push(String(chunk)); return true; }) as any;
   console.error = (...args: any[]) => {
-    stderr.push(args.map((arg) => (typeof arg === "string" ? arg : Bun.inspect(arg))).join(" "));
+    stderr.push(args.map((arg) => (typeof arg === "string" ? arg : inspect(arg))).join(" "));
   };
 
   return {
@@ -80,7 +81,8 @@ describe("stdout contract", () => {
       "group label",
       "inside the group",
       "trace line",
-      "written without a newline",
+      // console.write() is Bun's own.
+      ...(isBun ? ["written without a newline"] : []),
       "a direct stream write",
     ]) {
       expect(relayed).toContain(expected);
@@ -112,12 +114,12 @@ describe("stdout contract", () => {
       trace: console.trace,
       write: (console as any).write,
       streamWrite: process.stdout.write,
-      bunStdout: Bun.stdout,
+      bunStdout: isBun ? Bun.stdout : undefined,
     };
 
     const restore = relayStdoutToStderr();
     expect(console.log).not.toBe(before.log);
-    expect(Bun.stdout).toBe(Bun.stderr);
+    if (isBun) expect(Bun.stdout).toBe(Bun.stderr);
     restore();
 
     expect(console.log).toBe(before.log);
@@ -128,7 +130,7 @@ describe("stdout contract", () => {
     expect(console.trace).toBe(before.trace);
     expect((console as any).write).toBe(before.write);
     expect(process.stdout.write).toBe(before.streamWrite);
-    expect(Bun.stdout).toBe(before.bunStdout);
+    if (isBun) expect(Bun.stdout).toBe(before.bunStdout!);
   });
 
   test("stays installed until the last handle is released, in any order", () => {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import { Schema, Connection, Model } from "../src/index.js";
 import { Search, SqliteFTS5Engine, defineFtsConfig } from "../src/search/index.js";
 import { setupTestDb } from "./helpers.js";

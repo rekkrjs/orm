@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "./harness.js";
 import { Connection, ConnectionManager } from "../src/index.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

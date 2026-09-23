@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, test } from "./harness.js";
 import { Connection, ConnectionManager, DB, TenantContext } from "../src/index.js";
 import { PostgresFTSEngine, SqliteFTS5Engine } from "../src/search/index.js";
 

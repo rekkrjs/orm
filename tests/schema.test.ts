@@ -1,4 +1,4 @@
-import { expect, test, describe } from "bun:test";
+import { expect, test, describe } from "./harness.js";
 import { Connection, Model, Schema } from "../src/index.js";
 import { Blueprint } from "../src/schema/Blueprint.js";
 import { SQLiteGrammar } from "../src/schema/grammars/SQLiteGrammar.js";

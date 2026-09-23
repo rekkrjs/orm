@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "bun:test";
-import { RedisClient } from "bun";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "./harness.js";
+import { resolveRedisClient } from "../src/queue/RedisQueueDriver.js";
 import { RedisQueueDriver } from "../src/queue/RedisQueueDriver.js";
 
 // The driver drives every state transition through Lua, because Redis has no
@@ -11,12 +11,11 @@ import { RedisQueueDriver } from "../src/queue/RedisQueueDriver.js";
 // REDIS_URL) to a throwaway server to run them. Setting it is an explicit
 // opt-in, so an unreachable server fails loudly rather than skipping silently.
 const url = process.env.REDIS_TEST_URL || process.env.REDIS_URL;
-let client: RedisClient | undefined;
+let client: ReturnType<typeof resolveRedisClient> | undefined;
 
 beforeAll(async () => {
   if (!url) return;
-  client = new RedisClient(url);
-  await client.connect();
+  client = resolveRedisClient(url);
 });
 
 // A namespace of its own per run, so a suite can never sweep another's keys.
@@ -31,7 +30,7 @@ async function flushNamespace(): Promise<void> {
 afterAll(async () => {
   if (!client) return;
   await flushNamespace();
-  client.close();
+  await client.close();
 });
 
 describe.skipIf(!url)("RedisQueueDriver", () => {

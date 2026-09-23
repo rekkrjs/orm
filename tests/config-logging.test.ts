@@ -1,4 +1,4 @@
-import { describe, test, expect, afterEach } from "bun:test";
+import { describe, test, expect, afterEach } from "./harness.js";
 import { Connection, ConnectionManager } from "../src/index.js";
 import { reconfigureOrm } from "../src/config/OrmConfig.js";
 

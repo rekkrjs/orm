@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll } from "bun:test";
+import { expect, test, describe, beforeAll } from "./harness.js";
 import { Factory, MassAssignmentError, Model, Schema } from "../src/index.js";
 import { setupTestDb } from "./helpers.js";
 

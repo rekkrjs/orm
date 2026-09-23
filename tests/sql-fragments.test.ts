@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "./harness.js";
 import { Builder, Connection, sql } from "../src/index.js";
 
 for (const driver of ["sqlite", "postgres", "mysql"] as const) {

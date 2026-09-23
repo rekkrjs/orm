@@ -1,6 +1,6 @@
 # ORM Documentation
 
-An Eloquent-inspired ORM for Bun with zero runtime dependencies, full TypeScript typing, and first-class multi-tenant support.
+An Eloquent-inspired ORM for Bun and Node.js, with full TypeScript typing and first-class multi-tenant support. On Bun it has zero runtime dependencies.
 
 If you are new here, start with [Installation](./installation.md), then walk through the [Quickstart](./quickstart.md).
 
@@ -8,7 +8,7 @@ If you are new here, start with [Installation](./installation.md), then walk thr
 
 | Topic | What you will learn |
 |---|---|
-| [Installation](./installation.md) | How to add `@rekkr/orm` to a Bun project. |
+| [Installation](./installation.md) | How to add `@rekkr/orm` to a Bun or Node.js project. |
 | [Configuration](./configuration.md) | Connection, tenancy, migrations, seeders, type generation, and runtime wiring. |
 | [Quickstart](./quickstart.md) | End-to-end walkthrough: install → config → migration → model → query. |
 

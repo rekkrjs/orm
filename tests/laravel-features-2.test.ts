@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll, mock } from "bun:test";
+import { expect, test, describe, beforeAll, mock } from "./harness.js";
 import { Model, Schema, ObserverRegistry } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { CacheRememberOptions, CacheStore } from "./CacheStore.js";
 import type { Connection } from "../connection/Connection.js";
 import { resolveConnection } from "../connection/ExecutionContext.js";
@@ -26,7 +27,7 @@ export class Cache {
     const scope = JSON.stringify([connection.getTenantId() ?? null, connection.getDriverName(), config, connection.getSchema() ?? null, memoryId],
       (_, value) => value && typeof value === "object" && !Array.isArray(value)
         ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value);
-    return `orm:query:${new Bun.CryptoHasher("sha256").update(scope).digest("hex")}:${key}`;
+    return `orm:query:${createHash("sha256").update(scope).digest("hex")}:${key}`;
   }
 
   static forgetQuery(key: string, connection?: Connection): Promise<void> {

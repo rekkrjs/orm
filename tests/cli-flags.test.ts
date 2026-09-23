@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "./harness.js";
 import { getFlagValue, parsePositiveInteger, readFlag } from "../src/cli/flags.js";
 
 describe("getFlagValue", () => {

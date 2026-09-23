@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
-import { RedisClient } from "bun";
+import { expect, test } from "./harness.js";
+import { resolveRedisClient } from "../src/queue/RedisQueueDriver.js";
 import { RedisCacheStore } from "../src/cache/RedisCacheStore.js";
 import { RedisQueueDriver } from "../src/queue/RedisQueueDriver.js";
 import { Queue } from "../src/queue/Queue.js";
@@ -12,7 +12,7 @@ const url = process.env.REDIS_TEST_URL || process.env.REDIS_URL;
 const run = url ? test.serial : test.skip;
 
 run("default Redis cache flush preserves queue leases, failures, delayed jobs and queued search", async () => {
-  const redis = new RedisClient(url!);
+  const redis = resolveRedisClient(url!);
   const db = setupTestDb();
   const name = `audit_${crypto.randomUUID()}`;
   const store = new RedisCacheStore(redis);
@@ -21,14 +21,13 @@ run("default Redis cache flush preserves queue leases, failures, delayed jobs an
   const foreign = [`orm:foreign:${name}`, `outside:${name}`, `orm:cache-other:${name}`];
   const ids: number[] = [];
   let failedEntry: string | undefined;
-  await redis.connect();
   try {
     Queue.configure(queue);
     Search.configure({ engine });
     engine.configureIndex("audit_search", { columns: ["title"] });
     await engine.createIndex("audit_search");
     await store.set(name, "cached", { tags: name });
-    for (const key of foreign) await redis.set(key, "survives");
+    for (const key of foreign) await redis.send("SET", [key, "survives"]);
     await queue.dispatch(name, "Reserved", "{}", 0, 3);
     const reserved = (await queue.reserve(name, 90))!;
     ids.push(reserved.id);
@@ -36,7 +35,7 @@ run("default Redis cache flush preserves queue leases, failures, delayed jobs an
     const failed = (await queue.reserve(name, 90))!;
     ids.push(failed.id);
     await queue.fail(failed.id, failed.reservationToken, name);
-    failedEntry = (await redis.send("LRANGE", ["orm:queue:failed", "0", "-1"])).find((entry: string) => JSON.parse(entry).exception === name);
+    failedEntry = (await redis.send("LRANGE", ["orm:queue:failed", "0", "-1"]) as string[]).find((entry: string) => JSON.parse(entry).exception === name);
     await queue.dispatch(name, "Delayed", "{}", 3600, 3);
     ids.push(Number(await redis.get("orm:queue:id")));
     await Queue.dispatch(new MakeSearchableJob({ index: "audit_search", id: 1, data: { title: "survivor" } }), { queue: name });
@@ -73,7 +72,7 @@ run("default Redis cache flush preserves queue leases, failures, delayed jobs an
     await redis.send("SREM", ["orm:queue:queues", name]);
     if (failedEntry) await redis.send("LREM", ["orm:queue:failed", "1", failedEntry]);
     Search.reset(); Queue.reset();
-    redis.close();
+    await redis.close();
     await teardownTestDb(db);
   }
 });

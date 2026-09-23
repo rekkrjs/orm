@@ -1,4 +1,4 @@
-import { expect, test, describe } from "bun:test";
+import { expect, test, describe } from "./harness.js";
 import { Builder } from "../src/index.js";
 import { setupTestDb } from "./helpers.js";
 

@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll } from "bun:test";
+import { expect, test, describe, beforeAll } from "./harness.js";
 import { DB, Schema, ConnectionManager } from "../src/index.js";
 import {
   rule,

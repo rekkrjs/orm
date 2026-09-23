@@ -1,3 +1,5 @@
+import { pathToFileURL } from "node:url";
+
 /**
  * Converts a PascalCase/camelCase identifier to snake_case, keeping acronyms
  * together: `parseJSONData` becomes `parse_json_data`, not `parse_j_s_o_n_data`.
@@ -209,4 +211,24 @@ export function pluralize(word: string): string {
   if (/[^aeiou]y$/i.test(word)) return `${word.slice(0, -1)}ies`;
   if (/(?:f|fe)$/i.test(word)) return `${word.replace(/f(e)?$/, "ves")}`;
   return `${word}s`;
+}
+
+/**
+ * Imports an application file: a migration, seeder, model, command or config.
+ * Node.js runs TypeScript by stripping the types, which leaves enums,
+ * namespaces, parameter properties and decorators unsupported; when that is
+ * why a `.ts` file will not load, say so rather than surface a bare SyntaxError.
+ */
+export async function importFile(path: string): Promise<any> {
+  try {
+    return await import(/* @vite-ignore */ pathToFileURL(path).href);
+  } catch (error) {
+    const unstrippable = error instanceof SyntaxError || (error as { code?: unknown })?.code === "ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX";
+    if (typeof Bun !== "undefined" || !unstrippable || !/\.[cm]?ts$/.test(path)) throw error;
+    throw new Error(
+      `${path} could not be loaded. Node.js runs TypeScript by stripping the types, so the files it loads cannot use ` +
+        `enums, namespaces, parameter properties or decorators. ${(error as Error).message}`,
+      { cause: error },
+    );
+  }
 }

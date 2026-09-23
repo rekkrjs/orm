@@ -34,8 +34,8 @@ export default {
 ```
 
 `configureOrm()` sets up the selected driver automatically when `config.queue`
-is present. For `driver: "redis"`, add `redis: { url }` or omit it to use Bun's
-`REDIS_URL`. A `QueueDriver` instance is also accepted for custom backends.
+is present. For `driver: "redis"`, add `redis: { url }` or omit it to use the
+default client, which reads `REDIS_URL`. A `QueueDriver` instance is also accepted for custom backends.
 
 ## Defining a Job
 
@@ -150,7 +150,8 @@ orm migrate
 
 ## Redis Driver
 
-Select Redis directly in `orm.config.ts`; it uses Bun's built-in Redis client:
+Select Redis directly in `orm.config.ts`; it uses Bun's built-in Redis client on
+Bun and `ioredis` on Node.js (install it next to `@rekkr/orm`):
 
 ```ts
 export default {
@@ -166,10 +167,9 @@ For manual runtime wiring or a secondary named queue connection, instantiate the
 driver directly:
 
 ```ts
-import { redis } from "bun";
-import { RedisQueueDriver, Queue } from "@rekkr/orm/queue";
+import { RedisQueueDriver, Queue, resolveRedisClient } from "@rekkr/orm/queue";
 
-const driver = new RedisQueueDriver(redis, { prefix: "myapp:queue:" });
+const driver = new RedisQueueDriver(resolveRedisClient(process.env.QUEUE_REDIS_URL), { prefix: "myapp:queue:" });
 Queue.configure(driver, "default");
 ```
 

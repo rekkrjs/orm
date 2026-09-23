@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "./harness.js";
 import { Connection, ConnectionManager, Model, Schema } from "../src/index.js";
 import { Search } from "../src/search/index.js";
 import { PostgresFTSEngine } from "../src/search/engines/PostgresFTSEngine.js";

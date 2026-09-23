@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "./harness.js";
 import { Builder, Schema } from "../src/index.js";
 import { createDriverContext, serverUrl, type DriverContext, type ServerDriver } from "./driver-harness.js";
 

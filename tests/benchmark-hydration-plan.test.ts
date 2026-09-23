@@ -18,7 +18,7 @@
  * protocol (sum of separate medians through Connection.query), not comparable.
  */
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "./harness.js";
 import { Connection, Model } from "../src/index.js";
 
 class PlanPost extends Model {

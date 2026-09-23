@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "./harness.js";
 import { CommandRunner } from "../src/commands/CommandRunner.js";
 import { makeMakeCommandCommand } from "../src/commands/MakeCommandCommand.js";
 import { mkdir, rm, readFile, writeFile } from "fs/promises";

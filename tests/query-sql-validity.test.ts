@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll } from "./harness.js";
 import { Connection, Model, Schema } from "../src/index.js";
 import { PostgresGrammar } from "../src/query/grammars/PostgresGrammar.js";
 import { MySqlGrammar } from "../src/query/grammars/MySqlGrammar.js";

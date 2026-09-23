@@ -1,11 +1,12 @@
-import { SQL, FileSink } from "bun";
+import { appendFileSync } from "node:fs";
 import { formatIso } from "../utils.js";
 import type { ConnectionConfig } from "../types/index.js";
 import { Grammar } from "../query/grammars/Grammar.js";
 import { SQLiteGrammar } from "../query/grammars/SQLiteGrammar.js";
 import { MySqlGrammar } from "../query/grammars/MySqlGrammar.js";
 import { PostgresGrammar } from "../query/grammars/PostgresGrammar.js";
-import { UniqueConstraintViolationError } from "./UniqueConstraintViolationError.js";
+import { UniqueConstraintViolationError, isUniqueConstraintViolation } from "./UniqueConstraintViolationError.js";
+import { createDriver, type ReservedSqlDriver, type SqlDriver } from "./drivers/SqlDriver.js";
 import { TransactionContext } from "./TransactionContext.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { resolveConnection } from "./ExecutionContext.js";
@@ -26,30 +27,8 @@ const resourceScopes = new AsyncLocalStorage<ReadonlySet<Connection>>();
 
 const pretendContext = new AsyncLocalStorage<PretendContext>();
 
-function isUniqueConstraintViolation(
-  driverName: "sqlite" | "mysql" | "postgres",
-  error: unknown,
-): boolean {
-  switch (driverName) {
-    case "sqlite":
-      return error instanceof SQL.SQLiteError && (
-        error.code === "SQLITE_CONSTRAINT_UNIQUE" ||
-        error.code === "SQLITE_CONSTRAINT_PRIMARYKEY"
-      );
-    case "postgres":
-      return error instanceof SQL.PostgresError && (
-        // Bun 1.4 reports the server SQLSTATE in errno while code stays generic.
-        error.code === "23505" || error.errno === "23505"
-      );
-    case "mysql":
-      return error instanceof SQL.MySQLError && (
-        error.code === "ER_DUP_ENTRY" || error.errno === 1062
-      );
-  }
-}
-
 /**
- * What a driver hands back for a write. bun:sql returns an array of whatever
+ * What a driver hands back for a write: an array of whatever
  * the statement returned (empty unless it has a RETURNING clause) carrying its
  * own metadata: MySQL fills `affectedRows`, Postgres and SQLite fill `count`.
  * That split is why the portable number comes from `affectedRows()`.
@@ -65,7 +44,7 @@ export interface WriteResult extends Array<Record<string, any>> {
 export class Connection {
   /** Every driver the ORM has a grammar for. Anything else is rejected up front. */
   static readonly SUPPORTED_DRIVERS = ["sqlite", "mysql", "postgres"] as const;
-  readonly driver: SQL;
+  readonly driver: SqlDriver;
   private driverName: "sqlite" | "mysql" | "postgres";
   private grammar: Grammar;
   private config: ConnectionConfig;
@@ -76,7 +55,7 @@ export class Connection {
   private transactionRoot = false;
   private savepointId = 0;
   private dedicated = false;
-  private reservedDriver?: SQL & { release?: () => void };
+  private reservedDriver?: ReservedSqlDriver;
   private resource?: Connection;
   private session?: Connection;
   private parent?: Connection;
@@ -105,12 +84,10 @@ export class Connection {
    * file. Enable it deliberately (`log: { bindings: true }`) for local debugging.
    */
   static logBindings = false;
-  private static _logWriter?: FileSink;
-  private static _logWriterDate?: string;
   static defaultPostgresPoolMax = 10;
   logQueries?: boolean;
 
-  constructor(config: ConnectionConfig, options: { driver?: SQL; schema?: string; ownsDriver?: boolean; sqliteDefaultsApplied?: boolean } = {}) {
+  constructor(config: ConnectionConfig, options: { driver?: SqlDriver; schema?: string; ownsDriver?: boolean; sqliteDefaultsApplied?: boolean } = {}) {
     this.config = config;
     this.schema = options.schema || ("schema" in config ? config.schema : undefined);
     this.ownsDriver = options.ownsDriver ?? !options.driver;
@@ -132,34 +109,7 @@ export class Connection {
       throw new Error("Invalid connection configuration. Provide a url or driver config.");
     }
 
-    this.driver = options.driver || (() => {
-      if (this.driverName === "sqlite") {
-        return new SQL(url!);
-      }
-
-      const prepare = config.prepare ?? (this.driverName === "postgres" ? false : undefined);
-      const max = config.max ?? (this.driverName === "postgres" ? Connection.defaultPostgresPoolMax : undefined);
-      const bigint = config.bigint;
-      if ("driver" in config) {
-        return new SQL({
-          adapter: config.driver,
-          ...(config.host !== undefined ? { hostname: config.host } : {}),
-          port: config.port,
-          database: config.database,
-          username: config.username,
-          password: config.password,
-          ...(max !== undefined ? { max } : {}),
-          ...(prepare !== undefined ? { prepare } : {}),
-          ...(bigint !== undefined ? { bigint } : {}),
-        });
-      }
-      return new SQL({
-        url: url!,
-        ...(max !== undefined ? { max } : {}),
-        ...(prepare !== undefined ? { prepare } : {}),
-        ...(bigint !== undefined ? { bigint } : {}),
-      });
-    })();
+    this.driver = options.driver || createDriver(this.driverName, config, url, Connection.defaultPostgresPoolMax);
 
     switch (this.driverName) {
       case "sqlite":
@@ -386,7 +336,7 @@ export class Connection {
     return `"${value.replace(/"/g, '""')}"`;
   }
 
-  private getDriver(): SQL {
+  private getDriver(): SqlDriver {
     return this.session?.getDriver() ?? this.reservedDriver ?? this.driver;
   }
 
@@ -438,10 +388,10 @@ export class Connection {
 
   /**
    * Runs one driver operation with the event loop pinned open for its duration.
-   * No-op outside MySQL. See the WORKAROUND note above.
+   * No-op outside MySQL on Bun. See the WORKAROUND note above.
    */
   private async keepEventLoopAlive<T>(operation: () => PromiseLike<T>): Promise<T> {
-    if (this.driverName !== "mysql" || !Connection.keepMysqlEventLoopAlive) {
+    if (this.driverName !== "mysql" || typeof Bun === "undefined" || !Connection.keepMysqlEventLoopAlive) {
       return await operation();
     }
     if (Connection.eventLoopHolds++ === 0) {
@@ -460,26 +410,17 @@ export class Connection {
 
   private async reserveRootTransaction(): Promise<void> {
     if (this.driverName === "sqlite" || this.dedicated || this.reservedDriver) return;
-    if (typeof (this.driver as any).reserve !== "function") {
+    if (!this.driver.reserve) {
       throw new Error(`${this.driverName} transactions require a driver that can reserve one pooled session.`);
     }
-    this.reservedDriver = await this.keepEventLoopAlive(() => (this.driver as any).reserve());
+    this.reservedDriver = await this.keepEventLoopAlive(() => this.driver.reserve!());
   }
 
   private log(sqlString: string, bindings?: any[]): void {
     if (!(this.logQueries ?? Connection.logQueries)) return;
     if (Connection.queryLogFile) {
       const date = formatIso(new Date()).slice(0, 10);
-      if (Connection._logWriterDate !== date) {
-        Connection._logWriter?.flush();
-        Connection._logWriter?.end();
-        const path = `${Connection.queryLogFile}/query-${date}.log`;
-        Connection._logWriter = Bun.file(path).writer();
-        Connection._logWriterDate = date;
-      }
-      const line = `[QUERY] ${sqlString}${Connection.describeBindings(bindings)}\n`;
-      Connection._logWriter!.write(line);
-      Connection._logWriter!.flush();
+      appendFileSync(`${Connection.queryLogFile}/query-${date}.log`, `[QUERY] ${sqlString}${Connection.describeBindings(bindings)}\n`);
     }
     if (Connection.logToConsole) {
       if (Connection.logBindings && bindings?.length) console.log("[QUERY]", sqlString, bindings);
@@ -512,7 +453,7 @@ export class Connection {
       : error;
   }
 
-  private async executeStatement(driver: SQL, sqlString: string, bindings?: any[]): Promise<any> {
+  private async executeStatement(driver: SqlDriver, sqlString: string, bindings?: any[]): Promise<any> {
     try {
       return await this.keepEventLoopAlive(() => driver.unsafe(sqlString, bindings));
     } catch (error) {
@@ -551,7 +492,7 @@ export class Connection {
     const normalizedBindings = this.normalizeBindings(bindings);
     if (this.capturePretendStatement(sqlString, normalizedBindings)) return null;
 
-    const execute = async (driver: SQL) => {
+    const execute = async (driver: SqlDriver) => {
       const hasDate = this.carriesDate(bindings);
       this.log(sqlString, normalizedBindings);
       if (hasDate) await this.assertMysqlUtc(driver, this.dedicated || !!this.reservedDriver);
@@ -562,11 +503,11 @@ export class Connection {
 
     await this.ensureSqliteDefaults();
     const driver = this.getDriver();
-    if (this.transactionActive || this.dedicated || this.reservedDriver || typeof (driver as any).reserve !== "function") {
+    if (this.transactionActive || this.dedicated || this.reservedDriver || !driver.reserve) {
       return await execute(driver);
     }
 
-    const reserved = await this.keepEventLoopAlive(() => (driver as any).reserve()) as SQL & { release?: () => void };
+    const reserved = await this.keepEventLoopAlive(() => driver.reserve!());
     try {
       return await execute(reserved);
     } finally {
@@ -592,8 +533,8 @@ export class Connection {
 
     // A pool may hand two consecutive queries to different sessions. Reserve
     // one so the UTC assertion and the date-bearing query cannot be separated.
-    if (!this.transactionActive && !this.dedicated && !this.reservedDriver && typeof (driver as any).reserve === "function") {
-      const reserved = await this.keepEventLoopAlive(() => (driver as any).reserve()) as SQL & { release?: () => void };
+    if (!this.transactionActive && !this.dedicated && !this.reservedDriver && driver.reserve) {
+      const reserved = await this.keepEventLoopAlive(() => driver.reserve!());
       try {
         await this.assertMysqlUtc(reserved);
         return await this.executeStatement(reserved, sqlString, normalizedBindings);
@@ -621,7 +562,7 @@ export class Connection {
    * and breaks DATETIME, and `SET time_zone` only reaches one connection of the
    * pool, so the honest move is to say so instead of storing the wrong moment.
    */
-  private async assertMysqlUtc(driver: SQL, cache: boolean = false): Promise<void> {
+  private async assertMysqlUtc(driver: SqlDriver, cache: boolean = false): Promise<void> {
     if (cache && this.mysqlUtcChecked) return;
     const rows = (await this.keepEventLoopAlive(() =>
       driver.unsafe("SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW()) AS offset_seconds")
@@ -848,13 +789,13 @@ export class Connection {
         throw new Error("transaction() was called while a manual beginTransaction() is still open on this connection. Commit or roll back first.");
       }
       const savepointName = `orm_trans_${++this.savepointId}`;
-      const driver = this.getDriver() as SQL & { savepoint?: <R>(fn: () => Promise<R>) => Promise<R> };
+      const driver = this.getDriver();
       this.transactionDepth++;
       this.commitEffects.push([]);
       try {
         let result: T;
         if (typeof driver.savepoint === "function") {
-          result = await this.keepEventLoopAlive(() => driver.savepoint!(() => TransactionContext.run(this, () => callback(this))));
+          result = await this.keepEventLoopAlive(() => driver.savepoint!(async () => TransactionContext.run(this, () => callback(this))));
         } else {
           await this.executeStatement(driver, `SAVEPOINT ${savepointName}`);
           try {
@@ -880,12 +821,12 @@ export class Connection {
 
     // Native callbacks own their transaction handle. Cached schema views must
     // not hold mutable transaction state shared by concurrent requests.
-    if (!this.dedicated && typeof this.driver.begin === "function") {
+    if (!this.dedicated && this.driver.begin) {
       let transaction: Connection | undefined;
       let result: T;
       try {
-        result = await this.keepEventLoopAlive(() => this.driver.begin(async sql => {
-          const connection = new Connection(this.config, { driver: sql as unknown as SQL, schema: this.schema, ownsDriver: false, sqliteDefaultsApplied: true });
+        result = await this.keepEventLoopAlive(() => this.driver.begin!(async sql => {
+          const connection = new Connection(this.config, { driver: sql, schema: this.schema, ownsDriver: false, sqliteDefaultsApplied: true });
           transaction = connection;
           connection.resource = this.resource ?? this;
           connection.parent = this;
@@ -988,13 +929,14 @@ export class Connection {
     // search_path at session scope. Avoids pinning the request inside one long
     // transaction (lock hold / idle-in-transaction). The connection is still
     // dedicated for the callback's duration, then reset and released.
-    const reserved = (await (this.driver as any).reserve()) as SQL & { release?: () => void };
+    if (!this.driver.reserve) throw new Error("search_path scopes require a driver that can reserve one pooled session.");
+    const reserved = await this.driver.reserve();
     // Set the connection schema to the target so introspection
     // (information_schema / pg_catalog queries that filter by schema name)
     // resolves the tenant schema, not the base one. SET search_path below
     // remains as a fallback for any raw SQL the ORM does not qualify.
     const connection = new Connection(this.config, {
-      driver: reserved as unknown as SQL,
+      driver: reserved,
       schema,
       ownsDriver: false,
     });
@@ -1013,7 +955,7 @@ export class Connection {
           if (connection.isInTransaction()) throw new Error("search_path scope exited with an open transaction; session discarded.");
           await connection.run("RESET search_path");
         } catch (error) {
-          // Bun ReservedSQL.close() closes this physical session, not its pool.
+          // On a reserved session close() discards that physical session, not its pool.
           // Never release a session whose state could not be restored.
           await reserved.close({ timeout: 0 });
           connection.clearAbandonedTimer();

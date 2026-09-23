@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import { Validator } from "../src/validation/Validator.js";
 import { ValidationError } from "../src/validation/ValidationError.js";
 

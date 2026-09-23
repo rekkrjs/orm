@@ -15,7 +15,7 @@ Meilisearch requires a reachable HTTP service. Local dev:
 docker run -p 7700:7700 getmeili/meilisearch
 ```
 
-No npm dep is required — the engine uses Bun's native `fetch`. PostgreSQL FTS and SQLite FTS5 use the ORM connection and need no search service.
+No npm dep is required — the engine uses the runtime's built-in `fetch`. PostgreSQL FTS and SQLite FTS5 use the ORM connection and need no search service.
 
 ## Configure
 

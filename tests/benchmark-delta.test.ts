@@ -1,4 +1,4 @@
-import { test, describe, beforeAll } from "bun:test";
+import { test, describe, beforeAll } from "./harness.js";
 import { Model, Connection } from "../src/index.js";
 import { ObserverRegistry, Observer } from "../src/model/Observer.js";
 import { findRelationMethod } from "../src/model/Model.js";

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "./harness.js";
 import { Connection } from "../src/index.js";
 import {
   MeilisearchEngine,

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import { Validator } from "../src/validation/index.js";
 
 describe("validation safeParse result shapes", () => {

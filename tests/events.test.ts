@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import { EventHandler, Events } from "../src/events/index.js";
 
 class UserRegistered {

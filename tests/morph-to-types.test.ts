@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "./harness.js";
 import { Connection, Model, MorphMap, Schema } from "../src/index.js";
 
 /**

@@ -1,8 +1,10 @@
-import { redis, RedisClient } from "bun";
 import type { JobRecord, QueueDriver } from "./QueueDriver.js";
+import type { RedisLike } from "../cache/RedisCacheStore.js";
+import { createNodeRedisClient } from "../connection/drivers/nodeDrivers.js";
 
 /**
- * The client surface the driver needs.
+ * The client surface the driver needs. Bun's `RedisClient` has it as it is;
+ * on Node.js `resolveRedisClient()` puts ioredis behind it.
  *
  * `send` is what carries the Lua scripts below. Every state transition a job
  * goes through touches several keys — the job hash, the pending list, the
@@ -11,26 +13,28 @@ import type { JobRecord, QueueDriver } from "./QueueDriver.js";
  * rollback, so a script (which the server runs to completion, atomically) is the
  * only way to make those transitions all-or-nothing.
  */
-type RedisQueueLike = Pick<
-  RedisClient,
-  | "incr"
-  | "llen"
-  | "hgetall"
-  | "zcard"
-  | "smembers"
-  | "send"
->;
+export interface RedisQueueLike {
+  incr(key: string): Promise<number>;
+  llen(key: string): Promise<number>;
+  hgetall(key: string): Promise<Record<string, string>>;
+  zcard(key: string): Promise<number>;
+  smembers(key: string): Promise<string[]>;
+  send(command: string, args: string[]): Promise<unknown>;
+}
 
 export interface RedisQueueDriverOptions {
   prefix?: string;
 }
 
+let defaultNodeClient: ReturnType<typeof createNodeRedisClient> | undefined;
+
 /**
- * Client the Redis queue driver should talk to. Honours `queue.redis.url` when
- * present, otherwise falls back to Bun's default client (driven by `REDIS_URL`).
+ * The Redis client for `url`, or the process-wide default one (`REDIS_URL`)
+ * without it: Bun's own client on Bun, ioredis on Node.js.
  */
-export function resolveQueueRedisClient(url?: string): RedisQueueLike {
-  return url ? new RedisClient(url) : redis;
+export function resolveRedisClient(url?: string): RedisQueueLike & RedisLike & { close(): unknown } {
+  if (typeof Bun !== "undefined") return url ? new Bun.RedisClient(url) : Bun.redis;
+  return url ? createNodeRedisClient(url) : (defaultNodeClient ??= createNodeRedisClient());
 }
 
 interface StoredJob {

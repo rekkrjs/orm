@@ -1,7 +1,7 @@
 /** Tenant/transaction acceptance matrix: cross-resource switches reject;
  * schema + qualify on the same session participates in the root transaction.
  */
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "./harness.js";
 import { Connection, ConnectionManager, DB, Model, TenantContext } from "../src/index.js";
 
 const postgresUrl = process.env.POSTGRES_TEST_URL;

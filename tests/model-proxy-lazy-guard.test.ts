@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll } from "bun:test";
+import { expect, test, describe, beforeAll } from "./harness.js";
 import { Model, Schema } from "../src/index.js";
 import { getModelTarget } from "../src/model/ModelBase.js";
 import { setupTestDb } from "./helpers.js";
@@ -111,7 +111,7 @@ describe("Lazy Loading Prevention", () => {
     Model.preventLazyLoading = true;
     try {
       const review = await Review.find(1);
-      expect(() => review!.product().getResults()).toThrow("Lazy loading is prevented");
+      await expect(review!.product().getResults()).rejects.toThrow("Lazy loading is prevented");
     } finally {
       Model.preventLazyLoading = false;
     }

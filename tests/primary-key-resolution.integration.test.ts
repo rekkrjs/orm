@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "./harness.js";
 import { Connection, ConnectionManager, Model, Schema } from "../src/index.js";
 import { insertAndResolveKey } from "../src/model/PrimaryKeyResolution.js";
 

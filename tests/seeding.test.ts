@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, writeText } from "./harness.js";
 import { join } from "path";
 import { mkdir, rm } from "fs/promises";
 import { Connection, ConnectionManager, Model, Schema, Seeder, SeederRunner, TenantContext, Factory, ObserverRegistry } from "../src/index.js";
@@ -57,7 +57,7 @@ describe("Seeders and factories", () => {
     const seedDir = join(process.cwd(), "tests", "temp_seeders");
     await rm(seedDir, { recursive: true, force: true });
     await mkdir(seedDir, { recursive: true });
-    await Bun.write(
+    await writeText(
       join(seedDir, "UserSeeder.ts"),
       `
 import { Seeder, Model } from "../../src/index.js";
@@ -97,7 +97,7 @@ export default class UserSeeder extends Seeder {
     const firstPath = join(seedDir, "FirstSeeder.ts");
     const secondPath = join(seedDir, "SecondSeeder.ts");
 
-    await Bun.write(
+    await writeText(
       firstPath,
       `
 import { Seeder, Model } from "../../src/index.js";
@@ -112,7 +112,7 @@ export default class FirstSeeder extends Seeder {
   }
 }`
     );
-    await Bun.write(
+    await writeText(
       secondPath,
       `
 import { Seeder, Model } from "../../src/index.js";
@@ -151,7 +151,7 @@ export default class SecondSeeder extends Seeder {
     const seedDir = join(process.cwd(), "tests", "temp_default_seeders");
     await rm(seedDir, { recursive: true, force: true });
     await mkdir(seedDir, { recursive: true });
-    await Bun.write(
+    await writeText(
       join(seedDir, "UserSeeder.ts"),
       `
 import { Seeder, Model } from "../../src/index.js";
@@ -166,7 +166,7 @@ export default class UserSeeder extends Seeder {
   }
 }`
     );
-    await Bun.write(
+    await writeText(
       join(seedDir, "IgnoredSeeder.ts"),
       `
 import { Seeder, Model } from "../../src/index.js";
@@ -181,7 +181,7 @@ export default class IgnoredSeeder extends Seeder {
   }
 }`
     );
-    await Bun.write(
+    await writeText(
       join(seedDir, "DatabaseSeeder.ts"),
       `
 import { Seeder } from "../../src/index.js";

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import { MeilisearchEngine } from "../src/search/index.js";
 
 type FetchCall = { url: string; init?: RequestInit };
@@ -11,7 +11,7 @@ function mockFetch(handler: (call: FetchCall) => { status?: number; body?: unkno
     const result = handler(call);
     const status = result.status ?? 200;
     const contentType = result.contentType ?? "application/json";
-    const bodyText = result.body === undefined ? "" : JSON.stringify(result.body);
+    const bodyText = result.body === undefined ? null : JSON.stringify(result.body);
     return new Response(bodyText, { status, headers: { "content-type": contentType } });
   };
   return { fn: fn as unknown as typeof fetch, calls };

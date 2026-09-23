@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import { can, authorize, clearPolicies, registerPolicy, registerPolicies, PolicyAuthorizationError } from "../src/policies/index.js";
 
 class Announcement {

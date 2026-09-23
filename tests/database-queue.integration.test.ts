@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import { Connection } from "../src/index.js";
 import { DatabaseQueueDriver } from "../src/queue/DatabaseQueueDriver.js";
 import { createDriverContext, serverUrl, type ServerDriver } from "./driver-harness.js";

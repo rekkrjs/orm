@@ -5,7 +5,7 @@
  * (`bunx tsc -p tsconfig.test.json`). If any guarantee below regresses,
  * type-checking fails. The runtime body is intentionally trivial.
  */
-import { test, expect } from "bun:test";
+import { test, expect } from "./harness.js";
 import { Model, Factory, type Connection, type FactoryAttributes } from "../src/index.js";
 
 function expectType<T>(_v: T): void {}

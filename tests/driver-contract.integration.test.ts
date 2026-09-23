@@ -1,5 +1,5 @@
-import { SQL } from "bun";
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test, evalCommand, isBun, ormModule, runProcess, writeText } from "./harness.js";
+import { isUniqueConstraintViolation } from "../src/connection/UniqueConstraintViolationError.js";
 import { PermissiveModel } from "./helpers.js";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
@@ -82,13 +82,119 @@ async function caught(promise: Promise<unknown>): Promise<unknown> {
   throw new Error("Expected promise to reject");
 }
 
+const BunSQL = isBun ? (await import("bun")).SQL : undefined;
+
+/** The cause is the driver's own error, carrying the database's own conflict code. */
 function expectDriverUniqueCause(driver: ContractDriver, error: unknown): void {
   expect(error).toBeInstanceOf(UniqueConstraintViolationError);
   const cause = (error as Error).cause;
-  if (driver === "sqlite") expect(cause).toBeInstanceOf(SQL.SQLiteError);
-  else if (driver === "mysql") expect(cause).toBeInstanceOf(SQL.MySQLError);
-  else expect(cause).toBeInstanceOf(SQL.PostgresError);
+  expect(cause).toBeInstanceOf(Error);
+  expect(cause).not.toBeInstanceOf(UniqueConstraintViolationError);
+  expect(isUniqueConstraintViolation(driver, cause)).toBe(true);
+  if (BunSQL) expect(cause).toBeInstanceOf({ sqlite: BunSQL.SQLiteError, mysql: BunSQL.MySQLError, postgres: BunSQL.PostgresError }[driver]);
 }
+
+/** A value as `type:content`, so that 1 and "1", or a Date and its ISO string, never compare equal. */
+function describeValue(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value !== "object") return `${typeof value}:${String(value)}`;
+  const content = value instanceof Date ? value.toISOString() : ArrayBuffer.isView(value) ? `bytes(${(value as Uint8Array).length})` : JSON.stringify(value);
+  return `${value.constructor?.name}:${content}`;
+}
+
+const describeRow = (row: Record<string, unknown>) => Object.fromEntries(Object.entries(row).map(([key, value]) => [key, describeValue(value)]));
+
+/** Runs with the process in another time zone; `bun test` and the vitest config both start in UTC. */
+async function inTimeZone<T>(zone: string, callback: () => Promise<T>): Promise<T> {
+  const previous = process.env.TZ;
+  process.env.TZ = zone;
+  try {
+    expect(new Date(Date.UTC(2024, 0, 15, 12)).getTimezoneOffset()).not.toBe(0);
+    return await callback();
+  } finally {
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
+  }
+}
+
+/**
+ * The values contract, which generated model types (TypeMapper) are written
+ * against: one JavaScript type per column type, whichever runtime and driver
+ * decodes it. Literals, so that decoding is all that is being tested.
+ */
+const COLUMN_TYPES: Record<ContractDriver, { ddl: string; insert: string; expected: Record<string, string>; count: string }> = {
+  sqlite: {
+    ddl: "CREATE TABLE contract_column_types (tag TEXT, i INTEGER, r REAL, s TEXT, b BLOB, n INTEGER, big INTEGER)",
+    insert: "INSERT INTO contract_column_types VALUES ('row', 5, 1.5, 'x', x'78', NULL, 9007199254740993)",
+    expected: {
+      tag: "string:row", i: "number:5", r: "number:1.5", s: "string:x", b: "Uint8Array:bytes(1)", n: "null",
+      // Past 2^53 bun:sql rounds; the Node.js adapter keeps the exact value, as a string (docs/installation.md).
+      big: isBun ? "number:9007199254740992" : "string:9007199254740993",
+    },
+    count: "number:1",
+  },
+  postgres: {
+    ddl: `CREATE TABLE contract_column_types (tag TEXT, i2 SMALLINT, i4 INTEGER, i8 BIGINT, i8_small BIGINT, num NUMERIC(10,2),
+      f8 DOUBLE PRECISION, f4 REAL, b BOOLEAN, ts TIMESTAMP(3), tstz TIMESTAMPTZ(3), d DATE, t TIME, j JSON, jb JSONB, by BYTEA,
+      u UUID, ai INTEGER[], iv INTERVAL)`,
+    insert: `INSERT INTO contract_column_types VALUES ('row', 1, 2, 9007199254740993, 5, 1.50, 1.5, 1.5, true,
+      '2024-01-15 12:00:00.123', '2024-01-15 12:00:00.123+00', '2024-01-15', '12:34:56', '{"a":1}', '{"a":1}', 'x',
+      '00000000-0000-0000-0000-000000000001', '{1,2}', '1 day')`,
+    expected: {
+      tag: "string:row", i2: "number:1", i4: "number:2", i8: "string:9007199254740993", i8_small: "string:5", num: "string:1.50",
+      f8: "number:1.5", f4: "number:1.5", b: "boolean:true",
+      ts: "Date:2024-01-15T12:00:00.123Z", tstz: "Date:2024-01-15T12:00:00.123Z", d: "Date:2024-01-15T00:00:00.000Z",
+      t: "string:12:34:56", j: 'Object:{"a":1}', jb: 'Object:{"a":1}', by: "Buffer:bytes(1)",
+      u: "string:00000000-0000-0000-0000-000000000001", ai: "Array:[1,2]", iv: "string:1 day",
+    },
+    count: "string:1",
+  },
+  mysql: {
+    ddl: `CREATE TABLE contract_column_types (tag VARCHAR(8), big BIGINT, big_small BIGINT, dec_ DECIMAL(10,2), dt DATETIME(3),
+      ts TIMESTAMP(3) NULL, d DATE, t TIME, j JSON, flag TINYINT(1), i INT, db DOUBLE, fl FLOAT, bl BLOB)`,
+    insert: `INSERT INTO contract_column_types VALUES ('row', 9007199254740993, 5, 12.50, '2024-01-15 12:00:00.123',
+      '2024-01-15 12:00:00.123', '2024-01-15', '12:34:56', '{"a": 1}', 1, 7, 1.5, 1.5, 'x')`,
+    expected: {
+      tag: "string:row", big: "string:9007199254740993", big_small: "number:5", dec_: "string:12.50",
+      dt: "Date:2024-01-15T12:00:00.123Z", ts: "Date:2024-01-15T12:00:00.123Z", d: "Date:2024-01-15T00:00:00.000Z",
+      t: "string:12:34:56", j: 'Object:{"a":1}', flag: "number:1", i: "number:7", db: "number:1.5", fl: "number:1.5",
+      bl: "Buffer:bytes(1)",
+    },
+    count: "number:1",
+  },
+};
+
+/** Where an instant written as a Date lands, read back as the database's own text. */
+const INSTANTS: Record<ContractDriver, { ddl: string; read: string; stored: string }> = {
+  sqlite: {
+    ddl: "CREATE TABLE contract_instants (id INTEGER PRIMARY KEY, at TEXT)",
+    read: "SELECT at AS wall_clock FROM contract_instants",
+    stored: "2024-01-15T12:00:00.123Z",
+  },
+  postgres: {
+    ddl: "CREATE TABLE contract_instants (id SERIAL PRIMARY KEY, at TIMESTAMP(3))",
+    read: "SELECT to_char(at, 'YYYY-MM-DD HH24:MI:SS.MS') AS wall_clock FROM contract_instants",
+    stored: "2024-01-15 12:00:00.123",
+  },
+  mysql: {
+    ddl: "CREATE TABLE contract_instants (id INT AUTO_INCREMENT PRIMARY KEY, at DATETIME(3))",
+    read: "SELECT CAST(at AS CHAR) AS wall_clock FROM contract_instants",
+    stored: "2024-01-15 12:00:00.123",
+  },
+};
+
+/** Session state to set, and read back, on one connection. */
+const SESSION_STATE: Record<ContractDriver, { set: string; read: string }> = {
+  sqlite: { set: "CREATE TEMP TABLE contract_session_marker (kept TEXT)", read: "SELECT count(*) AS marker FROM contract_session_marker" },
+  postgres: { set: "SET application_name = 'orm_contract_marker'", read: "SELECT current_setting('application_name') AS marker" },
+  mysql: { set: "SET @orm_contract_marker = 'kept'", read: "SELECT @orm_contract_marker AS marker" },
+};
+
+const SLEEP_SQL: Record<ContractDriver, string> = {
+  sqlite: "SELECT 1 AS slept",
+  postgres: "SELECT pg_sleep(0.3) AS slept",
+  mysql: "SELECT SLEEP(0.3) AS slept",
+};
 
 for (const driver of ["sqlite", "mysql", "postgres"] as const) {
   const run = driver === "sqlite" || serverUrl(driver) ? test.serial : test.skip;
@@ -323,9 +429,9 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
         email: `missing-${driver}@example.test`,
       }));
       expect(notNull).not.toBeInstanceOf(UniqueConstraintViolationError);
-      if (driver === "sqlite") expect(notNull).toBeInstanceOf(SQL.SQLiteError);
-      else if (driver === "mysql") expect(notNull).toBeInstanceOf(SQL.MySQLError);
-      else expect(notNull).toBeInstanceOf(SQL.PostgresError);
+      expect(notNull).toBeInstanceOf(Error);
+      expect(isUniqueConstraintViolation(driver, notNull)).toBe(false);
+      if (BunSQL) expect(notNull).toBeInstanceOf({ sqlite: BunSQL.SQLiteError, mysql: BunSQL.MySQLError, postgres: BunSQL.PostgresError }[driver]);
 
       if (driver === "postgres") {
         const table = connection.getGrammar().wrap(connection.qualifyTable("contract_deferred_unique"));
@@ -504,7 +610,7 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
       const migrations = await mkdtemp(join(process.cwd(), "tests", ".tmp-driver-contract-"));
       const ormUrl = pathToFileURL(join(process.cwd(), "src", "index.ts")).href;
       const migrationPath = join(migrations, "20260819000000_create_contract_migrated.ts");
-      await Bun.write(migrationPath, `
+      await writeText(migrationPath, `
 import { Migration, Schema } from ${JSON.stringify(ormUrl)};
 export default class CreateContractMigrated extends Migration {
   async up() {
@@ -530,5 +636,97 @@ export default class CreateContractMigrated extends Migration {
         await rm(migrations, { recursive: true, force: true });
       }
     });
+
+    run("decodes each column type to the same JavaScript value, in any process time zone", async () => {
+      const { ddl, insert, expected, count } = COLUMN_TYPES[driver];
+      const connection = context.connection;
+      await connection.run(ddl);
+      await connection.run(insert);
+      const placeholder = connection.getGrammar().placeholder(1);
+      await inTimeZone("Asia/Kathmandu", async () => {
+        // Both wire paths: MySQL decodes text-protocol and prepared results separately.
+        const literal = (await connection.query("SELECT * FROM contract_column_types"))[0];
+        const bound = (await connection.query(`SELECT * FROM contract_column_types WHERE tag = ${placeholder}`, ["row"]))[0];
+        expect(describeRow(literal)).toEqual(expected);
+        expect(describeRow(bound)).toEqual(expected);
+      });
+      expect(describeValue((await connection.query("SELECT COUNT(*) AS n FROM contract_column_types"))[0].n)).toBe(count);
+    });
+
+    run("stores a Date as its UTC wall clock whatever the process time zone", async () => {
+      const { ddl, read, stored } = INSTANTS[driver];
+      const connection = context.connection;
+      const instant = new Date("2024-01-15T12:00:00.123Z");
+      await connection.run(ddl);
+      await inTimeZone("America/New_York", async () => {
+        await new Builder(connection, "contract_instants").insert({ at: instant });
+        expect((await connection.query(read))[0].wall_clock).toBe(stored);
+        const [row] = await new Builder(connection, "contract_instants").get();
+        expect(new Date((row as any).at).toISOString()).toBe(instant.toISOString());
+      });
+    });
+
+    run("keeps a session's state after one of its statements fails", async () => {
+      const url = driver === "sqlite" ? "sqlite://:memory:" : serverUrl(driver)!;
+      const session = new Connection({ url, max: 1 });
+      try {
+        await session.run(SESSION_STATE[driver].set);
+        const before = (await session.query(SESSION_STATE[driver].read))[0].marker;
+        await expect(session.query("SELECT * FROM contract_no_such_table")).rejects.toThrow();
+        await expect(session.run("THIS IS NOT SQL")).rejects.toThrow();
+        // search_path, SET values and advisory locks live here; a pool that
+        // swapped the session after an error would lose them without a word.
+        expect((await session.query(SESSION_STATE[driver].read))[0].marker).toEqual(before);
+      } finally {
+        await session.close();
+      }
+    });
+
+    if (driver !== "sqlite") {
+      run("resolves omitted driver fields from the adapter's environment variables", async () => {
+        const parsed = new URL(serverUrl(driver)!);
+        const names = driver === "postgres"
+          ? { host: "PGHOST", port: "PGPORT", user: "PGUSER", password: "PGPASSWORD", database: "PGDATABASE" }
+          : { host: "MYSQL_HOST", port: "MYSQL_PORT", user: "MYSQL_USER", password: "MYSQL_PASSWORD", database: "MYSQL_DATABASE" };
+        const values = {
+          host: parsed.hostname,
+          port: parsed.port,
+          user: decodeURIComponent(parsed.username),
+          password: decodeURIComponent(parsed.password),
+          database: decodeURIComponent(parsed.pathname.slice(1)),
+        };
+        const previous = Object.fromEntries(Object.values(names).map((name) => [name, process.env[name]]));
+        for (const [field, name] of Object.entries(names)) process.env[name] = values[field as keyof typeof values];
+        // No TLS here, unlike CI's MySQL URL: MySQL 8 accepts it because this suite's context already
+        // authenticated this user over TLS, which primes caching_sha2_password's fast path.
+        const fromEnv = new Connection({ driver, max: 1 } as any);
+        try {
+          const current = driver === "postgres" ? "SELECT current_database() AS name" : "SELECT DATABASE() AS name";
+          expect((await fromEnv.query(current))[0].name).toBe(values.database);
+        } finally {
+          await fromEnv.close();
+          for (const [name, value] of Object.entries(previous)) {
+            if (value === undefined) delete process.env[name];
+            else process.env[name] = value;
+          }
+        }
+      });
+    }
+
+    run("lets an unclosed connection's process exit, but not before a query in flight settles", async () => {
+      const url = driver === "sqlite" ? "sqlite://:memory:" : serverUrl(driver)!;
+      const script = `
+        const { Connection } = await import(${JSON.stringify(pathToFileURL(ormModule("src/index.ts")).href)});
+        const connection = new Connection({ url: process.env.CONTRACT_URL });
+        await connection.query("SELECT 1 AS one");
+        // Floated, not awaited: nothing but the query itself may hold the process open.
+        connection.query(${JSON.stringify(SLEEP_SQL[driver])}).then(() => console.log("settled"));
+      `;
+      const result = await runProcess(evalCommand(script), { env: { ...process.env, CONTRACT_URL: url }, timeoutMs: 10_000 });
+      expect(result.timedOut).toBe(false);
+      expect(result.stderr).toBe("");
+      expect(result.stdout.trim()).toBe("settled");
+      expect(result.exitCode).toBe(0);
+    }, 15_000);
   });
 }

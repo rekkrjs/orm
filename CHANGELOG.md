@@ -1,5 +1,62 @@
 # Changelog
 
+## Unreleased
+
+### Node.js support
+
+- ORM runs on Node.js 24.15 or newer as well as on Bun, with the same API and
+  CLI. SQLite uses the built-in `node:sqlite`; PostgreSQL, MySQL and Redis use
+  `pg`, `mysql2` and `ioredis`, declared as optional peer dependencies. On Bun
+  nothing changes: the driver is still `bun:sql`, and there are still no
+  dependencies. See [Installation](./docs/installation.md#what-differs-between-runtimes)
+  for what remains different.
+- The test suite runs on both runtimes against the same servers and holds them
+  to one values contract: the same JavaScript type for every column type, dates
+  stored as UTC whatever the process time zone, the same write counts and error
+  codes.
+- On Node.js the CLI loads `.env` files with Bun's precedence and `${NAME}`
+  expansion, names the file when Node.js cannot strip its TypeScript, and runs
+  `orm repl` on `node:repl`.
+- `resolveRedisClient()` is exported from `@rekkr/orm/cache` and
+  `@rekkr/orm/queue`: the default Redis client on either runtime, for wiring a
+  `RedisCacheStore` or `RedisQueueDriver` by hand.
+
+### Breaking
+
+- `Connection.driver` is typed `SqlDriver`, the ORM's own driver contract,
+  instead of Bun's `SQL`. On Bun it is still the same `SQL` object, which
+  satisfies the contract as it is; code that used a Bun-only member casts it
+  (`connection.driver as unknown as SQL`).
+- Types resolve from the emitted declarations (`dist/**/*.d.ts`) instead of the
+  TypeScript source, so a consumer's compiler flags stop applying to the ORM's
+  implementation: a project with `exactOptionalPropertyTypes` and similar flags
+  saw hundreds of errors in ORM code. A Git install without `dist/` falls back
+  to the source.
+- The `orm` bin is `bin/orm.mjs`, which runs the CLI on the runtime that
+  launched it: Node.js under npm, pnpm and yarn; Bun under `bunx`, `bun run`,
+  and when invoked directly with Bun installed.
+- `RedisCacheStore` and `RedisQueueDriver` take the ORM's own client interfaces
+  (`RedisLike`, `RedisQueueLike`) instead of `Pick<RedisClient, …>`. Bun's
+  `RedisClient` still fits them.
+
+### Fixed behaviour
+
+- With `log.file` set, a process restarted on the same day overwrote the day's
+  query log from its first byte and left the tail of the old log behind. Lines
+  are now appended.
+- Migrations are imported by file URL, not by raw path.
+- Four tests awaited nothing on `expect(...).rejects` and asserted nothing; they
+  now assert.
+
+### Internal
+
+- One unique-violation classifier, shared by `Connection` and the migration
+  lock, reads the database's own codes; the lock no longer falls back to
+  matching the error message.
+- Tests import their API from `tests/harness.ts`, which is `bun:test` on Bun and
+  vitest on Node.js. `bun run test:node` runs the suite under Node.js, and CI
+  runs both.
+
 ## 4.1.0 — 2026-09-21
 
 ### Fixed behaviour

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "./harness.js";
 import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { configureOrm, Connection, ConnectionManager, DB } from "../src/index.js";

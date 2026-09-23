@@ -1,11 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, isBun } from "./harness.js";
 import { mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 import { Connection } from "../src/index.js";
 
 const mysqlUrl = process.env.MYSQL_TEST_URL;
-const runIfMySql = mysqlUrl ? test.serial : test.skip;
+// A Bun bug and a Bun-only workaround: nothing to hold Node.js to.
+const runIfMySql = mysqlUrl && isBun ? test.serial : test.skip;
 
 /**
  * Bun 1.4.0 stops holding the event loop open for an in-flight MySQL query once
@@ -20,8 +21,8 @@ const runIfMySql = mysqlUrl ? test.serial : test.skip;
  * because a pending top-level await is a reference Bun does count.
  */
 function childScript(url: string, table: string): string {
-  const ormEntry = JSON.stringify(join(import.meta.dir, "../src/index.js"));
-  const builderEntry = JSON.stringify(join(import.meta.dir, "../src/query/Builder.js"));
+  const ormEntry = JSON.stringify(join(import.meta.dirname, "../src/index.js"));
+  const builderEntry = JSON.stringify(join(import.meta.dirname, "../src/query/Builder.js"));
   return `
 import { Connection } from ${ormEntry};
 import { Builder } from ${builderEntry};

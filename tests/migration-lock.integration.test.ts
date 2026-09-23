@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test, ormCli, runProcess, sleep } from "./harness.js";
 import { Connection, ConnectionManager } from "../src/index.js";
 import { acquireMigrationLock } from "../src/migration/MigrationLock.js";
 
@@ -38,6 +38,27 @@ describe.serial("Native migration advisory locks", () => {
     await second.release();
     await connection.close();
   });
+
+  // The lock is a session-level advisory lock on a pooled session that sits
+  // idle while the migrations run. A pool that retires idle sessions (pg's
+  // default is 10s) would hand the lock back half way through a migration.
+  runIfPostgres("keeps holding the pg lock while its session sits idle", async () => {
+    const connection = new Connection({ url: postgresUrl! });
+    const name = lockName();
+
+    const held = await acquireMigrationLock(connection, name, { timeoutMs: 100 });
+    try {
+      await sleep(10_500);
+      await expect(acquireMigrationLock(connection, name, { timeoutMs: 100 })).rejects.toThrow(
+        `Could not acquire migration lock "${name}"`
+      );
+    } finally {
+      await held.release();
+    }
+    const next = await acquireMigrationLock(connection, name, { timeoutMs: 100 });
+    await next.release();
+    await connection.close();
+  }, 20_000);
 
   runIfPostgres("leaves no lock rows behind on postgres", async () => {
     const connection = new Connection({ url: postgresUrl! });
@@ -93,22 +114,9 @@ describe.serial("Native migration advisory locks", () => {
   });
 
   runIfMySql("keeps the CLI alive until a MySQL migration command completes", async () => {
-    const child = Bun.spawn([process.execPath, "run", "bin/orm.ts", "migrate"], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        DATABASE_URL: mysqlUrl!,
-        MIGRATIONS_PATH: "tests/no_such_migrations",
-      },
-      stdout: "pipe",
-      stderr: "pipe",
+    const { stdout, stderr, exitCode } = await runProcess([...ormCli, "migrate"], {
+      env: { ...process.env, DATABASE_URL: mysqlUrl!, MIGRATIONS_PATH: "tests/no_such_migrations" },
     });
-
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
 
     expect(exitCode).toBe(0);
     expect(stderr).toBe("");

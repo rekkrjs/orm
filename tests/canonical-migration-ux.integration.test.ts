@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test, readText, ormCli, ormModule, runProcess } from "./harness.js";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { pathToFileURL } from "url";
@@ -10,22 +10,10 @@ interface CliResult {
   exitCode: number;
 }
 
-const cli = join(import.meta.dir, "..", "bin", "orm.ts");
-const ormEntry = pathToFileURL(join(import.meta.dir, "..", "src", "index.ts")).href;
+const ormEntry = pathToFileURL(ormModule("src/index.ts")).href;
 
 async function runCli(project: string, args: string[], env: Record<string, string> = {}): Promise<CliResult> {
-  const child = Bun.spawn(["bun", cli, ...args], {
-    cwd: project,
-    env: { ...process.env, NODE_ENV: "test", ...env },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  return { stdout, stderr, exitCode };
+  return await runProcess([...ormCli, ...args], { cwd: project, env: { ...process.env, NODE_ENV: "test", ...env } });
 }
 
 describe.serial("production migration protection and locking", () => {
@@ -202,8 +190,8 @@ export default {
 
     const createFile = files.find((file) => file.endsWith("_create_accounts_table.ts"))!;
     const alterFile = files.find((file) => file.endsWith("_add_status_to_accounts_table.ts"))!;
-    expect(await Bun.file(join(migrations, createFile)).text()).toContain('Schema.create("accounts"');
-    const alterSource = await Bun.file(join(migrations, alterFile)).text();
+    expect(await readText(join(migrations, createFile))).toContain('Schema.create("accounts"');
+    const alterSource = await readText(join(migrations, alterFile));
     expect(alterSource.match(/Schema\.table\("accounts"/g)).toHaveLength(2);
 
     const help = await runCli(project, ["--help"]);

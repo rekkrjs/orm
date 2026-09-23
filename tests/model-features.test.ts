@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll } from "bun:test";
+import { expect, test, describe, beforeAll } from "./harness.js";
 import { Model, Schema, ModelNotFoundError } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
@@ -90,7 +90,7 @@ describe("Find-or-Fail", () => {
   });
 
   test("findOrFail throws when not found", async () => {
-    expect(Post.findOrFail(9999)).rejects.toBeInstanceOf(ModelNotFoundError);
+    await expect(Post.findOrFail(9999)).rejects.toBeInstanceOf(ModelNotFoundError);
   });
 
   test("firstOrFail returns model when found", async () => {
@@ -101,7 +101,7 @@ describe("Find-or-Fail", () => {
 
   test("firstOrFail throws when not found", async () => {
     await Post.query().delete();
-    expect(Post.firstOrFail()).rejects.toBeInstanceOf(ModelNotFoundError);
+    await expect(Post.firstOrFail()).rejects.toBeInstanceOf(ModelNotFoundError);
   });
 });
 

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { formatIso } from "../utils.js";
 import { TenantContext } from "../connection/TenantContext.js";
 import { Connection } from "../connection/Connection.js";
-import { UniqueConstraintViolationError } from "../connection/UniqueConstraintViolationError.js";
+import { UniqueConstraintViolationError, isUniqueConstraintViolation } from "../connection/UniqueConstraintViolationError.js";
 import { Builder } from "../query/Builder.js";
 import { Blueprint } from "../schema/Blueprint.js";
 import { Schema } from "../schema/Schema.js";
@@ -44,31 +44,8 @@ function timeoutError(name: string, timeoutMs: number, cause?: unknown): Error {
  * those for the whole timeout and then blaming lock contention sends whoever is
  * debugging to the wrong place.
  */
-const UNIQUE_VIOLATION_CODES = new Set([
-  "SQLITE_CONSTRAINT_PRIMARYKEY",
-  "SQLITE_CONSTRAINT_UNIQUE",
-  "23505", // PostgreSQL unique_violation
-  "ER_DUP_ENTRY", // MySQL
-  "1062", // MySQL errno
-]);
-
-function isUniqueViolation(error: unknown): boolean {
-  if (error instanceof UniqueConstraintViolationError) return true;
-  const candidate = error as { code?: unknown; errno?: unknown; message?: unknown } | null | undefined;
-
-  const code = candidate?.code;
-  if (code !== undefined && code !== null) return UNIQUE_VIOLATION_CODES.has(String(code));
-
-  const errno = candidate?.errno;
-  if (typeof errno === "number") {
-    // SQLITE_CONSTRAINT_UNIQUE / SQLITE_CONSTRAINT_PRIMARYKEY / ER_DUP_ENTRY
-    return errno === 2067 || errno === 1555 || errno === 1062;
-  }
-
-  // Last resort for drivers that report neither: match the wording, not the driver.
-  return /unique constraint failed|duplicate key value|duplicate entry/i.test(
-    String(candidate?.message ?? "")
-  );
+function isUniqueViolation(connection: Connection, error: unknown): boolean {
+  return error instanceof UniqueConstraintViolationError || isUniqueConstraintViolation(connection.getDriverName(), error);
 }
 
 /**
@@ -241,7 +218,7 @@ async function acquireTableLock(
         await new Builder(connection, table).where("name", name).where("owner", owner).delete();
       });
     } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
+      if (!isUniqueViolation(connection, error)) throw error;
 
       if ((await takeOverIfOrphaned(connection, table, name, maxAgeMs)) && takeovers++ < MAX_CONSECUTIVE_TAKEOVERS) {
         continue;

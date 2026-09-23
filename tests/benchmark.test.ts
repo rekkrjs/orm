@@ -1,4 +1,4 @@
-import { test, describe, beforeAll, afterAll } from "bun:test";
+import { test, describe, beforeAll, afterAll } from "./harness.js";
 import { Model, Schema, Connection } from "../src/index.js";
 
 function setupDb() {

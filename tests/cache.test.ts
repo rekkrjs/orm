@@ -1,4 +1,4 @@
-import { expect, test, describe } from "bun:test";
+import { expect, test, describe } from "./harness.js";
 import { Builder, Cache, MemoryCacheStore, Model, Observer, ObserverRegistry, RedisCacheStore, Schema, configureOrm, reconfigureOrm } from "../src/index.js";
 import type { CacheRememberOptions, CacheStore } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";

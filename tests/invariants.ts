@@ -1,4 +1,4 @@
-import { afterEach, expect } from "bun:test";
+import { afterEach, expect } from "./harness.js";
 
 const prototype = Object.getOwnPropertyDescriptors(Object.prototype);
 

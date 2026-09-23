@@ -1,8 +1,7 @@
 import { existsSync } from "fs";
 import { readdir } from "fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "path";
-import { pathToFileURL } from "url";
-import { snakeCase } from "../utils.js";
+import { importFile, snakeCase } from "../utils.js";
 
 function isUnderExcludedPath(fullPath: string, excludeSet: Set<string>): boolean {
   for (const excluded of excludeSet) {
@@ -73,7 +72,7 @@ export async function discoverModelDeclarations(root: string, outDir: string, ex
   const files = await walkFiles(resolvedRoot, exclude);
   for (const file of files.sort()) {
     try {
-      const mod = await import(/* @vite-ignore */ pathToFileURL(file).href);
+      const mod = await importFile(file);
       const relativePath = relative(resolve(process.cwd(), outDir), file).replace(/\.[^/.]+$/, "");
       const relativeToRoot = relative(resolvedRoot, file).replace(/\.[^/.]+$/, "");
 
@@ -115,7 +114,7 @@ export async function discoverModelTables(roots: string[], exclude?: string[]): 
     const files = await walkFiles(resolvedRoot, exclude);
     for (const file of files.sort()) {
       try {
-        const mod = await import(/* @vite-ignore */ pathToFileURL(file).href);
+        const mod = await importFile(file);
         for (const [, exported] of Object.entries(mod)) {
           if (isModelSubclass(exported)) {
             const table = (exported as any).table || snakeCase((exported as any).name) + "s";

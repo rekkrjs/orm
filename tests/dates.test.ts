@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import { Builder, Connection, Model, type CastsAttributes } from "../src/index.js";
 import { formatDateForDriver } from "../src/utils.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";

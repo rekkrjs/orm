@@ -1,11 +1,12 @@
-import { expect, test } from "bun:test";
-import { SQL } from "bun";
+import { expect, test, isBun } from "./harness.js";
 import { createHash } from "node:crypto";
 import { ConnectionManager } from "../src/index.js";
 import { startHttpBenchmark, workloads, modes, endpoint, expectedBody } from "../benchmarks/http/server.js";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 
-test("HTTP benchmark has deterministic routes and cleans only its own tables", async () => {
+// Benchmarks Bun.serve; there is no Node.js server to hold to it.
+test.skipIf(!isBun)("HTTP benchmark has deterministic routes and cleans only its own tables", async () => {
+  const { SQL } = await import("bun");
   const url = process.env.MYSQL_TEST_URL;
   if (!url) throw new Error("MYSQL_TEST_URL is required");
   const sql = new SQL({ url, max: 1 });

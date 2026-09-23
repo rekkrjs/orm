@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "./harness.js";
 import { Connection } from "../src/connection/Connection.js";
 import { ConnectionManager } from "../src/connection/ConnectionManager.js";
 import { DatabaseQueueDriver } from "../src/queue/DatabaseQueueDriver.js";
@@ -359,7 +359,10 @@ describe("Worker", () => {
     const worker = new Worker(driver, {
       concurrency: 2,
       pollIntervalMs: 5,
-      retryAfterSeconds: 0,
+      // Not 0: that makes a reservation stale the instant it is taken, so the
+      // other worker may legitimately rerun a job still in flight — or not,
+      // depending on scheduling, which differs between runtimes.
+      retryAfterSeconds: 60,
     });
     const runPromise = worker.run();
     await new Promise((r) => setTimeout(r, 250));

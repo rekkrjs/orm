@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "bun:test";
+import { describe, it, expect, beforeAll } from "./harness.js";
 import { Model, Schema, Collection } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
@@ -60,7 +60,7 @@ describe("model.json(...keys) — top-level pick", () => {
     const user = await JsonUser.first() as JsonUser;
     const j = user.json("id", "name");
     expect(Object.keys(j).sort()).toEqual(["id", "name"]);
-    expect(j.id).toBeNumber();
+    expect(typeof j.id).toBe("number");
     expect(j.name).toBe("Alice");
   });
 
@@ -76,15 +76,15 @@ describe("model.json(...paths) — nested relation pick (hasOne)", () => {
     const user = (await JsonUser.with("social").first())!;
     const j = user.json("id", "name", "social.provider_id");
     expect(Object.keys(j).sort()).toEqual(["id", "name", "social"]);
-    expect((j as any).social.provider_id).toBeString();
+    expect(typeof (j as any).social.provider_id).toBe("string");
     expect((j as any).social.provider).toBeUndefined();
   });
 
   it("picks multiple fields from hasOne relation", async () => {
     const user = (await JsonUser.with("social").first())!;
     const j = user.json("id", "social.provider", "social.provider_id");
-    expect((j as any).social.provider).toBeString();
-    expect((j as any).social.provider_id).toBeString();
+    expect(typeof (j as any).social.provider).toBe("string");
+    expect(typeof (j as any).social.provider_id).toBe("string");
     expect((j as any).social.id).toBeUndefined();
   });
 
@@ -110,8 +110,8 @@ describe("model.json(...paths) — nested relation pick (hasMany)", () => {
     const user = (await JsonUser.with("socials").first())!;
     const j = user.json("socials.provider", "socials.provider_id");
     for (const s of (j as any).socials) {
-      expect(s.provider).toBeString();
-      expect(s.provider_id).toBeString();
+      expect(typeof s.provider).toBe("string");
+      expect(typeof s.provider_id).toBe("string");
       expect(s.id).toBeUndefined();
     }
   });
@@ -158,7 +158,7 @@ describe("collection.json(...paths) — nested pick", () => {
     expect(j).toHaveLength(2);
     for (const row of j) {
       if ((row as any).social !== null) {
-        expect((row as any).social.provider).toBeString();
+        expect(typeof (row as any).social.provider).toBe("string");
         expect((row as any).social.provider_id).toBeUndefined();
       }
     }

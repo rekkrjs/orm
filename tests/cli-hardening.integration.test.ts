@@ -1,32 +1,19 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test, writeText, ormCli, ormModule, runProcess } from "./harness.js";
 import { mkdir, mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { pathToFileURL } from "url";
 
 interface CliResult { stdout: string; stderr: string; exitCode: number }
 
-const cli = join(process.cwd(), "bin", "orm.ts");
 let project: string;
 
 async function runCli(args: string[], options: { input?: string; timeoutMs?: number } = {}): Promise<CliResult> {
-  const proc = Bun.spawn(["bun", cli, ...args], {
+  return await runProcess([...ormCli, ...args], {
     cwd: project,
     env: { ...process.env, ORM_REPL_TMPDIR: project },
-    stdin: options.input === undefined ? "ignore" : "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
+    input: options.input,
+    timeoutMs: options.timeoutMs ?? 15_000,
   });
-  if (options.input !== undefined) {
-    proc.stdin!.write(options.input);
-    proc.stdin!.end();
-  }
-  const stdout = new Response(proc.stdout).text();
-  const stderr = new Response(proc.stderr).text();
-  const exitCode = await Promise.race([
-    proc.exited,
-    Bun.sleep(options.timeoutMs ?? 15_000).then(async () => { proc.kill(); return await proc.exited; }),
-  ]);
-  return { stdout: await stdout, stderr: await stderr, exitCode };
 }
 
 describe.serial("orm CLI hardening", () => {
@@ -35,15 +22,15 @@ describe.serial("orm CLI hardening", () => {
     const jobs = join(project, "jobs");
     await mkdir(jobs, { recursive: true });
 
-    await Bun.write(join(project, "orm.config.ts"), `
+    await writeText(join(project, "orm.config.ts"), `
 export default {
   connection: { url: ${JSON.stringify(`sqlite://${join(project, "app.sqlite")}`)} },
   queue: { driver: "db", pollIntervalMs: 10, jobsPath: ${JSON.stringify(jobs)} },
 };
 `);
 
-    const ormUrl = pathToFileURL(join(process.cwd(), "src", "queue", "index.ts")).href;
-    await Bun.write(join(jobs, "PingJob.ts"), `
+    const ormUrl = pathToFileURL(ormModule("src/queue/index.ts")).href;
+    await writeText(join(jobs, "PingJob.ts"), `
 import { DispatchableJob } from ${JSON.stringify(ormUrl)};
 export class PingJob extends DispatchableJob { async handle() {} }
 `);
@@ -88,7 +75,7 @@ export class PingJob extends DispatchableJob { async handle() {} }
   test("refuses to start when jobsPath is configured but registers nothing", async () => {
     const empty = join(project, "empty-jobs");
     await mkdir(empty, { recursive: true });
-    await Bun.write(join(project, "orm.config.ts"), `
+    await writeText(join(project, "orm.config.ts"), `
 export default {
   connection: { url: ${JSON.stringify(`sqlite://${join(project, "app.sqlite")}`)} },
   queue: { driver: "db", pollIntervalMs: 10, jobsPath: ${JSON.stringify(empty)} },

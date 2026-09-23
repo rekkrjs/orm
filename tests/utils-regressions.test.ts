@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "./harness.js";
 import { pluralize, snakeCase } from "../src/utils.js";
 
 describe("snakeCase", () => {

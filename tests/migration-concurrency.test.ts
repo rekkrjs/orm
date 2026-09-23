@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "./harness.js";
 import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { Connection, Migrator, Model, Schema } from "../src/index.js";

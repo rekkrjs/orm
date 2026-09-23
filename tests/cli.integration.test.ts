@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, test, isBun, writeText, ormCli, ormModule, runProcess } from "./harness.js";
 import { mkdir, mkdtemp, readdir, rm } from "fs/promises";
 import { join } from "path";
 import { pathToFileURL } from "url";
@@ -11,7 +12,6 @@ interface CliResult {
   timedOut: boolean;
 }
 
-const cli = join(process.cwd(), "bin", "orm.ts");
 let project: string;
 let databasePath: string;
 
@@ -19,34 +19,12 @@ async function runCli(
   args: string[],
   options: { input?: string; timeoutMs?: number; env?: Record<string, string> } = {}
 ): Promise<CliResult> {
-  const proc = Bun.spawn(["bun", cli, ...args], {
+  return await runProcess([...ormCli, ...args], {
     cwd: project,
-    env: {
-      ...process.env,
-      ORM_REPL_TMPDIR: project,
-      ...options.env,
-    },
-    stdin: options.input === undefined ? "ignore" : "pipe",
-    stdout: "pipe",
-    stderr: "pipe",
+    env: { ...process.env, ORM_REPL_TMPDIR: project, ...options.env },
+    input: options.input,
+    timeoutMs: options.timeoutMs ?? 10_000,
   });
-  if (options.input !== undefined) {
-    proc.stdin!.write(options.input);
-    proc.stdin!.end();
-  }
-
-  const stdout = new Response(proc.stdout).text();
-  const stderr = new Response(proc.stderr).text();
-  let timedOut = false;
-  const exitCode = await Promise.race([
-    proc.exited,
-    Bun.sleep(options.timeoutMs ?? 10_000).then(async () => {
-      timedOut = true;
-      proc.kill();
-      return await proc.exited;
-    }),
-  ]);
-  return { stdout: await stdout, stderr: await stderr, exitCode, timedOut };
 }
 
 describe.serial("orm CLI integration", () => {
@@ -62,7 +40,7 @@ describe.serial("orm CLI integration", () => {
       mkdir(commands, { recursive: true }),
     ]);
 
-    await Bun.write(join(project, "orm.config.ts"), `
+    await writeText(join(project, "orm.config.ts"), `
 export default {
   connection: { url: ${JSON.stringify(`sqlite://${databasePath}`)} },
   migrationsPath: ${JSON.stringify(migrations)},
@@ -72,9 +50,9 @@ export default {
 };
 `);
 
-    const ormUrl = pathToFileURL(join(process.cwd(), "src", "index.ts")).href;
-    const commandsUrl = pathToFileURL(join(process.cwd(), "src", "commands", "index.ts")).href;
-    await Bun.write(join(migrations, "20260819000000_create_cli_items.ts"), `
+    const ormUrl = pathToFileURL(ormModule("src/index.ts")).href;
+    const commandsUrl = pathToFileURL(ormModule("src/commands/index.ts")).href;
+    await writeText(join(migrations, "20260819000000_create_cli_items.ts"), `
 import { Migration, Schema } from ${JSON.stringify(ormUrl)};
 export default class CreateCliItems extends Migration {
   async up() {
@@ -86,13 +64,13 @@ export default class CreateCliItems extends Migration {
   async down() { await Schema.dropIfExists("cli_items"); }
 }
 `);
-    await Bun.write(join(seeders, "CliItemSeeder.ts"), `
+    await writeText(join(seeders, "CliItemSeeder.ts"), `
 import { Seeder } from ${JSON.stringify(ormUrl)};
 export default class CliItemSeeder extends Seeder {
   async run() { await this.connection.run("INSERT INTO cli_items (name) VALUES (?)", ["seeded"]); }
 }
 `);
-    await Bun.write(join(commands, "SmokeCommand.ts"), `
+    await writeText(join(commands, "SmokeCommand.ts"), `
 import { Command } from ${JSON.stringify(commandsUrl)};
 export default class SmokeCommand extends Command.define("smoke:hello {name} {--loud}") {
   async handle() {
@@ -171,22 +149,11 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
   });
 
   test("starts and stops the database queue worker", async () => {
-    const proc = Bun.spawn(["bun", cli, "queue", "--queue=smoke", "--workers=1"], {
-      cwd: project,
-      env: process.env,
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const stdout = new Response(proc.stdout).text();
-    const stderr = new Response(proc.stderr).text();
-    await Bun.sleep(500);
-    proc.kill("SIGTERM");
-    const exitCode = await proc.exited;
-    const output = await stdout;
+    // The worker runs until it is asked to stop.
+    const { exitCode, stdout: output, stderr } = await runProcess([...ormCli, "queue", "--queue=smoke", "--workers=1"], { cwd: project, timeoutMs: 500 });
 
     expect(exitCode).toBe(0);
-    expect(await stderr).toBe("");
+    expect(stderr).toBe("");
     expect(output).toContain("[Queue] Worker started. queue=smoke concurrency=1");
     expect(output).toContain("[Queue] Worker stopped.");
   }, 5_000);
@@ -204,7 +171,8 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
     expect(repl.stdout).toContain("REPL_SMOKE function object");
   }, 20_000);
 
-  test("creates ORM_REPL_TMPDIR and keeps the transpiler cache across sessions", async () => {
+  // The Bun REPL runs `bun repl` over a generated bootstrap; on Node.js the REPL is in-process and has neither.
+  test.skipIf(!isBun)("creates ORM_REPL_TMPDIR and keeps the transpiler cache across sessions", async () => {
     const missingRoot = join(project, "missing-repl-root", "nested");
     const runRepl = () =>
       runCli(["repl"], {
@@ -232,4 +200,47 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
     const leftovers = (await readdir(missingRoot)).filter((entry) => entry !== "orm-repl-cache");
     expect(leftovers).toEqual([]);
   }, 40_000);
+
+  test("reads the project's .env files the way Bun does, and lets the environment win", async () => {
+    const dir = await mkdtemp(join(process.cwd(), "tests", ".tmp-cli-dotenv-"));
+    try {
+      await writeText(join(dir, ".env"), `DB_DIR=${dir}\nDB_NAME=from-dotenv\nDATABASE_URL=sqlite://\${DB_DIR}/\${DB_NAME}.sqlite\nMIGRATIONS_PATH=./migrations\n`);
+      await writeText(join(dir, ".env.local"), "DB_NAME=from-local\n");
+      // No config file: the database comes from the environment alone. The
+      // runner's own settings are left out so the project's files decide.
+      const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+        !["DATABASE_URL", "DB_CONNECTION", "MIGRATIONS_PATH", "NODE_ENV", "DB_NAME", "DB_DIR"].includes(key)));
+
+      const fromFiles = await runProcess([...ormCli, "migrate", "--json"], { cwd: dir, env: inherited });
+      expect(fromFiles.exitCode).toBe(0);
+      expect(existsSync(join(dir, "from-local.sqlite"))).toBe(true);
+      expect(existsSync(join(dir, "from-dotenv.sqlite"))).toBe(false);
+
+      const fromEnv = await runProcess([...ormCli, "migrate", "--json"], { cwd: dir, env: { ...inherited, DB_NAME: "from-env" } });
+      expect(fromEnv.exitCode).toBe(0);
+      expect(existsSync(join(dir, "from-env.sqlite"))).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  // Bun transpiles TypeScript; Node.js only strips types, and says so when it cannot.
+  test.skipIf(isBun)("names type stripping when a migration Node.js cannot strip will not load", async () => {
+    const dir = await mkdtemp(join(process.cwd(), "tests", ".tmp-cli-strip-"));
+    try {
+      await writeText(join(dir, "migrations", "20260101000000_uses_an_enum.ts"), `
+enum Status { Active = "active" }
+export default class { async up() { return Status.Active; } async down() {} }
+`);
+      const result = await runProcess([...ormCli, "migrate"], {
+        cwd: dir,
+        env: { ...process.env, DATABASE_URL: `sqlite://${join(dir, "app.sqlite")}`, MIGRATIONS_PATH: "./migrations" },
+      });
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("20260101000000_uses_an_enum.ts could not be loaded");
+      expect(result.stderr).toContain("stripping the types");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 20_000);
 });

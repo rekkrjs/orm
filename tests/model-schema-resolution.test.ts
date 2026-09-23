@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import { Connection, Model } from "../src/index.js";
 
 describe("model schema resolution", () => {

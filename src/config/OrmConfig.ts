@@ -1,4 +1,3 @@
-import { redis } from "bun";
 import { Connection } from "../connection/Connection.js";
 import { ConnectionManager } from "../connection/ConnectionManager.js";
 import type { TenantResolver } from "../connection/ConnectionManager.js";
@@ -13,7 +12,7 @@ import type { ModelDeclaration } from "../typegen/TypeGenerator.js";
 import type { ConnectionConfig } from "../types/index.js";
 import { Queue } from "../queue/Queue.js";
 import { DatabaseQueueDriver } from "../queue/DatabaseQueueDriver.js";
-import { RedisQueueDriver, resolveQueueRedisClient } from "../queue/RedisQueueDriver.js";
+import { RedisQueueDriver, resolveRedisClient } from "../queue/RedisQueueDriver.js";
 import type { QueueDriver } from "../queue/QueueDriver.js";
 import { Search, resolveSearchEngine } from "../search/SearchManager.js";
 import type { SearchConfig } from "../search/SearchManager.js";
@@ -80,7 +79,7 @@ export interface OrmConfig {
     table?: string;
     failedTable?: string;
     connection?: ConnectionConfig;
-    /** Redis server for the `redis` driver. Omit to use Bun's default client (`REDIS_URL`). */
+    /** Redis server for the `redis` driver. Omit to use the default client (`REDIS_URL`). */
     redis?: { url?: string };
   };
   commands?: {
@@ -123,8 +122,8 @@ function prepare(config: OrmConfig) {
     let queue: QueueDriver | undefined;
     if (config.queue) {
       if (config.queue.driver === "redis") {
-        const client = resolveQueueRedisClient(config.queue.redis?.url);
-        if (config.queue.redis?.url) cleanup.push(() => (client as any).close());
+        const client = resolveRedisClient(config.queue.redis?.url);
+        if (config.queue.redis?.url) cleanup.push(() => client.close());
         queue = new RedisQueueDriver(client, { prefix: config.cache?.prefix ? `${config.cache.prefix}queue:` : undefined });
       } else if (!config.queue.driver || config.queue.driver === "db") {
         const db = config.queue.connection ? new Connection(config.queue.connection) : connection;
@@ -233,7 +232,7 @@ function install(config: OrmConfig, prepared: ReturnType<typeof prepare>): Confi
 
   if (config.cache) {
     Cache.configure({
-      store: config.cache.store ?? new RedisCacheStore(redis),
+      store: config.cache.store ?? new RedisCacheStore(resolveRedisClient()),
       prefix: config.cache.prefix,
       defaultTtl: config.cache.defaultTtl,
     });

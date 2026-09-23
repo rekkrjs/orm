@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "./harness.js";
 import { configureOrm, Connection, ConnectionManager, Model, Schema, TenantContext } from "../src/index.js";
 
 class TenantUser extends Model {

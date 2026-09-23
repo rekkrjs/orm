@@ -1,4 +1,5 @@
-import { expect, test, describe, beforeAll, afterAll } from "bun:test";
+import { existsSync } from "node:fs";
+import { expect, test, describe, beforeAll, afterAll } from "./harness.js";
 import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { ConnectionManager, configureOrm, reconfigureOrm, Schema } from "../src/index.js";
@@ -135,7 +136,7 @@ export default class WidgetSeeder extends Seeder {
       connection: { url: "sqlite://:memory:" },
       migrationsPath: MIGRATIONS_DIR,
     });
-    expect(orm.seed()).rejects.toThrow(/seedersPath/);
+    await expect(orm.seed()).rejects.toThrow(/seedersPath/);
   });
 
   test("rollback() reverses last batch", async () => {
@@ -187,7 +188,7 @@ export default class WidgetSeeder extends Seeder {
       connection: { url: "sqlite://:memory:" },
       migrations: { landlord: MIGRATIONS_DIR },
     });
-    expect(orm.migrate("tenant")).rejects.toThrow(/tenant/);
+    await expect(orm.migrate("tenant")).rejects.toThrow(/tenant/);
   });
 
   test("overrides pass through to Migrator", async () => {
@@ -228,8 +229,7 @@ export default class WidgetSeeder extends Seeder {
     try {
       await orm.migrate();
       expect(await Schema.hasTable("bcf_widgets")).toBe(true);
-      const file = Bun.file(dbPath);
-      expect(await file.exists()).toBe(true);
+      expect(existsSync(dbPath)).toBe(true);
     } finally {
       await orm.connection.close();
       await cleanupSqliteFile(dbPath);

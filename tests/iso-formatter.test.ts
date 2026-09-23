@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, evalCommand, ormModule, runProcess } from "./harness.js";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { formatDateForDriver, formatIso } from "../src/utils.js";
@@ -142,7 +142,7 @@ describe("formatIso", () => {
   test("is independent of the local time zone", async () => {
     // process.env.TZ is process-wide and the suite runs files in parallel, so
     // the sweep goes to a child process instead of mutating this one.
-    const utils = new URL("../src/utils.ts", import.meta.url).pathname;
+    const utils = ormModule("src/utils.ts");
     const script = `
       const { formatIso } = await import(${JSON.stringify(utils)});
       const zones = ["UTC", "America/New_York", "Asia/Kathmandu", "Pacific/Chatham", "Australia/Lord_Howe", "Pacific/Kiritimati"];
@@ -162,9 +162,8 @@ describe("formatIso", () => {
       }
       console.log(JSON.stringify(report));
     `;
-    const child = Bun.spawn(["bun", "-e", script], { stdout: "pipe", stderr: "pipe" });
-    const output = await new Response(child.stdout).text();
-    expect(await child.exited).toBe(0);
+    const { stdout: output, exitCode } = await runProcess(evalCommand(script));
+    expect(exitCode).toBe(0);
 
     const report = JSON.parse(output.trim().split("\n").at(-1)!) as { zone: string; offset: number; compared: number; bad: number }[];
     expect(report).toHaveLength(6);

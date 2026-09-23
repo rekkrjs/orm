@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import { MeilisearchEngine } from "../src/search/index.js";
 
 type FetchCall = { url: string; init?: RequestInit };

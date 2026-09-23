@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import { Connection } from "../src/connection/Connection.js";
 import { Model } from "../src/model/Model.js";
 

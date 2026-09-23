@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 
 const suites = ["tests/benchmark-pipeline.test.ts", "tests/benchmark-hydration-plan.test.ts"];
 const repetitions = 3;
-const root = resolve(import.meta.dir, "..");
+const root = resolve(import.meta.dirname, "..");
 
 export function parseMetrics(output: string): Record<string, number> {
   const metrics: Record<string, number> = {};

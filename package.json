@@ -1,11 +1,13 @@
 {
   "name": "@rekkr/orm",
   "version": "4.1.0",
-  "description": "An Eloquent-inspired ORM for Bun's native SQL client supporting SQLite, MySQL, and PostgreSQL.",
+  "description": "An Eloquent-inspired ORM for Bun and Node.js, supporting SQLite, MySQL, and PostgreSQL.",
   "license": "MIT",
   "packageManager": "bun@1.4.1",
   "keywords": [
     "bun",
+    "node",
+    "nodejs",
     "orm",
     "eloquent",
     "sqlite",
@@ -23,96 +25,133 @@
   "homepage": "https://github.com/rekkrjs/orm#readme",
   "main": "dist/src/index.js",
   "module": "dist/src/index.js",
-  "types": "./src/index.ts",
+  "types": "./dist/src/index.d.ts",
   "exports": {
     ".": {
+      "types": [
+        "./dist/src/index.d.ts",
+        "./src/index.ts"
+      ],
       "bun": "./src/index.ts",
-      "types": "./src/index.ts",
       "import": "./dist/src/index.js"
     },
     "./validation": {
+      "types": [
+        "./dist/src/validation/index.d.ts",
+        "./src/validation/index.ts"
+      ],
       "bun": "./src/validation/index.ts",
-      "types": "./src/validation/index.ts",
       "import": "./dist/src/validation/index.js"
     },
     "./cache": {
+      "types": [
+        "./dist/src/cache/index.d.ts",
+        "./src/cache/index.ts"
+      ],
       "bun": "./src/cache/index.ts",
-      "types": "./src/cache/index.ts",
       "import": "./dist/src/cache/index.js"
     },
     "./events": {
+      "types": [
+        "./dist/src/events/index.d.ts",
+        "./src/events/index.ts"
+      ],
       "bun": "./src/events/index.ts",
-      "types": "./src/events/index.ts",
       "import": "./dist/src/events/index.js"
     },
     "./queue": {
+      "types": [
+        "./dist/src/queue/index.d.ts",
+        "./src/queue/index.ts"
+      ],
       "bun": "./src/queue/index.ts",
-      "types": "./src/queue/index.ts",
       "import": "./dist/src/queue/index.js"
     },
     "./commands": {
+      "types": [
+        "./dist/src/commands/index.d.ts",
+        "./src/commands/index.ts"
+      ],
       "bun": "./src/commands/index.ts",
-      "types": "./src/commands/index.ts",
       "import": "./dist/src/commands/index.js"
     },
     "./search": {
+      "types": [
+        "./dist/src/search/index.d.ts",
+        "./src/search/index.ts"
+      ],
       "bun": "./src/search/index.ts",
-      "types": "./src/search/index.ts",
       "import": "./dist/src/search/index.js"
     },
     "./sveltekit": {
+      "types": [
+        "./dist/src/sveltekit/index.d.ts",
+        "./src/sveltekit/index.ts"
+      ],
       "bun": "./src/sveltekit/index.ts",
-      "types": "./src/sveltekit/index.ts",
       "import": "./dist/src/sveltekit/index.js"
     },
     "./policies": {
+      "types": [
+        "./dist/src/policies/index.d.ts",
+        "./src/policies/index.ts"
+      ],
       "bun": "./src/policies/index.ts",
-      "types": "./src/policies/index.ts",
       "import": "./dist/src/policies/index.js"
     }
   },
   "typesVersions": {
     "*": {
       "validation": [
+        "./dist/src/validation/index.d.ts",
         "./src/validation/index.ts"
       ],
       "cache": [
+        "./dist/src/cache/index.d.ts",
         "./src/cache/index.ts"
       ],
       "events": [
+        "./dist/src/events/index.d.ts",
         "./src/events/index.ts"
       ],
       "queue": [
+        "./dist/src/queue/index.d.ts",
         "./src/queue/index.ts"
       ],
       "commands": [
+        "./dist/src/commands/index.d.ts",
         "./src/commands/index.ts"
       ],
       "search": [
+        "./dist/src/search/index.d.ts",
         "./src/search/index.ts"
       ],
       "sveltekit": [
+        "./dist/src/sveltekit/index.d.ts",
         "./src/sveltekit/index.ts"
       ],
       "policies": [
+        "./dist/src/policies/index.d.ts",
         "./src/policies/index.ts"
       ]
     }
   },
   "type": "module",
   "bin": {
-    "orm": "./bin/orm.ts"
+    "orm": "./bin/orm.mjs"
   },
   "engines": {
-    "bun": ">=1.4.1"
+    "bun": ">=1.4.1",
+    "node": ">=24.15.0"
   },
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "build": "rm -rf ./dist && tsc",
-    "prepack": "bun run build",
+    "prepare": "rm -rf ./dist && tsc",
     "test": "tsc -p tsconfig.test.json && bun test --parallel --path-ignore-patterns='**/benchmark*' && bun run scripts/public-any.ts --check",
+    "test:node": "rm -rf ./dist && tsc && vitest run",
     "bench": "bun test tests/benchmark*.test.ts",
     "bench:record": "bun run scripts/benchmark-history.ts",
     "bench:runtime": "bun run scripts/benchmark-runtime.ts",
@@ -124,10 +163,22 @@
   },
   "dependencies": {},
   "peerDependencies": {
-    "@sveltejs/kit": "^2.0.0"
+    "@sveltejs/kit": "^2.0.0",
+    "ioredis": "^5.4.0 || ^6.0.0",
+    "mysql2": "^3.11.0",
+    "pg": "^8.13.0"
   },
   "peerDependenciesMeta": {
     "@sveltejs/kit": {
+      "optional": true
+    },
+    "ioredis": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    },
+    "pg": {
       "optional": true
     }
   },
@@ -139,9 +190,14 @@
     "LICENSE"
   ],
   "devDependencies": {
-    "@types/bun": "latest",
     "@sveltejs/kit": "^2.70.3",
-    "typescript": "^7.0.2"
+    "@types/bun": "latest",
+    "@types/pg": "^8.23.1",
+    "ioredis": "^6.0.0",
+    "mysql2": "^3.24.4",
+    "pg": "^8.23.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
   },
   "overrides": {
     "cookie": "^0.7.2"

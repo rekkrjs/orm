@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach } from "bun:test";
+import { describe, expect, test, beforeEach } from "./harness.js";
 import { Schema, ConnectionManager, TenantContext, Connection } from "../src/index.js";
 import { Search, SqliteFTS5Engine } from "../src/search/index.js";
 import { setupTestDb } from "./helpers.js";

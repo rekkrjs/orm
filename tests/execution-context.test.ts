@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, test } from "./harness.js";
 import { Connection, ConnectionManager, DB, Model, TenantContext, TransactionContext } from "../src/index.js";
 import { Cache, MemoryCacheStore } from "../src/cache/index.js";
 

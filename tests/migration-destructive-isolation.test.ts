@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "./harness.js";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Migrator, Schema } from "../src/index.js";

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "./harness.js";
 import { parseSignature, parseSignatureName } from "../src/commands/SignatureParser.js";
 import {
   Command,

@@ -8,13 +8,13 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
+    "declarationMap": true,
     "outDir": "./dist",
     "rootDir": ".",
     "allowSyntheticDefaultImports": true,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
     "resolveJsonModule": true,
-    "lib": ["ESNext"]
+    "lib": ["ESNext"],
+    "types": ["bun"]
   },
   "include": ["src/**/*", "bin/**/*"],
   "exclude": ["node_modules", "dist"]

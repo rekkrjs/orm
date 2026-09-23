@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test, readText, writeText, isBun, ormCli, ormModule, runProcess } from "./harness.js";
 import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { Connection } from "../src/index.js";
@@ -21,8 +21,7 @@ const urls: Record<Driver, string | undefined> = {
   postgres: process.env.POSTGRES_TEST_URL,
 };
 
-const cli = join(import.meta.dir, "..", "bin", "orm.ts");
-const ormEntry = join(import.meta.dir, "..", "src", "index.js");
+const ormEntry = ormModule("src/index.ts");
 
 interface CliResult {
   stdout: string;
@@ -31,20 +30,9 @@ interface CliResult {
 }
 
 async function runCli(project: string, args: string[], env: Record<string, string> = {}): Promise<CliResult> {
-  const child = Bun.spawn(["bun", cli, ...args], {
-    cwd: project,
-    // The CLI must resolve its config from the project, never from the
-    // repository's own .env, or the test would migrate the wrong database.
-    env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  return { stdout, stderr, exitCode };
+  // The CLI must resolve its config from the project, never from the
+  // repository's own .env, or the test would migrate the wrong database.
+  return await runProcess([...ormCli, ...args], { cwd: project, env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env } });
 }
 
 function migrationSource(table: string): string {
@@ -80,7 +68,7 @@ export default class extends Migration {
     console.count("migration count");
     console.table([{ table: ${JSON.stringify(table)} }]);
     process.stdout.write("raw write from a migration\\n");
-    await Bun.write(Bun.stdout, "native Bun stdout from a migration\\n");
+    if (typeof Bun !== "undefined") await Bun.write(Bun.stdout, "native Bun stdout from a migration\\n");
     process.once("beforeExit", () => console.log("late output from a migration"));
     await Schema.create(${JSON.stringify(table)}, (t: Blueprint) => { t.increments("id"); });
   }
@@ -179,7 +167,7 @@ export default {
 
       const statements = payload.pretend[0].statements;
       const quote = driver === "mysql" ? "`" : '"';
-      expect(statements[0].sql).toStartWith("CREATE TABLE ");
+      expect(statements[0].sql.startsWith("CREATE TABLE ")).toBe(true);
       expect(statements[0].sql).toContain(`${quote}cli_widgets${quote}`);
       expect(statements[1].sql).toContain(driver === "postgres" ? "SELECT $1" : "SELECT ?");
       expect(statements[1].bindings).toEqual(["9007199254740993"]);
@@ -222,7 +210,7 @@ export default {
 
     it("refuses to migrate over a migration that changed, unless told to", async () => {
       const file = join(migrations, "20260101000000_create_widgets_table.ts");
-      const original = await Bun.file(file).text();
+      const original = await readText(file);
       await writeFile(file, `${original}\n// edited after it ran\n`);
 
       try {
@@ -286,7 +274,7 @@ export default {
         expect(result.stderr).toContain("creating cli_noisy");
         expect(result.stderr).toContain("migration count: 1");
         expect(result.stderr).toContain("raw write from a migration");
-        expect(result.stderr).toContain("native Bun stdout from a migration");
+        if (isBun) expect(result.stderr).toContain("native Bun stdout from a migration");
         expect(result.stderr).toContain("late output from a migration");
       } finally {
         await runCli(project, ["migrate:rollback", "--json"]);
@@ -344,7 +332,7 @@ export default {
     it("takes its configuration from --config", async () => {
       await mkdir(join(project, "config"), { recursive: true });
       const moved = join(project, "config", "database.ts");
-      await writeFile(moved, `console.log("output while loading explicit config");\n${await Bun.file(join(project, "orm.config.ts")).text()}`);
+      await writeFile(moved, `console.log("output while loading explicit config");\n${await readText(join(project, "orm.config.ts"))}`);
       await rm(join(project, "orm.config.ts"));
 
       try {
@@ -356,7 +344,7 @@ export default {
         expect(JSON.parse(withConfig.stdout).migrations).toHaveLength(3);
         expect(withConfig.stderr).toContain("output while loading explicit config");
       } finally {
-        await writeFile(join(project, "orm.config.ts"), await Bun.file(moved).text());
+        await writeFile(join(project, "orm.config.ts"), await readText(moved));
       }
     });
   });

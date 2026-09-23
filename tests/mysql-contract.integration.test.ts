@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "./harness.js";
 import { PermissiveModel } from "./helpers.js";
 import { Builder, Connection, Model, Schema } from "../src/index.js";
 import { createDriverContext, mysqlUrl, type DriverContext } from "./driver-harness.js";

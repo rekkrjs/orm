@@ -1,4 +1,4 @@
-import { test } from "bun:test";
+import { test } from "./harness.js";
 import { Blueprint } from "../src/schema/Blueprint.js";
 
 test("temporal helpers expose precision without weakening timestamp name arity", () => {

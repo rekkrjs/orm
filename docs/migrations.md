@@ -264,7 +264,7 @@ Driver behavior:
 
 - **Postgres** — connects to the `postgres` admin database, checks `pg_database`, runs `CREATE DATABASE` if missing. Schemas use `CREATE SCHEMA IF NOT EXISTS`.
 - **MySQL** — `CREATE DATABASE IF NOT EXISTS` via the `mysql` admin database. No schemas.
-- **SQLite** — the file is created by Bun on connect. Both flags are no-ops.
+- **SQLite** — the file is created on connect. Both flags are no-ops.
 
 The shortcut `createIfMissing: true` enables both. For granular control use the object form. Idempotent — existing targets are left alone.
 

@@ -1,4 +1,4 @@
-import { afterEach, expect, setSystemTime, test } from "bun:test";
+import { afterEach, expect, setSystemTime, test } from "./harness.js";
 import { Connection, ConnectionManager, configureOrm, reconfigureOrm, DB, TenantContext } from "../src/index.js";
 
 afterEach(async () => { setSystemTime(); await ConnectionManager.closeAll(); });

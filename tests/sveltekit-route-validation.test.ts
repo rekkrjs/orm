@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it } from "./harness.js";
 import { configureSvelteKit, extendLocalsUser, flash, route } from "../src/sveltekit/index.js";
 import { Validator, rule } from "../src/validation/index.js";
 import { clearPolicies, registerPolicy } from "../src/policies/index.js";

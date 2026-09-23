@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "./harness.js";
 import type { Actions, RequestEvent, RequestHandler, ServerLoad, ServerLoadEvent } from "@sveltejs/kit";
 import { Model } from "../src/model/Model.js";
 import type { PublicShape } from "./helpers.js";

@@ -3,14 +3,13 @@ import { Connection } from "../src/connection/Connection.js";
 import { ConnectionManager } from "../src/connection/ConnectionManager.js";
 import { configureOrm } from "../src/config/OrmConfig.js";
 import type { OrmConfig } from "../src/config/OrmConfig.js";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { mkdir, mkdtempDisposable, readdir, writeFile } from "fs/promises";
-import { extname, join, resolve } from "path";
-import { pathToFileURL } from "url";
-import { styleText } from "node:util";
-import { normalizePathList } from "../src/utils.js";
+import { basename, extname, join, resolve } from "path";
+import { parseEnv, styleText } from "node:util";
+import { importFile, normalizePathList } from "../src/utils.js";
 import { DatabaseQueueDriver } from "../src/queue/DatabaseQueueDriver.js";
-import { RedisQueueDriver, resolveQueueRedisClient } from "../src/queue/RedisQueueDriver.js";
+import { RedisQueueDriver, resolveRedisClient } from "../src/queue/RedisQueueDriver.js";
 import type { QueueDriver } from "../src/queue/QueueDriver.js";
 import { Worker } from "../src/queue/Worker.js";
 import { registerJob } from "../src/queue/Job.js";
@@ -40,6 +39,32 @@ function parseEnvPathSetting(value?: string): string | string[] | undefined {
     .filter((item) => item.length > 0);
   if (paths.length === 0) return undefined;
   return paths.length === 1 ? paths[0] : paths;
+}
+
+/**
+ * Bun loads the project's .env files by itself; Node.js does not, and the CLI
+ * would silently fall back to other settings. Same files and precedence as
+ * Bun (.env.local, then .env.<NODE_ENV>, then .env; no .env.local under test),
+ * same `$NAME` / `${NAME}` expansion against the merged values, and a variable
+ * already in the environment always wins.
+ */
+function loadDotEnv(): void {
+  const mode = process.env.NODE_ENV ?? "development";
+  const raw: Record<string, string> = {};
+  for (const file of [...(mode === "test" ? [] : [".env.local"]), `.env.${mode}`, ".env"]) {
+    if (!existsSync(file)) continue;
+    for (const [key, value] of Object.entries(parseEnv(readFileSync(file, "utf8")))) raw[key] ??= value!;
+  }
+  const expanding = new Set<string>();
+  const lookup = (name: string): string =>
+    process.env[name] ?? (name in raw && !expanding.has(name) ? expand(name) : "");
+  const expand = (key: string): string => {
+    expanding.add(key);
+    const value = raw[key]!.replace(/\\\$|\$\{(\w+)\}|\$(\w+)/g, (match, braced, bare) => match === "\\$" ? "$" : lookup(braced ?? bare));
+    expanding.delete(key);
+    return (process.env[key] = value);
+  };
+  for (const key of Object.keys(raw)) if (process.env[key] === undefined) expand(key);
 }
 
 function hasLocalOrmConfig(): boolean {
@@ -151,13 +176,17 @@ async function walkJobFiles(dir: string): Promise<string[]> {
   return files;
 }
 
-async function createReplBootstrap(config: OrmConfig, dir: string): Promise<string> {
-  const bootstrapPath = join(dir, "bootstrap.ts");
-  const modelRoots = normalizePathList(
+function replModelRoots(config: OrmConfig): string[] {
+  return normalizePathList(
     typeof config.modelsPath === "object" && !Array.isArray(config.modelsPath)
       ? ([config.modelsPath.landlord, config.modelsPath.tenant].filter(Boolean) as string[]).flat()
       : config.modelsPath
   );
+}
+
+async function createReplBootstrap(config: OrmConfig, dir: string): Promise<string> {
+  const bootstrapPath = join(dir, "bootstrap.ts");
+  const modelRoots = replModelRoots(config);
   const tsConfigPath = join(process.cwd(), "orm.config.ts");
   const jsConfigPath = join(process.cwd(), "orm.config.js");
   const configPath = existsSync(tsConfigPath) ? tsConfigPath : existsSync(jsConfigPath) ? jsConfigPath : null;
@@ -365,7 +394,85 @@ async function createReplBootstrap(config: OrmConfig, dir: string): Promise<stri
   return bootstrapPath;
 }
 
+/**
+ * The REPL on Node.js: node:repl runs in this process, so the ORM, the config
+ * and the models are handed to it directly instead of through a generated
+ * bootstrap file. Same globals and tenant helpers as the Bun REPL below.
+ */
+async function runNodeRepl(config: OrmConfig): Promise<number> {
+  const { default: repl } = await import("node:repl");
+  const orm = await import("../src/index.js");
+  const validation = await import("../src/validation/index.js");
+  const configured = orm.configureOrm(config);
+  const { connection } = configured;
+
+  // One long-lived interactive session: idle gaps are expected and the user
+  // pins a tenant explicitly, so the idle sweep must not close its pool.
+  orm.ConnectionManager.disableTenantSweep();
+  orm.ConnectionManager.defaultTenantTtl = undefined;
+
+  const models: Record<string, unknown> = {};
+  const register = (name: string, model: unknown) => {
+    if (name && typeof model === "function" && model.prototype instanceof orm.Model) models[name] = model;
+  };
+  const walk = async (dir: string): Promise<string[]> => (await Promise.all((await readdir(dir, { withFileTypes: true })).map((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === "types" ? [] : walk(path);
+    const isModule = /\.(ts|js|mts|mjs|cts|cjs)$/.test(entry.name) && !/\.(d|test|spec)\.ts$/.test(entry.name);
+    return entry.isFile() && isModule ? [path] : [];
+  }))).flat();
+  for (const root of replModelRoots(config).map((root) => resolve(process.cwd(), root)).filter(existsSync)) {
+    for (const file of (await walk(root)).sort()) {
+      const mod = await importFile(file);
+      for (const [name, exported] of Object.entries(mod)) if (name !== "default") register(name, exported);
+      if (typeof mod.default === "function") {
+        register(basename(file, extname(file)), mod.default);
+        register(mod.default.name, mod.default);
+      }
+    }
+  }
+
+  const currentTenant = orm.TenantContext.current.bind(orm.TenantContext);
+  let activeTenant: ReturnType<typeof orm.TenantContext.current>;
+  orm.TenantContext.current = () => currentTenant() || activeTenant;
+  const useTenant = async (tenantId: string) => {
+    // A copy: the resolution is cached, and later TenantContext.run() calls read it.
+    const context = { ...await orm.ConnectionManager.resolveTenant(tenantId) };
+    if (context.strategy === "schema" && context.schemaMode === "search_path" && context.schema) {
+      // No per-query transaction here to carry search_path; qualify instead.
+      context.connection = context.connection.withSchema(context.schema);
+      context.schemaMode = "qualify";
+    }
+    context.expiresAt = undefined;
+    activeTenant = context;
+    orm.ConnectionManager.setDefault(context.connection);
+    orm.Model.setConnection(context.connection);
+    return context;
+  };
+  const clearTenant = async () => {
+    activeTenant = undefined;
+    orm.ConnectionManager.setDefault(connection);
+    orm.Model.setConnection(connection);
+  };
+
+  console.log(`ORM REPL ready. Loaded ${Object.keys(models).length} model classes from modelsPath.`);
+  const session = repl.start({ prompt: "orm> ", useGlobal: false });
+  Object.assign(session.context, orm, validation, models, {
+    db: connection,
+    connection,
+    orm: configured,
+    config,
+    Models: models,
+    useTenant,
+    clearTenant,
+    tenant: () => activeTenant,
+  });
+  await new Promise((done) => session.once("exit", done));
+  return 0;
+}
+
 async function runRepl(config: OrmConfig, replArgs: string[]): Promise<number> {
+  if (typeof Bun === "undefined") return await runNodeRepl(config);
   const tmpRoot = resolveReplTmpRoot();
   await mkdir(tmpRoot, { recursive: true });
   await using tmpDir = await mkdtempDisposable(join(tmpRoot, "orm-repl-"));
@@ -480,7 +587,7 @@ async function loadExplicitConfig(path: string): Promise<OrmConfig> {
   if (!existsSync(resolved)) {
     throw new Error(`Config file not found: ${resolved}`);
   }
-  const mod = await import(pathToFileURL(resolved).href);
+  const mod = await importFile(resolved);
   const config = mod.default || mod;
   if (!config || typeof config !== "object") {
     throw new Error(`${resolved} does not export a configuration object.`);
@@ -493,13 +600,13 @@ async function loadConfig(allowFallback = false, explicitPath?: string): Promise
 
   const configPath = join(process.cwd(), "orm.config.ts");
   if (existsSync(configPath)) {
-    const mod = await import(configPath);
+    const mod = await importFile(configPath);
     return mod.default || mod;
   }
 
   const jsConfigPath = join(process.cwd(), "orm.config.js");
   if (existsSync(jsConfigPath)) {
-    const mod = await import(jsConfigPath);
+    const mod = await importFile(jsConfigPath);
     return mod.default || mod;
   }
 
@@ -553,6 +660,7 @@ async function loadConfig(allowFallback = false, explicitPath?: string): Promise
 }
 
 async function main() {
+  if (typeof Bun === "undefined") loadDotEnv();
   const { args: rawArgs, configPath } = (() => {
     try {
       return extractConfigOption(process.argv.slice(2));
@@ -705,7 +813,7 @@ async function main() {
       continue;
     }
     for (const file of await walkJobFiles(resolvedPath)) {
-      const mod = await import(pathToFileURL(file).href);
+      const mod = await importFile(file);
       for (const exported of Object.values(mod)) {
         if (
           typeof exported === "function" &&
@@ -760,7 +868,7 @@ async function main() {
         });
         await driver.migrate();
       } else if (config.queue?.driver === "redis") {
-        driver = new RedisQueueDriver(resolveQueueRedisClient(config.queue?.redis?.url), {
+        driver = new RedisQueueDriver(resolveRedisClient(config.queue?.redis?.url), {
           prefix: config.cache?.prefix ? `${config.cache.prefix}queue:` : undefined,
         });
       } else if (typeof config.queue?.driver === "object" && "reserve" in config.queue.driver) {
@@ -785,7 +893,7 @@ async function main() {
           continue;
         }
         for (const file of await walkJobFiles(resolvedPath)) {
-          const mod = await import(pathToFileURL(file).href);
+          const mod = await importFile(file);
           for (const exported of Object.values(mod)) {
             if (typeof exported === "function" && exported.prototype && typeof exported.prototype.handle === "function") {
               registerJob(exported as any);

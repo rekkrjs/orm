@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import { Blueprint, MySqlGrammar, PostgresGrammar, SQLiteGrammar, Schema } from "../src/index.js";
 import { setupTestDb, teardownTestDb } from "./helpers.js";
 

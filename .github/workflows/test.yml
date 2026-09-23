@@ -4,8 +4,16 @@ permissions:
   contents: read
 jobs:
   test:
+    name: test (${{ matrix.runtime }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # The same suite on each runtime, against the same three databases and
+        # Redis: Bun runs it with bun:test over bun:sql, Node.js with vitest
+        # over the node:sqlite, pg, mysql2 and ioredis adapters (tests/harness.ts).
+        runtime: [bun, node]
     services:
       postgres:
         image: postgres:16
@@ -33,11 +41,21 @@ jobs:
       TZ: UTC
     steps:
       - uses: actions/checkout@v4
+      # Bun installs and builds in both jobs; only the Node.js job runs the suite on Node.
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.1
+      - if: matrix.runtime == 'node'
+        uses: actions/setup-node@v4
+        with:
+          # The oldest release package.json accepts: the first 24.x whose node:sqlite no longer warns.
+          node-version: 24.15.0
       - run: bun install --frozen-lockfile
       - run: bun run scripts/verify-services.ts
       - run: bun run build
-      - run: bun run test
-      - run: bun audit
+      - if: matrix.runtime == 'bun'
+        run: bun run test
+      - if: matrix.runtime == 'node'
+        run: node --version && node ./node_modules/vitest/vitest.mjs run
+      - if: matrix.runtime == 'bun'
+        run: bun audit

@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeEach, afterEach } from "bun:test";
+import { expect, test, describe, beforeEach, afterEach } from "./harness.js";
 import { Connection } from "../src/index.js";
 import { acquireMigrationLock } from "../src/migration/MigrationLock.js";
 import { setupTestDb, teardownTestDb } from "./helpers.js";

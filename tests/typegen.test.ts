@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll, afterAll } from "bun:test";
+import { expect, test, describe, beforeAll, afterAll, readText, writeText } from "./harness.js";
 import { mkdir, readdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { Schema, TypeGenerator, TypeMapper, discoverModelTables } from "../src/index.js";
@@ -49,7 +49,7 @@ describe("TypeGenerator", () => {
     expect(files).toContain("users.ts");
     expect(files).toContain("index.ts");
 
-    const content = await Bun.file(join(OUT_DIR, "users.ts")).text();
+    const content = await readText(join(OUT_DIR, "users.ts"));
     expect(content).toContain("export interface UsersAttributes {");
     expect(content).toContain("id: number;");
     expect(content).toContain("name: string;");
@@ -90,7 +90,7 @@ describe("TypeGenerator", () => {
     expect(files).toContain("users.d.ts");
     expect(files).toContain("index.d.ts");
 
-    const content = await Bun.file(join(DECL_OUT_DIR, "users.d.ts")).text();
+    const content = await readText(join(DECL_OUT_DIR, "users.d.ts"));
     expect(content).toContain("export interface UsersAttributes {");
     expect(content).not.toContain("extends Model");
     expect(content).toContain('declare module "../models/User" {');
@@ -114,7 +114,7 @@ describe("TypeGenerator", () => {
       table.timestamp("decoded_datetime").nullable();
     });
     await mkdir(DATE_CAST_MODEL_DIR, { recursive: true });
-    await Bun.write(
+    await writeText(
       join(DATE_CAST_MODEL_DIR, "DateCastRecord.ts"),
       `import { Model } from "../../src/index.js";
 export default class DateCastRecord extends Model {
@@ -136,7 +136,7 @@ export default class DateCastRecord extends Model {
     });
     await generator.generate();
 
-    const content = await Bun.file(join(DATE_CAST_MODEL_DIR, "types", "typegen_cast_records.d.ts")).text();
+    const content = await readText(join(DATE_CAST_MODEL_DIR, "types", "typegen_cast_records.d.ts"));
     expect(content).toContain("created_at?: string | null;");
     expect(content).toContain("updated_at?: Date | null;");
     expect(content).toContain("deleted_at?: string | null;");
@@ -153,12 +153,12 @@ export default class DateCastRecord extends Model {
     });
     await generator.generate();
 
-    const userContent = await Bun.file(join(conventionDir, "users.d.ts")).text();
+    const userContent = await readText(join(conventionDir, "users.d.ts"));
     expect(userContent).toContain('declare module "../models/User" {');
     expect(userContent).toContain("interface User extends UsersAttributes {");
     expect(userContent).toContain("name: string;");
 
-    const postContent = await Bun.file(join(conventionDir, "blog_posts.d.ts")).text();
+    const postContent = await readText(join(conventionDir, "blog_posts.d.ts"));
     expect(postContent).toContain('declare module "../models/BlogPost" {');
     expect(postContent).toContain("interface BlogPost extends BlogPostsAttributes {");
     expect(postContent).toContain("title: string;");
@@ -184,7 +184,7 @@ export default class DateCastRecord extends Model {
     expect(filesA).toContain("team_members.d.ts");
     expect(filesB).toContain("team_members.d.ts");
 
-    const content = await Bun.file(join(MODEL_ROOT_A, "types", "team_members.d.ts")).text();
+    const content = await readText(join(MODEL_ROOT_A, "types", "team_members.d.ts"));
     expect(content).toContain('declare module "../TeamMember" {');
   });
 
@@ -203,7 +203,7 @@ export default class DateCastRecord extends Model {
     expect(files).not.toContain("blog_posts.ts");
     expect(files).not.toContain("team_members.ts");
 
-    const indexContent = await Bun.file(join(filteredDir, "index.ts")).text();
+    const indexContent = await readText(join(filteredDir, "index.ts"));
     expect(indexContent).toContain("users");
     expect(indexContent).not.toContain("blog_posts");
     expect(indexContent).not.toContain("team_members");
@@ -214,19 +214,19 @@ export default class DateCastRecord extends Model {
   test("discoverModelTables extracts table names from model files", async () => {
     await mkdir(MODEL_DISCOVERY_DIR, { recursive: true });
 
-    await Bun.write(
+    await writeText(
       join(MODEL_DISCOVERY_DIR, "User.ts"),
       `import { Model } from "../../src/index.js";\nexport class User extends Model {\n  static table = "custom_users";\n}\n`
     );
-    await Bun.write(
+    await writeText(
       join(MODEL_DISCOVERY_DIR, "Post.ts"),
       `import { Model } from "../../src/index.js";\nexport class Post extends Model {}\n`
     );
-    await Bun.write(
+    await writeText(
       join(MODEL_DISCOVERY_DIR, "Comment.ts"),
       `import { Model } from "../../src/index.js";\nexport default class Comment extends Model {\n  static table = "comments";\n}\n`
     );
-    await Bun.write(
+    await writeText(
       join(MODEL_DISCOVERY_DIR, "helper.ts"),
       `export function helper() { return 1; }\n`
     );
@@ -246,7 +246,7 @@ export default class DateCastRecord extends Model {
     });
 
     await mkdir(MODEL_LOWERCASE_DIR, { recursive: true });
-    await Bun.write(
+    await writeText(
       join(MODEL_LOWERCASE_DIR, "tenant.ts"),
       `import { Model } from "../../src/index.js";\nexport default class Tenant extends Model {\n  static table = "tenants";\n}\n`
     );
@@ -258,7 +258,7 @@ export default class DateCastRecord extends Model {
     });
     await generator.generate();
 
-    const content = await Bun.file(join(MODEL_LOWERCASE_DIR, "types", "tenants.d.ts")).text();
+    const content = await readText(join(MODEL_LOWERCASE_DIR, "types", "tenants.d.ts"));
     expect(content).toContain('declare module "../tenant" {');
     expect(content).toContain("interface Tenant extends TenantsAttributes {");
     expect(content).toContain("name: string;");
@@ -270,7 +270,7 @@ export default class DateCastRecord extends Model {
     const modelRoot = join(process.cwd(), "tests", "temp_alias_models");
     await mkdir(join(modelRoot, "landlord"), { recursive: true });
 
-    await Bun.write(
+    await writeText(
       join(modelRoot, "landlord", "tenant.ts"),
       `import { Model } from "../../../src/index.js";\nexport class Tenant extends Model {\n  static table = "tenants";\n}\n`
     );
@@ -283,7 +283,7 @@ export default class DateCastRecord extends Model {
     });
     await generator.generate();
 
-    const content = await Bun.file(join(modelRoot, "types", "tenants.d.ts")).text();
+    const content = await readText(join(modelRoot, "types", "tenants.d.ts"));
     expect(content).toContain('declare module "$models/landlord/tenant" {');
     expect(content).toContain("interface Tenant extends TenantsAttributes {");
 
@@ -294,11 +294,11 @@ export default class DateCastRecord extends Model {
   test("reads commented tsconfig aliases with Bun.JSONC", async () => {
     const modelRoot = join(TSCONFIG_JSONC_DIR, "models");
     await mkdir(modelRoot, { recursive: true });
-    await Bun.write(
+    await writeText(
       join(modelRoot, "User.ts"),
       `import { Model } from "../../../src/index.js";\nexport class User extends Model {\n  static table = "users";\n}\n`
     );
-    await Bun.write(
+    await writeText(
       join(TSCONFIG_JSONC_DIR, "tsconfig.json"),
       `{
         // TypeScript config files allow comments and trailing commas.
@@ -318,7 +318,7 @@ export default class DateCastRecord extends Model {
     });
     await generator.generate();
 
-    const content = await Bun.file(join(modelRoot, "types", "users.d.ts")).text();
+    const content = await readText(join(modelRoot, "types", "users.d.ts"));
     expect(content).toContain('declare module "$models/User" {');
   });
 
@@ -389,7 +389,7 @@ export default class DateCastRecord extends Model {
     });
     await writeFile(join(combinedDir, "index.ts"), indexLines.join("\n") + "\n", "utf-8");
 
-    const indexContent = await Bun.file(join(combinedDir, "index.ts")).text();
+    const indexContent = await readText(join(combinedDir, "index.ts"));
     expect(indexContent).toContain("users");
     expect(indexContent).toContain("team_members");
 

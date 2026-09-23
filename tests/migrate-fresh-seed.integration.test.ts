@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test, writeText, ormCli, ormModule, runProcess } from "./harness.js";
 import { existsSync } from "fs";
 import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
 import { join } from "path";
@@ -11,8 +11,7 @@ interface CliResult {
   exitCode: number;
 }
 
-const cli = join(import.meta.dir, "..", "bin", "orm.ts");
-const ormEntry = pathToFileURL(join(import.meta.dir, "..", "src", "index.ts")).href;
+const ormEntry = pathToFileURL(ormModule("src/index.ts")).href;
 
 describe.serial("migration seeding", () => {
   let project: string;
@@ -23,18 +22,7 @@ describe.serial("migration seeding", () => {
   let seedMarker: string;
 
   async function runCli(args: string[], env: Record<string, string> = {}): Promise<CliResult> {
-    const child = Bun.spawn(["bun", cli, ...args], {
-      cwd: project,
-      env: { ...process.env, NODE_ENV: "test", ...env },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    return { stdout, stderr, exitCode };
+    return await runProcess([...ormCli, ...args], { cwd: project, env: { ...process.env, NODE_ENV: "test", ...env } });
   }
 
   async function itemNames(database: string): Promise<string[]> {
@@ -91,9 +79,9 @@ export default class DatabaseSeeder extends Seeder {
   async run() {
     console.log("default seeder output");
     process.stdout.write("default seeder raw output\\n");
-    await Bun.write(Bun.stdout, "default seeder Bun output\\n");
+    if (typeof Bun !== "undefined") await Bun.write(Bun.stdout, "default seeder Bun output\\n");
     process.once("beforeExit", () => console.log("default seeder late output"));
-    await Bun.write(${JSON.stringify(seedMarker)}, "ran");
+    await (await import("node:fs/promises")).writeFile(${JSON.stringify(seedMarker)}, "ran");
     await this.connection.run("INSERT INTO fresh_seed_items (name) VALUES (?)", ["default"]);
   }
 }

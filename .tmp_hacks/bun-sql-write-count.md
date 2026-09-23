@@ -8,6 +8,7 @@
 - **Status:** active; centralized in `Connection.affectedRows(result)`
 - **Last reviewed:** 2026-09-04
 - **Affects:** MySQL diverges. SQLite and PostgreSQL agree with each other.
+  The Node.js adapters reproduce the same split on purpose (see [Node.js](#nodejs)).
 - **Verified with:** Bun 1.4.1 (`4661e494f`) and 1.4.0 (`34cbb9a40`),
   MySQL 9.7.1 (Homebrew), PostgreSQL 16 (alpine), macOS arm64
 - **Upstream:** [oven-sh/bun#40432](https://github.com/oven-sh/bun/issues/40432),
@@ -115,6 +116,16 @@ The implementation is marked `WORKAROUND(bun-sql-write-count)`.
 three real drivers. The probe was rerun on Bun 1.4.1 on 2026-09-04: the split and
 no-op divergence above remain, so the adapter is retained.
 
+## Node.js
+
+`affectedRows()` picks the property by driver name, not by runtime, so the
+Node.js adapters in `src/connection/drivers/nodeDrivers.ts` fill the property
+Bun fills for each engine: `count` for SQLite (`node:sqlite`'s `changes`) and
+PostgreSQL (`pg`'s `rowCount`), `affectedRows` for MySQL. They match the second
+divergence too: the `mysql2` pool is created without `CLIENT_FOUND_ROWS`
+(`flags: ["-FOUND_ROWS"]`), so a no-op `UPDATE` counts `0` on MySQL under both
+runtimes. `tests/v3-acceptance.test.ts` runs on both.
+
 ## Is Bun fixed yet?
 
 Run the probe. It uses the raw Bun API with no ORM involved, and requires both
@@ -155,7 +166,9 @@ Worth running after every Bun upgrade.
 3. The no-op-update column will still differ. That is expected and is **not** a
    reason to keep the split — but whatever `update()` documents about matched
    vs changed rows stays true and stays documented.
-4. Delete `scripts/bun-sql-write-count-probe.ts` and this file.
-5. **Keep** any test asserting that a write reports its affected-row count on
+4. Make the Node.js adapters fill the property the per-driver read is replaced
+   with, on every engine, or `affectedRows()` breaks on Node.js.
+5. Delete `scripts/bun-sql-write-count-probe.ts` and this file.
+6. **Keep** any test asserting that a write reports its affected-row count on
    every driver. That property is worth holding Bun to regardless of which
    property carries it.

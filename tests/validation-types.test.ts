@@ -3,7 +3,7 @@
  * focused on `object` / `record` / `unknown`. Real checks happen in `tsc`
  * via `tsconfig.test.json`. Runtime body is trivial.
  */
-import { test, expect } from "bun:test";
+import { test, expect } from "./harness.js";
 import { rule, Validator } from "../src/validation/index.js";
 
 function expectType<T>(_v: T): void {}

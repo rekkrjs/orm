@@ -1,7 +1,6 @@
 import { existsSync } from "fs";
 import { readdir, stat } from "fs/promises";
 import { basename, extname, resolve } from "path";
-import { pathToFileURL } from "url";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Connection } from "../connection/Connection.js";
 import { ConnectionManager } from "../connection/ConnectionManager.js";
@@ -9,7 +8,7 @@ import { TenantContext } from "../connection/TenantContext.js";
 import { Model } from "../model/Model.js";
 import { ObserverRegistry } from "../model/Observer.js";
 import { Schema } from "../schema/Schema.js";
-import { normalizePathList, toPosixPath } from "../utils.js";
+import { importFile, normalizePathList, toPosixPath } from "../utils.js";
 
 type SeederClass = new (connection?: Connection) => Seeder;
 type SeederEntry = Seeder | SeederClass;
@@ -187,7 +186,7 @@ export class SeederRunner {
 
   private async loadSeederClass(file: string): Promise<SeederClass> {
     const resolved = resolve(file);
-    const module = await import(/* @vite-ignore */ pathToFileURL(resolved).href);
+    const module = await importFile(resolved);
     const SeederClass = module.default || Object.values(module)[0];
     if (!SeederClass) throw new Error(`Seeder ${file} does not export a class.`);
     return SeederClass as SeederClass;

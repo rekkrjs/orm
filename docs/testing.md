@@ -229,9 +229,17 @@ on machines that only have SQLite available.
 
 ## Required integration services
 
-CI uses Bun 1.4.1 with SQLite, PostgreSQL 16, MySQL 8.4 and Redis 7. Run
-`bun scripts/verify-services.ts` before `bun run build && bun run test`, with
-`POSTGRES_TEST_URL`, `MYSQL_TEST_URL` and `REDIS_TEST_URL` set to dedicated test
-services. Missing/unreachable required services fail preparation. `bun audit`
-checks the development dependency graph too. Benchmarks run separately, without
+CI runs the suite twice, against SQLite, PostgreSQL 16, MySQL 8.4 and Redis 7:
+on Bun 1.4.1 with `bun:test`, and on Node.js 24.15 with vitest, through the
+Node.js drivers. Run `bun scripts/verify-services.ts` before
+`bun run build && bun run test`, with `POSTGRES_TEST_URL`, `MYSQL_TEST_URL` and
+`REDIS_TEST_URL` set to dedicated test services. Missing/unreachable required
+services fail preparation. `bun audit` checks the development dependency graph
+too.
+
+`bun run test:node` builds `dist/` and runs the same files under Node.js. The
+tests import their API from `tests/harness.ts`, which hands them `bun:test` on
+Bun and vitest on Node.js; the few that exercise something only one runtime has
+say so with `test.skipIf`. vitest does not load `.env`, so export the test URLs
+first. Benchmarks run separately, without
 the concurrent test suite competing for resources; see [history](../benchmarks/README.md).

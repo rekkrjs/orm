@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import { test } from "bun:test";
+import { test } from "./harness.js";
 import { Connection, Model } from "../src/index.js";
 import { createDriverContext, postgresUrl } from "./driver-harness.js";
 

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "./harness.js";
 import { parseMetrics, summarize } from "../scripts/benchmark-history.js";
 
 test("benchmark history parses measurements and compares matching runs", () => {

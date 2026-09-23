@@ -1,5 +1,5 @@
-import { SQL } from "bun";
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test, isBun } from "./harness.js";
+import type { SqlDriver } from "../src/connection/drivers/SqlDriver.js";
 import {
   Builder,
   Connection,
@@ -7,6 +7,28 @@ import {
   Schema,
   UniqueConstraintViolationError,
 } from "../src/index.js";
+
+
+// The driver's own SQLite error on either runtime: bun:sql raises SQL.SQLiteError
+// with the code's name, node:sqlite a plain Error with the extended result code.
+const BunSQL = isBun ? (await import("bun")).SQL : undefined;
+const SQLiteError: new (...args: any[]) => Error = BunSQL?.SQLiteError ?? Error;
+const SQLITE_CODE_NAMES: Record<number, string> = {
+  275: "SQLITE_CONSTRAINT_CHECK",
+  787: "SQLITE_CONSTRAINT_FOREIGNKEY",
+  1299: "SQLITE_CONSTRAINT_NOTNULL",
+  1555: "SQLITE_CONSTRAINT_PRIMARYKEY",
+  2067: "SQLITE_CONSTRAINT_UNIQUE",
+};
+function sqliteCode(error: unknown): string | undefined {
+  const { code, errcode } = error as { code?: string; errcode?: number };
+  return BunSQL ? code : SQLITE_CODE_NAMES[errcode!];
+}
+function sqliteUniqueError(message: string): Error {
+  return BunSQL
+    ? new BunSQL.SQLiteError(message, { code: "SQLITE_CONSTRAINT_UNIQUE", errno: 2067 })
+    : Object.assign(new Error(message), { code: "ERR_SQLITE_ERROR", errcode: 2067 });
+}
 
 interface UniqueRecordAttributes {
   id: number;
@@ -33,9 +55,9 @@ function expectWrappedSqliteUnique(error: unknown): asserts error is UniqueConst
   expect(error).toBeInstanceOf(UniqueConstraintViolationError);
   expect((error as Error).name).toBe("UniqueConstraintViolationError");
   expect((error as Error).message).toBe("A unique constraint was violated.");
-  expect((error as Error).cause).toBeInstanceOf(SQL.SQLiteError);
+  expect((error as Error).cause).toBeInstanceOf(SQLiteError);
   expect(["SQLITE_CONSTRAINT_UNIQUE", "SQLITE_CONSTRAINT_PRIMARYKEY"])
-    .toContain(((error as Error).cause as SQL.SQLiteError).code);
+    .toContain(sqliteCode((error as Error).cause) ?? "no SQLite code");
   expect(error).not.toHaveProperty("sql");
   expect(error).not.toHaveProperty("bindings");
   expect(error).not.toHaveProperty("constraint");
@@ -150,9 +172,9 @@ describe.serial("UniqueConstraintViolationError on SQLite", () => {
     const notNull = await caught(UniqueRecord.on(connection).createOrFirst({
       email: "create-or-first-not-null@example.test",
     }));
-    expect(notNull).toBeInstanceOf(SQL.SQLiteError);
+    expect(notNull).toBeInstanceOf(SQLiteError);
     expect(notNull).not.toBeInstanceOf(UniqueConstraintViolationError);
-    expect((notNull as SQL.SQLiteError).code).toBe("SQLITE_CONSTRAINT_NOTNULL");
+    expect(sqliteCode(notNull)).toBe("SQLITE_CONSTRAINT_NOTNULL");
   });
 
   test("createOrFirst contains a failed insert in a savepoint", async () => {
@@ -244,27 +266,24 @@ describe.serial("UniqueConstraintViolationError on SQLite", () => {
     const notNull = await caught(new Builder(connection, "unique_error_records").insert({
       email: "missing-required@example.test",
     }));
-    expect(notNull).toBeInstanceOf(SQL.SQLiteError);
+    expect(notNull).toBeInstanceOf(SQLiteError);
     expect(notNull).not.toBeInstanceOf(UniqueConstraintViolationError);
-    expect((notNull as SQL.SQLiteError).code).toBe("SQLITE_CONSTRAINT_NOTNULL");
+    expect(sqliteCode(notNull)).toBe("SQLITE_CONSTRAINT_NOTNULL");
 
     const check = await caught(new Builder(connection, "checked_unique_errors").insert({ id: 1, state: "invalid" }));
-    expect(check).toBeInstanceOf(SQL.SQLiteError);
+    expect(check).toBeInstanceOf(SQLiteError);
     expect(check).not.toBeInstanceOf(UniqueConstraintViolationError);
-    expect((check as SQL.SQLiteError).code).toBe("SQLITE_CONSTRAINT_CHECK");
+    expect(sqliteCode(check)).toBe("SQLITE_CONSTRAINT_CHECK");
 
     const foreignKey = await caught(new Builder(connection, "unique_error_children").insert({ parent_id: 999 }));
-    expect(foreignKey).toBeInstanceOf(SQL.SQLiteError);
+    expect(foreignKey).toBeInstanceOf(SQLiteError);
     expect(foreignKey).not.toBeInstanceOf(UniqueConstraintViolationError);
-    expect((foreignKey as SQL.SQLiteError).code).toBe("SQLITE_CONSTRAINT_FOREIGNKEY");
+    expect(sqliteCode(foreignKey)).toBe("SQLITE_CONSTRAINT_FOREIGNKEY");
   });
 
   test("preserves the exact driver error as a non-enumerable cause", async () => {
-    const original = new SQL.SQLiteError("private driver detail", {
-      code: "SQLITE_CONSTRAINT_UNIQUE",
-      errno: 2067,
-    });
-    const driver = { unsafe: async () => { throw original; } } as unknown as SQL;
+    const original = sqliteUniqueError("private driver detail");
+    const driver = { unsafe: async () => { throw original; } } as unknown as SqlDriver;
     const fake = new Connection(
       { url: "sqlite://:memory:" },
       { driver, ownsDriver: false, sqliteDefaultsApplied: true },

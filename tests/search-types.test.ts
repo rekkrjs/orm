@@ -4,7 +4,7 @@
  * Real checks performed by `tsc -p tsconfig.test.json`. If any guarantee
  * regresses, type-checking fails. Runtime body is trivial.
  */
-import { test, expect } from "bun:test";
+import { test, expect } from "./harness.js";
 import { Collection, Connection, Model } from "../src/index.js";
 import {
   Search,

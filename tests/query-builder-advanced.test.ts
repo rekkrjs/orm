@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll, afterAll } from "bun:test";
+import { expect, test, describe, beforeAll, afterAll } from "./harness.js";
 import { Collection, Connection, Schema, Builder, Model } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
@@ -644,7 +644,7 @@ describe("Advanced Query Builder Features", () => {
         .from("folder_tree")
         .toSql();
 
-      expect(sql).toStartWith('WITH RECURSIVE "folder_tree" AS');
+      expect(sql.startsWith('WITH RECURSIVE "folder_tree" AS')).toBe(true);
       expect(sql).toContain("UNION ALL");
       expect(sql).toContain('FROM "folder_tree"');
     });

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "./harness.js";
 import type { Connection } from "../src/index.js";
 import { PostgresFTSEngine } from "../src/search/engines/PostgresFTSEngine.js";
 

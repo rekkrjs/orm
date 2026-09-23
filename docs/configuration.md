@@ -90,9 +90,11 @@ connection: { url: "sqlite://./app.db" }
 connection: { url: "sqlite://:memory:" }
 ```
 
-For MySQL and PostgreSQL, `bigint: true` asks Bun to decode large integer
-values as `bigint`. MySQL can still return safe values as `number`; PostgreSQL
-returns its `BIGINT` values as `bigint`. Leave it off when serializing rows
+For MySQL and PostgreSQL, `bigint: true` asks the driver to decode large
+integer values as `bigint`. MySQL can still return safe values as `number`;
+PostgreSQL returns its `BIGINT` values as `bigint`. On Node.js the setting also
+reaches SQLite, whose integers past `Number.MAX_SAFE_INTEGER` come back as
+`bigint` instead of as exact strings. Leave it off when serializing rows
 directly to JSON, because JavaScript's native `JSON.stringify` does not accept
 `bigint`:
 
@@ -105,8 +107,9 @@ connection: {
 
 ### MySQL sessions must use UTC
 
-On MySQL, ORM passes model dates to `Bun.SQL` as native `Date` bindings, which
-Bun encodes as a UTC wall clock. Every physical connection in the pool must
+On MySQL, ORM passes model dates to the driver as native `Date` bindings,
+which it encodes as a UTC wall clock whatever the process time zone — `bun:sql`
+natively, `mysql2` because ORM configures it to. Every physical connection in the pool must
 therefore start with `time_zone = '+00:00'`. This remains a runtime requirement:
 `DATETIME` stores that wall clock directly, while `TIMESTAMP` interprets it in
 the session's time zone; a non-UTC session can silently store a different
@@ -197,7 +200,7 @@ SQLite uses `filename` instead of `host`/`port`:
 connection: { driver: "sqlite", filename: "./app.db" }
 ```
 
-ORM forwards the driver config to Bun's SQL client as-is and does not substitute defaults of its own. Every field you omit is therefore resolved by Bun from the adapter's standard environment variables — `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` for Postgres, and the `MYSQL_*` equivalents for MySQL — falling back to `localhost` and the adapter's default port when the variable is unset. So `{ driver: "postgres" }` in an environment with `PGHOST` set connects to that host, not to `localhost`. Pass the field explicitly whenever you need it to win over the environment:
+ORM forwards the driver config to the driver as-is — `bun:sql` on Bun, `pg` or `mysql2` on Node.js — and does not substitute defaults of its own. Every field you omit is therefore resolved from the adapter's standard environment variables — `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` for Postgres, and `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD` for MySQL — falling back to `localhost` and the adapter's default port when the variable is unset. So `{ driver: "postgres" }` in an environment with `PGHOST` set connects to that host, not to `localhost`. Pass the field explicitly whenever you need it to win over the environment:
 
 ```ts
 connection: { driver: "postgres", host: "localhost", database: "mydb" }
@@ -205,7 +208,7 @@ connection: { driver: "postgres", host: "localhost", database: "mydb" }
 
 Credentials in this form are handed to the driver verbatim instead of being assembled into a URL, so usernames and passwords containing `/`, `?`, `#`, `@` or `%` need no escaping. The `url` form is parsed as a URL and still requires percent-encoded credentials.
 
-For PostgreSQL, `prepare` defaults to `false`. ORM generates dynamic SQL for model queries, validation checks, migrations, and schema-qualified tenant queries; disabling named prepared statements avoids intermittent stale-plan errors after schema changes or when a long-running server reuses pooled connections. Set `prepare: true` only when you know your Postgres deployment benefits from Bun's persisted named prepared statements and your query result shapes are stable.
+For PostgreSQL, `prepare` defaults to `false`. ORM generates dynamic SQL for model queries, validation checks, migrations, and schema-qualified tenant queries; disabling named prepared statements avoids intermittent stale-plan errors after schema changes or when a long-running server reuses pooled connections. Set `prepare: true` only when you know your Postgres deployment benefits from Bun's persisted named prepared statements and your query result shapes are stable. On Node.js `prepare` has no effect: `pg` sends unnamed statements.
 
 For PostgreSQL, the pool `max` defaults to `10` when unset (`Connection.defaultPostgresPoolMax`). Override per-connection with `max`, or globally before constructing connections:
 
@@ -233,7 +236,7 @@ try {
 ```
 
 The public message is stable and intentionally contains no SQL, bindings,
-table, column, or constraint names. The original Bun driver error is available
+table, column, or constraint names. The original driver error is available
 as `error.cause` for trusted server-side diagnostics. Treat that cause as
 sensitive: do not serialize it into an HTTP response or expose it to clients.
 
@@ -318,7 +321,7 @@ Driver behavior:
 
 - **PostgreSQL** — connects to the `postgres` admin database, checks `pg_database`, and runs `CREATE DATABASE` if missing. Schemas use `CREATE SCHEMA IF NOT EXISTS`.
 - **MySQL** — `CREATE DATABASE IF NOT EXISTS` via the `mysql` admin database. MySQL does not have schemas, so the `schema` option is a no-op.
-- **SQLite** — the file is auto-created by Bun on connect. Both `database` and `schema` flags are no-ops.
+- **SQLite** — the file is created on connect. Both `database` and `schema` flags are no-ops.
 
 See [Migrations](./migrations.md#auto-create-database-and-schema) for the full lifecycle.
 
@@ -527,7 +530,8 @@ queue: {
 
 All fields are optional. Omitting the entire `queue` key leaves the queue unconfigured; you can still call `Queue.configure()` manually.
 
-For Redis, configuration is enough; the URL defaults to Bun's `REDIS_URL`:
+For Redis, configuration is enough; the URL defaults to `REDIS_URL` (Bun's
+default client on Bun, `ioredis` on Node.js):
 
 ```ts
 queue: {

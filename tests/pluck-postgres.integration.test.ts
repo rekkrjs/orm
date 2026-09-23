@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "./harness.js";
 import { Builder, Connection, ConnectionManager } from "../src/index.js";
 
 const postgresUrl = process.env.POSTGRES_TEST_URL;

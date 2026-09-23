@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "./harness.js";
 import { Connection, Model, Schema } from "../src/index.js";
 import { createDriverContext, mysqlUrl, postgresUrl, type DriverContext } from "./driver-harness.js";
 

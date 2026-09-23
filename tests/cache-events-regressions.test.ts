@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, sleep } from "./harness.js";
 import { Cache, MemoryCacheStore } from "../src/cache/index.js";
 import { Events } from "../src/events/Events.js";
 
@@ -81,7 +81,7 @@ describe("MemoryCacheStore tag bookkeeping", () => {
   test("expired entries are swept as writes come in, not only when read", async () => {
     const store = new MemoryCacheStore();
     for (let i = 0; i < 100; i++) await store.set(`k${i}`, i, { ttl: 0.001 });
-    await Bun.sleep(20);
+    await sleep(20);
     // Enough further writes to cross the sweep interval.
     for (let i = 0; i < 100; i++) await store.set(`live${i}`, i);
 

@@ -1,22 +1,24 @@
 # ORM
 
-> **Bun-only package.** Install with:
+> **Runs on Bun and Node.js.** Install with:
 >
 > ```bash
-> bun add github:rekkrjs/orm#v4.1.0
+> bun add github:rekkrjs/orm#v4.1.0                         # Bun
+> npm install --allow-git=all github:rekkrjs/orm#v5.0.0     # Node.js 24.15+
 > ```
 >
-> The package is installed directly from its public GitHub repository. npm,
-> yarn, pnpm, and Node.js runtime usage are not supported.
+> The package is installed directly from its public GitHub repository. On
+> Node.js, add `pg`, `mysql2` or `ioredis` for the servers you use — see
+> [Installation](./docs/installation.md).
 
-An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s native `bun:sql` client. It ships with **zero runtime dependencies** and supports **SQLite**, **MySQL**, and **PostgreSQL** with full TypeScript typing, a chainable query builder, schema migrations, model observers, polymorphic relations, and an interactive REPL.
+An **Eloquent-inspired ORM** for [Bun](https://bun.com) and [Node.js](https://nodejs.org). On Bun it runs on the native `bun:sql` client with **zero runtime dependencies**; on Node.js it runs on the built-in `node:sqlite` and the standard `pg`, `mysql2` and `ioredis` drivers. It supports **SQLite**, **MySQL**, and **PostgreSQL** with full TypeScript typing, a chainable query builder, schema migrations, model observers, polymorphic relations, and an interactive REPL.
 
 ---
 
 ## Features
 
-- 🔥 **Bun-native** — Built directly on top of `bun:sql`
-- 🪶 **Zero runtime dependencies** — No package lock-in beyond Bun itself
+- 🔥 **Bun-native, Node.js-ready** — `bun:sql` on Bun; `node:sqlite`, `pg` and `mysql2` on Node.js, held to the same results by one test suite
+- 🪶 **Zero runtime dependencies** — On Bun, nothing beyond Bun itself; on Node.js, only the drivers for the databases you use
 - 📦 **Multi-database** — SQLite, MySQL, and PostgreSQL support
 - 🧯 **Portable unique errors** — Duplicate unique and primary keys share one safe public error type across drivers
 - 🔷 **Fully Typed** — Generate declarations for plain `extends Model` classes with typed attributes, queries, relations, and eager loads
@@ -43,10 +45,13 @@ An **Eloquent-inspired ORM** built specifically for [Bun](https://bun.com)'s nat
 ## Installation
 
 ```bash
-bun add github:rekkrjs/orm#v4.1.0
+bun add github:rekkrjs/orm#v4.1.0                         # Bun
+npm install --allow-git=all github:rekkrjs/orm#v5.0.0     # Node.js 24.15+
+npm install pg                                            # Node.js + PostgreSQL
 ```
 
-See [Installation](./docs/installation.md) for details.
+See [Installation](./docs/installation.md) for the driver each database needs and
+what differs between the runtimes.
 
 ---
 
@@ -186,7 +191,7 @@ one document.
 
 | Topic | Summary |
 |---|---|
-| [Installation](./docs/installation.md) | Add the package to your Bun project. |
+| [Installation](./docs/installation.md) | Add the package to a Bun or Node.js project. |
 | [Configuration](./docs/configuration.md) | Connection, tenancy, migrations, seeders, type generation. |
 | [Quickstart](./docs/quickstart.md) | End-to-end walkthrough: install → config → migration → model → query. |
 

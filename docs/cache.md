@@ -26,29 +26,33 @@ configureOrm({
 });
 ```
 
-If `cache.store` is omitted, ORM uses Bun's native Redis client:
+If `cache.store` is omitted, ORM uses the runtime's default Redis client —
+Bun's native client on Bun, `ioredis` on Node.js — which is what
+`resolveRedisClient()` returns:
 
 ```ts
-import { redis } from "bun";
-import { RedisCacheStore } from "@rekkr/orm/cache";
+import { RedisCacheStore, resolveRedisClient } from "@rekkr/orm/cache";
 
 cache: {
-  store: new RedisCacheStore(redis),
+  store: new RedisCacheStore(resolveRedisClient()),
 }
 ```
 
-Bun's default Redis client reads `REDIS_URL` from the environment. If it is not set, Bun uses its own Redis default.
+The default client reads `REDIS_URL` from the environment (then `VALKEY_URL`),
+and connects to `redis://localhost:6379` when neither is set. Pass a URL to reach
+another server: `resolveRedisClient(process.env.CACHE_REDIS_URL)`. Either way the
+client holds the process open only while a command is in flight, so a script
+that used the cache exits on its own.
 
 ### Standalone configuration
 
 Use `Cache.configure()` when you want the cache outside a configured ORM application, such as a worker or small utility module:
 
 ```ts
-import { Cache, RedisCacheStore } from "@rekkr/orm/cache";
-import { redis } from "bun";
+import { Cache, RedisCacheStore, resolveRedisClient } from "@rekkr/orm/cache";
 
 Cache.configure({
-  store: new RedisCacheStore(redis),
+  store: new RedisCacheStore(resolveRedisClient()),
   prefix: "app:",
   defaultTtl: 3600,
 });

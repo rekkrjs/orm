@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll } from "bun:test";
+import { expect, test, describe, beforeAll } from "./harness.js";
 import { Collection, Model, Schema } from "../src/index.js";
 import { PermissiveModel, setupTestDb, type PublicShape } from "./helpers.js";
 

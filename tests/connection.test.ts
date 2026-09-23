@@ -1,4 +1,5 @@
-import { expect, test, describe } from "bun:test";
+import { expect, test, describe, isBun } from "./harness.js";
+import type { SQL } from "bun";
 import { join } from "path";
 import { Connection, TransactionContext } from "../src/index.js";
 import { cleanupSqliteFile } from "./helpers.js";
@@ -30,7 +31,7 @@ describe("Connection", () => {
     expect(conn.getDriverName()).toBe("sqlite");
   });
 
-  test("passes driver config directly to Bun.SQL", async () => {
+  test.skipIf(!isBun)("passes driver config directly to Bun.SQL", async () => {
     const conn = new Connection({
       driver: "mysql",
       host: "127.0.0.1",
@@ -41,7 +42,7 @@ describe("Connection", () => {
     });
 
     expect(conn.getDriverName()).toBe("mysql");
-    expect(conn.driver.options).toMatchObject({
+    expect((conn.driver as unknown as SQL).options).toMatchObject({
       adapter: "mysql",
       hostname: "127.0.0.1",
       port: 3306,
@@ -52,14 +53,14 @@ describe("Connection", () => {
     await conn.close();
   });
 
-  test("leaves omitted driver fields to Bun's environment resolution", async () => {
+  test.skipIf(!isBun)("leaves omitted driver fields to Bun's environment resolution", async () => {
     const previous = { PGHOST: process.env.PGHOST, PGDATABASE: process.env.PGDATABASE };
     process.env.PGHOST = "db.internal";
     process.env.PGDATABASE = "envdb";
 
     try {
       const fromEnv = new Connection({ driver: "postgres" });
-      expect(fromEnv.driver.options).toMatchObject({
+      expect((fromEnv.driver as unknown as SQL).options).toMatchObject({
         adapter: "postgres",
         hostname: "db.internal",
         database: "envdb",
@@ -67,7 +68,7 @@ describe("Connection", () => {
       await fromEnv.close();
 
       const explicit = new Connection({ driver: "postgres", host: "127.0.0.1" });
-      expect(explicit.driver.options).toMatchObject({
+      expect((explicit.driver as unknown as SQL).options).toMatchObject({
         hostname: "127.0.0.1",
         database: "envdb",
       });

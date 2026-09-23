@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test, writeText } from "./harness.js";
 import { mkdir, rm } from "fs/promises";
 import { join } from "path";
 import { pathToFileURL } from "url";
@@ -124,14 +124,14 @@ describe.serial("PostgreSQL tenant integration", () => {
     try {
       await Schema.createSchema(schema, connection);
       await mkdir(migrations, { recursive: true });
-      await Bun.write(join(migrations, "20260819000000_create_batch_first.ts"), `
+      await writeText(join(migrations, "20260819000000_create_batch_first.ts"), `
 import { Migration, Schema } from ${JSON.stringify(ormUrl)};
 export default class CreateBatchFirst extends Migration {
   async up() { await Schema.create("batch_first", (table) => table.increments("id")); }
   async down() { await Schema.dropIfExists("batch_first"); }
 }
 `);
-      await Bun.write(join(migrations, "20260819000001_fail_batch_second.ts"), `
+      await writeText(join(migrations, "20260819000001_fail_batch_second.ts"), `
 import { Migration, Schema } from ${JSON.stringify(ormUrl)};
 export default class FailBatchSecond extends Migration {
   async up() {

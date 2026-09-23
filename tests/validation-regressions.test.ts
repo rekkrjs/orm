@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect } from "./harness.js";
 import { rule, Validator } from "../src/validation/index.js";
 
 const errorsFor = (data: any, schema: any, messages?: Record<string, string>) => {

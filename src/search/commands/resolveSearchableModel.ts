@@ -1,8 +1,7 @@
 import { readdir } from "fs/promises";
 import { existsSync } from "fs";
 import { basename, extname, join, resolve } from "path";
-import { pathToFileURL } from "url";
-import { normalizePathList } from "../../utils.js";
+import { importFile, normalizePathList } from "../../utils.js";
 import type { OrmConfig } from "../../config/OrmConfig.js";
 import type { ModelConstructor } from "../../model/Model.js";
 import type { SearchableModelConstructor } from "../Searchable.js";
@@ -51,7 +50,7 @@ async function loadSearchableModelMap(config: OrmConfig): Promise<Map<string, Se
     if (!existsSync(abs)) continue;
     const files = await walkModelFiles(abs);
     for (const file of files) {
-      const mod = await import(pathToFileURL(file).href);
+      const mod = await importFile(file);
       for (const [exportName, exported] of Object.entries(mod)) {
         if (exportName === "default") continue;
         register(exportName, exported);

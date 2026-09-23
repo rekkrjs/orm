@@ -8,6 +8,17 @@ const DEFAULT_TIMESTAMP_COLUMNS = ["created_at", "updated_at"];
 import { discoverModelDeclarations, type ModelDeclarationInfo } from "./discoverModelTables.js";
 import { normalizePathList, snakeCase } from "../utils.js";
 
+/**
+ * tsconfig.json is JSON with comments and trailing commas. Strings are matched
+ * first so that `"@/*"` or a URL is never mistaken for the start of a comment.
+ */
+export function parseJsonc(text: string): unknown {
+  return JSON.parse(text
+    .replace(/^\uFEFF/, "")
+    .replace(/("(?:\\.|[^"\\])*")|\/\/[^\n]*|\/\*[\s\S]*?\*\//g, (_, string) => string ?? "")
+    .replace(/("(?:\\.|[^"\\])*")|,(\s*[}\]])/g, (_, string, close) => string ?? close));
+}
+
 interface ColumnInfo {
   name: string;
   type: string;
@@ -155,7 +166,7 @@ export class TypeGenerator {
     const result = new Map<string, string>();
     try {
       const content = await readFile(tsconfigPath, "utf-8");
-      const parsed = Bun.JSONC.parse(content) as {
+      const parsed = parseJsonc(content) as {
         compilerOptions?: { paths?: Record<string, string[]>; baseUrl?: string };
       };
       const paths = parsed.compilerOptions?.paths ?? {};

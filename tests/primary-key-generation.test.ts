@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "./harness.js";
 import { Model, Schema } from "../src/index.js";
 import { shouldGeneratePrimaryKeyForColumn } from "../src/utils.js";
 import { setupTestDb } from "./helpers.js";

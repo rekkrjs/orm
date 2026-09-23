@@ -1,8 +1,13 @@
-import type { RedisClient } from "bun";
 import type { CacheRememberOptions, CacheStore } from "./CacheStore.js";
 
 export interface RedisCacheStoreOptions { prefix?: string; }
-type RedisLike = Pick<RedisClient, "get" | "del" | "scan" | "send">;
+/** The client surface the store needs: Bun's `RedisClient`, or ioredis via `resolveRedisClient()`. */
+export interface RedisLike {
+  get(key: string): Promise<string | null>;
+  del(...keys: string[]): Promise<number>;
+  scan(cursor: string, match: "MATCH", pattern: string): Promise<[string, string[]]>;
+  send(command: string, args: string[]): Promise<unknown>;
+}
 
 // One script owns the value and both directions of its tag associations.
 // Sorted tag members expire with their values; finite tag indexes expire at

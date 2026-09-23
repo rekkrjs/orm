@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { RedisClient } from "bun";
+import { afterAll, beforeAll, describe, expect, test, evalCommand, ormModule, runProcess, sleep } from "./harness.js";
+import { pathToFileURL } from "node:url";
+import { resolveRedisClient } from "../src/queue/RedisQueueDriver.js";
 import { Cache } from "../src/cache/Cache.js";
 import { RedisCacheStore } from "../src/cache/RedisCacheStore.js";
 import { RedisQueueDriver } from "../src/queue/RedisQueueDriver.js";
@@ -7,7 +8,7 @@ import { RedisQueueDriver } from "../src/queue/RedisQueueDriver.js";
 const redisUrl = process.env.REDIS_TEST_URL || process.env.REDIS_URL;
 const runIfRedis = redisUrl ? test.serial : test.skip;
 const prefix = `orm:test:${process.pid}:${Math.random().toString(36).slice(2)}:`;
-let redis: RedisClient;
+let redis: ReturnType<typeof resolveRedisClient>;
 
 async function clearPrefix(): Promise<void> {
   let cursor = "0";
@@ -21,14 +22,13 @@ async function clearPrefix(): Promise<void> {
 describe.serial("live Redis integration", () => {
   beforeAll(async () => {
     if (!redisUrl) return;
-    redis = new RedisClient(redisUrl);
-    await redis.connect();
+    redis = resolveRedisClient(redisUrl);
   });
 
   afterAll(async () => {
     if (!redis) return;
     await clearPrefix();
-    redis.close();
+    await redis.close();
   });
 
   runIfRedis("stores TTL values and invalidates exact tags", async () => {
@@ -74,12 +74,12 @@ describe.serial("live Redis integration", () => {
 
     await driver.dispatch("reports", "Delayed", "{}", 1, 2);
     expect(await driver.reserve("reports", 90)).toBeNull();
-    await Bun.sleep(1_100);
+    await sleep(1_100);
     const delayed = await driver.reserve("reports", 90);
     expect(delayed?.jobClass).toBe("Delayed");
     await driver.fail(delayed!.id, delayed!.reservationToken, "expected failure");
 
-    const failed = await redis.send("LRANGE", [`${prefix}queue:failed`, "0", "-1"]);
+    const failed = await redis.send("LRANGE", [`${prefix}queue:failed`, "0", "-1"]) as string[];
     expect(JSON.parse(failed[0]).exception).toBe("expected failure");
     expect(await driver.size()).toBe(0);
   });
@@ -94,7 +94,7 @@ describe.serial("live Redis integration", () => {
     expect(await store.get<number>("replaced")).toBe(2);
     expect(await redis.send("EXISTS", [`${prefix}atomic:tag:second`])).toBe(0);
     await store.set("expires", 1, { ttl: 0.01, tags: "short" });
-    await Bun.sleep(30);
+    await sleep(30);
     expect(await redis.send("EXISTS", [`${prefix}atomic:tag:short`, `${prefix}atomic:cache-tags:expires`])).toBe(0);
     for (let i = 0; i < 20; i++) {
       await Promise.all([store.set("racing", i, { tags: "race" }), store.forgetTag("race")]);
@@ -105,4 +105,18 @@ describe.serial("live Redis integration", () => {
     await store.flush();
   });
 
+  runIfRedis("lets a process that used the default client exit, but not before a command settles", async () => {
+    const script = `
+      const { resolveRedisClient } = await import(${JSON.stringify(pathToFileURL(ormModule("src/queue/RedisQueueDriver.ts")).href)});
+      const client = resolveRedisClient();
+      await client.send("PING", []);
+      // Floated, not awaited: nothing but the command itself may hold the process open.
+      client.send("PING", []).then((reply) => console.log("settled", reply));
+    `;
+    const result = await runProcess(evalCommand(script), { env: { ...process.env, REDIS_URL: redisUrl }, timeoutMs: 10_000 });
+    expect(result.timedOut).toBe(false);
+    expect(result.stderr).toBe("");
+    expect(result.stdout.trim()).toBe("settled PONG");
+    expect(result.exitCode).toBe(0);
+  }, 15_000);
 });

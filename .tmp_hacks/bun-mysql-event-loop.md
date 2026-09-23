@@ -7,7 +7,10 @@
 
 - **Status:** active workaround
 - **Last reviewed:** 2026-09-04
-- **Affects:** MySQL only. SQLite and PostgreSQL are unaffected.
+- **Affects:** MySQL on Bun only. SQLite and PostgreSQL are unaffected, and so
+  is Node.js: `keepEventLoopAlive()` returns early when `Bun` is undefined,
+  and `mysql2`'s sockets already hold the loop while a query is in flight
+  (see [Node.js](#nodejs)).
 - **Verified with:** Bun 1.4.1 (`4661e494f`) and 1.4.0 (`34cbb9a40`),
   MySQL 9.7.1, macOS arm64
 - **Upstream:** [oven-sh/bun#27362](https://github.com/oven-sh/bun/issues/27362)
@@ -164,6 +167,19 @@ CLI — the fix that protects library users is the one in `Connection`.
 
 The sqlite pragma statements in `applySqliteDefaults()` are deliberately left
 unwrapped: they only ever run on SQLite, where the guard would be a no-op.
+
+## Node.js
+
+The workaround is Bun-only and skipped on Node.js, where there is no bug to
+work around: the `mysql2` adapter (`src/connection/drivers/nodeDrivers.ts`)
+refs a connection's socket while it is in use and unrefs it when it goes back
+to the pool, so a query in flight holds the process open and an idle pool does
+not. `tests/driver-contract.integration.test.ts` ("lets an unclosed
+connection's process exit, but not before a query in flight settles") holds
+both runtimes to that, and `tests/bun-mysql-eventloop.integration.test.ts` is
+skipped on Node.js.
+
+Retiring the workaround changes nothing on Node.js.
 
 ## Is Bun fixed yet?
 

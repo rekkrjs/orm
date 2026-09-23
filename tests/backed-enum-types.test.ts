@@ -2,7 +2,7 @@
  * Compile-time assertions for backed enum descriptors. Real checks happen in
  * `tsc` via `tsconfig.test.json`. Runtime body is trivial.
  */
-import { expect, test } from "bun:test";
+import { expect, test } from "./harness.js";
 import {
   Model,
   backedEnum,

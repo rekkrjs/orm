@@ -1,5 +1,5 @@
-import { afterEach, expect, setSystemTime, test } from "bun:test";
-import { RedisClient } from "bun";
+import { afterEach, expect, setSystemTime, test, sleep } from "./harness.js";
+import { resolveRedisClient } from "../src/queue/RedisQueueDriver.js";
 import { Connection } from "../src/index.js";
 import { DatabaseQueueDriver, RedisQueueDriver, type QueueDriver, Worker, DispatchableJob, registerJob } from "../src/queue/index.js";
 
@@ -52,7 +52,7 @@ for (const [driver, url] of Object.entries({ sqlite: "sqlite://:memory:", postgr
 
 const redisUrl = process.env.REDIS_TEST_URL || process.env.REDIS_URL;
 test.skipIf(!redisUrl)("Redis: stale reservations cannot mutate jobs", async () => {
-  const client = new RedisClient(redisUrl!);
+  const client = resolveRedisClient(redisUrl!);
   const prefix = `orm_leases_${crypto.randomUUID()}:`;
   try {
     const first = new RedisQueueDriver(client, { prefix });
@@ -61,7 +61,7 @@ test.skipIf(!redisUrl)("Redis: stale reservations cannot mutate jobs", async () 
   } finally {
     const keys = await client.send("KEYS", [`${prefix}*`]) as string[];
     if (keys.length) await client.send("DEL", keys);
-    client.close();
+    await client.close();
   }
 });
 
@@ -70,7 +70,7 @@ for (const loseLease of [false, true]) test(`worker stops heartbeat after ${lose
   let complete = 0;
   let taken = false;
   class SlowLeaseJob extends DispatchableJob {
-    async handle() { await Bun.sleep(90); worker.stop(); }
+    async handle() { await sleep(90); worker.stop(); }
   }
   registerJob(SlowLeaseJob);
   const driver: QueueDriver = {
@@ -89,6 +89,6 @@ for (const loseLease of [false, true]) test(`worker stops heartbeat after ${lose
   else expect(beats).toBeGreaterThan(1);
   expect(complete).toBe(loseLease ? 0 : 1);
   const count = beats;
-  await Bun.sleep(45);
+  await sleep(45);
   expect(beats).toBe(count);
 });

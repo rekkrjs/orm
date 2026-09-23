@@ -13,7 +13,7 @@ import type { TypeGeneratorOptions } from "../typegen/TypeGenerator.js";
 import { discoverModelTables } from "../typegen/discoverModelTables.js";
 import type { Migration } from "./Migration.js";
 import { acquireMigrationLock, MIGRATION_LOCKS_TABLE, type MigrationLockHandle } from "./MigrationLock.js";
-import { normalizePathList, toPosixPath } from "../utils.js";
+import { importFile, normalizePathList, toPosixPath } from "../utils.js";
 import type { ConnectionConfig } from "../types/index.js";
 
 interface MigrationRecord {
@@ -771,7 +771,7 @@ export class Migrator {
       throw new Error(`Migration ${file} is ambiguous across multiple migration paths.`);
     }
 
-    const module = await import(/* @vite-ignore */ matches[0]);
+    const module = await importFile(matches[0]);
     const MigrationClass = module.default || Object.values(module)[0];
     if (!MigrationClass) {
       throw new Error(`Migration ${file} does not export a class.`);

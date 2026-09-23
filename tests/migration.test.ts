@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll, afterAll } from "bun:test";
+import { expect, test, describe, beforeAll, afterAll, readText, writeText } from "./harness.js";
 import { mkdir, readdir, unlink, rm } from "fs/promises";
 import { join } from "path";
 import { Connection, Schema, Migration, Migrator, MigrationCreator, ConnectionManager, Model } from "../src/index.js";
@@ -21,7 +21,7 @@ describe("MigrationCreator", () => {
     const creator = new MigrationCreator();
     const path = await creator.create("CreateUsersTable", TEST_MIGRATIONS_DIR);
     expect(path).toContain("create_users_table");
-    const content = await Bun.file(path).text();
+    const content = await readText(path);
     expect(content).toContain("extends Migration");
     expect(content).toContain("async up()");
     expect(content).toContain("async down()");
@@ -58,7 +58,7 @@ describe("Migrator", () => {
 
     await mkdir(TEST_MIGRATIONS_DIR_RESTORE, { recursive: true });
     const filePath = join(TEST_MIGRATIONS_DIR_RESTORE, "20260408000000_create_restore_check_table.ts");
-    await Bun.write(
+    await writeText(
       filePath,
       `
 import { Migration, Schema } from "../../src/index.js";
@@ -119,7 +119,7 @@ export default class CreateTestItems extends Migration {
     await Schema.dropIfExists("test_items");
   }
 }`;
-    await Bun.write(filePath, content);
+    await writeText(filePath, content);
 
     const migrator = new Migrator(connection, TEST_MIGRATIONS_DIR);
     const applied = await migrator.run();
@@ -132,7 +132,7 @@ export default class CreateTestItems extends Migration {
     await mkdir(dir, { recursive: true });
     const isolated = setupTestDb();
     const filePath = join(dir, "20260409000000_create_no_query_log_items.ts");
-    await Bun.write(
+    await writeText(
       filePath,
       `
 import { Migration, Schema } from "../../src/index.js";
@@ -221,7 +221,7 @@ export default class CreateNoQueryLogItems extends Migration {
   test("emits one JSON document for a landlord + tenants run, progress on stderr", async () => {
     const dir = join(process.cwd(), "tests", "temp_migrations_json_scopes");
     await mkdir(dir, { recursive: true });
-    await Bun.write(
+    await writeText(
       join(dir, "20260101000000_create_json_scope_table.ts"),
       `
 import { Migration, Schema } from "../../src/index.js";
@@ -320,9 +320,9 @@ export default class CreateTypeTestTable extends Migration {
     await Schema.dropIfExists("type_test_table");
   }
 }`;
-    await Bun.write(filePath, content);
+    await writeText(filePath, content);
     await mkdir(modelsDir, { recursive: true });
-    await Bun.write(join(modelsDir, "TypeTestTable.ts"), `
+    await writeText(join(modelsDir, "TypeTestTable.ts"), `
 import { Model } from "../../src/index.js";
 export class TypeTestTable extends Model { static table = "type_test_table"; }
 `);
@@ -335,7 +335,7 @@ export class TypeTestTable extends Model { static table = "type_test_table"; }
     expect(files).toContain("type_test_table.d.ts");
     expect(files).toContain("index.d.ts");
 
-    const content_gen = await Bun.file(join(typesDir, "type_test_table.d.ts")).text();
+    const content_gen = await readText(join(typesDir, "type_test_table.d.ts"));
     expect(content_gen).toContain("export interface TypeTestTableAttributes {");
     expect(content_gen).toContain("label: string;");
 
@@ -361,7 +361,7 @@ export default class CreateEventTestTable extends Migration {
     await Schema.dropIfExists("event_test_table");
   }
 }`;
-    await Bun.write(filePath, content);
+    await writeText(filePath, content);
 
     Migrator.clearListeners();
     Migrator.on("migrating", ({ migration }) => { events.push(`migrating:${migration}`); });
@@ -372,7 +372,7 @@ export default class CreateEventTestTable extends Migration {
     await migrator.run();
     await migrator.dumpSchema(dumpPath);
 
-    const dump = await Bun.file(dumpPath).text();
+    const dump = await readText(dumpPath);
     expect(events).toContain(`migrating:tests/temp_migrations/${fileName}`);
     expect(events).toContain(`migrated:tests/temp_migrations/${fileName}`);
     expect(events).toContain(`dumped:${dumpPath}`);
@@ -450,7 +450,7 @@ describe("Migrator multi-path support", () => {
   });
 
   test("runs migrations from multiple configured folders", async () => {
-    await Bun.write(
+    await writeText(
       join(TEST_MIGRATIONS_DIR_A, "20260401000000_create_alpha_table.ts"),
       `
 import { Migration, Schema } from "../../src/index.js";
@@ -466,7 +466,7 @@ export default class CreateAlphaTable extends Migration {
 }`
     );
 
-    await Bun.write(
+    await writeText(
       join(TEST_MIGRATIONS_DIR_B, "20260402000000_create_beta_table.ts"),
       `
 import { Migration, Schema } from "../../src/index.js";
@@ -496,7 +496,7 @@ export default class CreateBetaTable extends Migration {
     await mkdir(TEST_MIGRATIONS_DIR_C, { recursive: true });
     await mkdir(TEST_MIGRATIONS_DIR_D, { recursive: true });
 
-    await Bun.write(
+    await writeText(
       join(TEST_MIGRATIONS_DIR_C, "20260403000000_create_landlord_settings_table.ts"),
       `
 import { Migration, Schema } from "../../src/index.js";
@@ -512,7 +512,7 @@ export default class CreateLandlordSettingsTable extends Migration {
 }`
     );
 
-    await Bun.write(
+    await writeText(
       join(TEST_MIGRATIONS_DIR_D, "20260404000000_create_tenant_notes_table.ts"),
       `
 import { Migration, Schema } from "../../src/index.js";
@@ -541,7 +541,7 @@ export default class CreateTenantNotesTable extends Migration {
   test("scopes migration status and records by tenant", async () => {
     await mkdir(TEST_MIGRATIONS_DIR_TENANT, { recursive: true });
     const fileName = "20260405000000_create_tenant_status_marker.ts";
-    await Bun.write(
+    await writeText(
       join(TEST_MIGRATIONS_DIR_TENANT, fileName),
       `
 import { Migration, Schema } from "../../src/index.js";
@@ -648,13 +648,13 @@ export default class CreateChecksumTable extends Migration {
     await Schema.dropIfExists("checksum_table");
   }
 }`;
-    await Bun.write(filePath, original);
+    await writeText(filePath, original);
 
     const checksumConnection = setupTestDb();
     const migrator = new Migrator(checksumConnection, TEST_MIGRATIONS_DIR_COMMANDS);
     await migrator.run();
-    await Bun.write(filePath, original.replace("table.increments", "table.increments"));
-    await Bun.write(filePath, `${original}\n// changed after run\n`);
+    await writeText(filePath, original.replace("table.increments", "table.increments"));
+    await writeText(filePath, `${original}\n// changed after run\n`);
 
     const status = await migrator.status();
 
@@ -667,7 +667,7 @@ export default class CreateChecksumTable extends Migration {
     const commandDir = join(TEST_MIGRATIONS_DIR_COMMANDS, "commands");
     await rm(commandDir, { recursive: true, force: true });
     await mkdir(commandDir, { recursive: true });
-    await Bun.write(
+    await writeText(
       join(commandDir, "20260407000000_create_command_a.ts"),
       `
 import { Migration, Schema } from "../../../src/index.js";
@@ -699,7 +699,7 @@ export default class CreateCommandB extends Migration {
     const commandConnection = setupTestDb();
     const migrator = new Migrator(commandConnection, commandDir);
     await migrator.run();
-    await Bun.write(commandBPath, commandB);
+    await writeText(commandBPath, commandB);
     await migrator.run();
     await migrator.rollback(2);
     expect(await Schema.hasTable("command_b", commandConnection)).toBe(false);

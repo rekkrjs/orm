@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "./harness.js";
 import { Builder, Model, Schema } from "../src/index.js";
 import { castValueIsReady, isCanonicalIso } from "../src/model/ModelJsonRow.js";
 import { PermissiveModel, setupTestDb, teardownTestDb } from "./helpers.js";

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "./harness.js";
 import { PermissiveModel } from "./helpers.js";
 import { Collection, Connection, Model, Schema, collect } from "../src/index.js";
 
@@ -79,7 +79,7 @@ describe("Collection", () => {
     expect(users).toBeInstanceOf(Collection);
     expect(users[0].getAttribute("name")).toBe("Ada");
     expect(users.pluck("name").all()).toEqual(["Ada", "Linus", "Grace"]);
-    expect(users.all()).toBeArray();
+    expect(Array.isArray(users.all())).toBe(true);
 
     const allUsers = await CollectionUser.all();
     expect(allUsers).toBeInstanceOf(Collection);

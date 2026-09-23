@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "./harness.js";
 import { Builder, Collection, Connection, Model, Schema } from "../src/index.js";
 import { createRawJsonPlan, serializeRawJsonRow } from "../src/model/ModelJsonRow.js";
 

@@ -5,7 +5,7 @@
  * regresses, type-checking fails. Runtime body is trivial — the test just
  * verifies that the assertion function is callable without runtime errors.
  */
-import { test, expect } from "bun:test";
+import { test, expect } from "./harness.js";
 import { Connection, Model } from "../src/index.js";
 import {
   Search,
