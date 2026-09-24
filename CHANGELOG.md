@@ -81,6 +81,17 @@
   into the next day. Pass `{ precision: 0 }` to keep whole seconds. Existing
   tables are not altered; [Schema builder](./docs/schema-builder.md#convenience-helpers)
   shows the `ALTER` that widens them. SQLite is unaffected.
+- `float()` and `double()` create double-precision columns that store the value
+  as given: `DOUBLE` on MySQL, `DOUBLE PRECISION` on PostgreSQL, `REAL` on
+  SQLite. On MySQL they were `FLOAT(8,2)` and `DOUBLE(8,2)`, which rounded
+  3.14159 to 3.14 and refused anything from a million up, while the other
+  databases kept the value; MySQL's single-precision `FLOAT` also read 1.1 as
+  1.100000023841858 whenever the query had bindings. `float(name, precision)`
+  now takes a precision in bits, as SQL's `FLOAT(p)`: 24 or less gives
+  single precision. Neither takes a scale any more, and passing one throws;
+  use `decimal()` for a fixed number of places. Existing tables are not altered;
+  [Schema builder](./docs/schema-builder.md#floating-point-and-decimals) shows
+  the `ALTER` for each database.
 
 ### Fixed behaviour
 
@@ -97,6 +108,27 @@
   `datetime` cast decodes it, when a model compares it for changes, and when it
   is written to MySQL. Reading that text is also faster, 5–11% on `rawJson()`
   of SQLite rows, because it is assembled rather than parsed.
+- Assigning an attribute the value it already had no longer marks it changed
+  when the database hands that value back in another form: `true` for a
+  `boolean` cast the model stores as 1 (PostgreSQL), 12.5 for a `decimal:2`
+  stored as "12.50" (SQLite), a JSON object with its keys reordered (MySQL
+  `JSON`, PostgreSQL `JSONB`), "5" for a `BIGINT` given as 5 (PostgreSQL, where
+  every `id()` and `foreignId()` column is one), or equal bytes in a new
+  buffer. Filling a model with unchanged form data made `save()` run an
+  `UPDATE`, bump `updated_at` and fire the `updating`/`updated` observers.
+  Values under a built-in cast are now compared as the cast reads them. It
+  costs 7–14 ns per `getDirty()` call (4–5%), measured on both runtimes;
+  `toJSON()` and `rawJson()` are unchanged within noise.
+- A plain object bound to a query is sent as JSON text on every driver, as
+  MySQL's drivers already did: on PostgreSQL under Bun it was written as
+  `"[object Object]"`, and SQLite refused it. An array is JSON text too, except
+  on PostgreSQL, where it is a PostgreSQL array (`payload ?| ${["a", "b"]}`,
+  `id = ANY(${ids})`). That worked on Node.js and failed on Bun, which sent
+  `1,2`. A model attribute with a `json` cast is unaffected: the cast already
+  writes text.
+- A binary column serializes like a `Buffer`, `{ "type": "Buffer", "data": […] }`,
+  on every driver. SQLite hands back a `Uint8Array`, which `toJSON()`,
+  `json()` and `rawJson()` turned into an object keyed by index.
 - Migrations are imported by file URL, not by raw path.
 - Four tests awaited nothing on `expect(...).rejects` and asserted nothing; they
   now assert.
@@ -113,6 +145,16 @@
   from UTC−11 to UTC+14, including half- and three-quarter-hour offsets and
   daylight saving in both hemispheres. It had only ever run in UTC, which hid
   the zone-less date reading fixed above.
+- vitest reads `.env` like `bun test`, expanding its `${VAR}` references.
+  Locally, `bun run test:node` used to skip every PostgreSQL, MySQL and Redis
+  test in silence and still come out green. The suite now refuses to start with
+  a server URL unset, on either runtime; `ORM_TEST_SKIP_SERVERS=1` skips them
+  on purpose.
+- The driver contract takes every built-in cast through the model on SQLite,
+  MySQL and PostgreSQL, on both runtimes, with columns from the schema builder:
+  what `create()` leaves in memory is what `find()` reads back, `toJSON()`,
+  `json()` and `rawJson()` agree, and assigning the same values again writes
+  nothing. It found the four fixes above.
 
 ## 4.1.0 — 2026-09-21
 

@@ -309,18 +309,28 @@ export class Blueprint {
     return this.tinyInteger(name).unsigned();
   }
 
-  float(name: string, precision: number = 8, scale: number = 2): this {
+  /**
+   * A floating-point column that stores the value it is given: double
+   * precision unless `precision`, in bits as in SQL's `FLOAT(p)`, is 24 or less.
+   * It takes no scale; a fixed number of places is what decimal() is for.
+   */
+  float(name: string, precision: number = 53): this {
+    if (arguments.length > 2) {
+      throw new TypeError(`float("${name}") takes no scale: use decimal() for a fixed number of places.`);
+    }
+    if (!Number.isInteger(precision) || precision < 1 || precision > 53) {
+      throw new RangeError("Float precision must be an integer number of bits between 1 and 53.");
+    }
     this.addColumn("float", name);
     this.currentColumn!.precision = precision;
-    this.currentColumn!.scale = scale;
     return this;
   }
 
-  double(name: string, precision: number = 8, scale: number = 2): this {
-    this.addColumn("double", name);
-    this.currentColumn!.precision = precision;
-    this.currentColumn!.scale = scale;
-    return this;
+  double(name: string): this {
+    if (arguments.length > 1) {
+      throw new TypeError(`double("${name}") takes no precision or scale: use decimal() for a fixed number of places.`);
+    }
+    return this.addColumn("double", name);
   }
 
   decimal(name: string, precision: number = 8, scale: number = 2): this {

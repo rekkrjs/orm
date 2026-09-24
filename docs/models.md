@@ -884,6 +884,14 @@ user.isDirty();           // false
 user.isClean();           // true
 ```
 
+Assigning the value an attribute already has leaves it clean, even when the
+database handed it back in another form. Under a built-in cast both sides are
+compared as the cast reads them: `true` and `1` for `boolean`, `12.5` and
+`"12.50"` for `decimal:2`, and a JSON object whatever the order of its keys.
+Without a cast, `5` and `"5"` compare equal (PostgreSQL returns a `BIGINT` as
+text), and so do two buffers with the same bytes. So filling a model with an
+unchanged form writes nothing.
+
 ### `is` / `isNot`
 
 Compare two instances with non-null primary keys by table, resolved connection,

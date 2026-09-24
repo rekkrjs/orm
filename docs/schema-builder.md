@@ -69,19 +69,53 @@ table.bigInteger("file_size").nullable();
 
 | Method | Notes |
 |---|---|
-| `float(name, p = 8, s = 2)` | Single-precision float |
-| `double(name, p = 8, s = 2)` | Double-precision float |
+| `float(name, bits = 53)` | Floating point, double precision unless `bits` is 24 or less |
+| `double(name)` | Double-precision floating point |
 | `decimal(name, p = 8, s = 2)` | Fixed-precision number — use for money |
 
 ```ts
+table.float("ratio");            // DOUBLE / DOUBLE PRECISION / REAL
+table.float("reading", 24);      // single precision: FLOAT / REAL / REAL
 table.decimal("price", 10, 2);   // up to 99,999,999.99
 table.decimal("tax_rate", 5, 4); // 0.0000 – 9.9999
 ```
+
+A float column stores the value it is given, with no fixed number of places,
+and `float()` and `double()` take no scale. `bits` is the precision of SQL's
+`FLOAT(p)`, which is how MySQL and PostgreSQL choose between single and double
+precision; SQLite has one floating-point type, a double. Single precision keeps
+about seven significant digits, and MySQL reads it back differently depending
+on the query: 1.1 when it has no bindings, 1.100000023841858 when it has.
 
 Always store currency as `decimal`, not `float`/`double`. Floats lose precision
 on rounding. At the model boundary, use a `decimal:N` cast and pass exact values
 as strings; this keeps MySQL `DECIMAL` and PostgreSQL `NUMERIC` values out of
 JavaScript's lossy `number` representation.
+
+SQLite has no exact decimal type: a `decimal` column is `REAL`, exact to 15
+significant digits. `123456789012345678.90` reads back as
+`123456789012345680.00`, while the model that wrote it still holds the value it
+was given. On SQLite, keep amounts that need more digits in a `string` column
+with a `decimal:N` cast: they stay exact, but the database then orders and
+compares them as text.
+
+#### Float columns created before v5
+
+Before v5, `float()` and `double()` created `FLOAT(8,2)` and `DOUBLE(8,2)` on
+MySQL, and `float()` created `REAL` on PostgreSQL. Nothing alters them. To give
+an existing column double precision:
+
+```sql
+-- MySQL, DOUBLE(8,2). MODIFY replaces the column's NULL/NOT NULL and default: restate them.
+ALTER TABLE measures MODIFY measure DOUBLE NOT NULL;
+-- MySQL, FLOAT(8,2): then round away the noise of the old single precision.
+ALTER TABLE measures MODIFY ratio DOUBLE NOT NULL;
+UPDATE measures SET ratio = ROUND(ratio, 2);
+-- PostgreSQL, REAL: through text, or 1.1 becomes 1.100000023841858.
+ALTER TABLE measures ALTER COLUMN ratio TYPE DOUBLE PRECISION USING ratio::text::double precision;
+```
+
+A value MySQL rounded when it was written stays rounded.
 
 ### Strings and text
 

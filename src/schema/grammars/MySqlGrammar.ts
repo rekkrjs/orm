@@ -52,10 +52,12 @@ export class MySqlGrammar extends Grammar {
         return "SMALLINT";
       case "tinyInteger":
         return "TINYINT";
+      // No (M,D): MySQL would round every value to D places and cap it at M
+      // digits, where PostgreSQL and SQLite keep the value as given.
       case "float":
-        return `FLOAT(${column.precision || 8}, ${column.scale || 2})`;
+        return (column.precision ?? 53) <= 24 ? "FLOAT" : "DOUBLE";
       case "double":
-        return `DOUBLE(${column.precision || 8}, ${column.scale || 2})`;
+        return "DOUBLE";
       case "decimal":
         return `DECIMAL(${column.precision || 8}, ${column.scale || 2})`;
       case "boolean":

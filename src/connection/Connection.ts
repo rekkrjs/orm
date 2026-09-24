@@ -76,6 +76,19 @@ export function currentSchemaVersion(): number {
 }
 
 /**
+ * A PostgreSQL array literal, as pg writes one: each element quoted, NULL bare,
+ * a Date in UTC and an object as JSON. bun:sql cannot bind an array itself.
+ */
+function postgresArray(values: readonly unknown[]): string {
+  return `{${values.map((value) => {
+    if (value === null || value === undefined) return "NULL";
+    if (Array.isArray(value)) return postgresArray(value);
+    const text = value instanceof Date ? formatIso(value) : typeof value === "object" ? JSON.stringify(value) : String(value);
+    return `"${text.replace(/[\\"]/g, "\\$&")}"`;
+  }).join(",")}}`;
+}
+
+/**
  * Whether a statement may change a table's shape, judged by its first word:
  * ALTER, CREATE, DROP, DO, RENAME, and anything that opens with a comment. A
  * false positive only costs a cache refill; SELECT, INSERT, UPDATE, DELETE and
@@ -488,11 +501,21 @@ export class Connection {
     return ` (${bindings.length} binding${bindings.length === 1 ? "" : "s"} hidden)`;
   }
 
+  /**
+   * A plain object travels as JSON text, and so does an array, except on
+   * PostgreSQL, where it is a PostgreSQL array. Left to the drivers, SQLite
+   * refuses both, and bun:sql writes an object to PostgreSQL as
+   * "[object Object]" and an array as "1,2", which no column accepts.
+   */
   private normalizeBinding(value: any): any {
     if (value instanceof Date) {
       return this.driverName === "mysql" ? value : formatIso(value);
     }
-    if (Array.isArray(value)) return value.map((item) => this.normalizeBinding(item));
+    if (Array.isArray(value)) return this.driverName === "postgres" ? postgresArray(value) : JSON.stringify(value);
+    if (typeof value === "object" && value !== null) {
+      const prototype = Object.getPrototypeOf(value);
+      if (prototype === Object.prototype || prototype === null) return JSON.stringify(value);
+    }
     return value;
   }
 
@@ -617,11 +640,9 @@ export class Connection {
     return await this.executeStatement(driver, sqlString, normalizedBindings, true);
   }
 
-  /** Whether a binding contains a semantic date rather than date-looking text. */
+  /** Whether a binding is a semantic date rather than date-looking text; one inside an array travels as JSON text. */
   private carriesDate(bindings?: any[]): boolean {
-    const containsDate = (value: any): boolean =>
-      value instanceof Date || (Array.isArray(value) && value.some(containsDate));
-    return (bindings ?? []).some(containsDate);
+    return (bindings ?? []).some((value) => value instanceof Date);
   }
 
   /**

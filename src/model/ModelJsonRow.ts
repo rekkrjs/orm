@@ -197,7 +197,16 @@ export function castValueIsReady(cast: unknown, value: unknown): boolean {
  * UTC midnight instant reads as the previous day anywhere west of UTC.
  */
 export function serializeDate(value: unknown, cast?: unknown): unknown {
-  return value instanceof Date ? serializeDateValue(value, cast) : value;
+  return value instanceof Date ? serializeDateValue(value, cast) : ArrayBuffer.isView(value) ? serializeBytes(value) : value;
+}
+
+/**
+ * Bytes serialize as a Buffer does, `{ type: "Buffer", data: [...] }`, on every
+ * driver: SQLite hands back a plain Uint8Array, whose own JSON is an object
+ * keyed by index. The Buffer is a view over the same memory, not a copy.
+ */
+export function serializeBytes(value: ArrayBufferView): Buffer {
+  return Buffer.isBuffer(value) ? value : Buffer.from(value.buffer, value.byteOffset, value.byteLength);
 }
 
 export function serializeDateValue(value: Date, cast: unknown): string | null {
@@ -209,14 +218,18 @@ export function serializeDateValue(value: Date, cast: unknown): string | null {
     : formatIso(value);
 }
 
-/** Preserve the driver row; copy only when a Date needs serialization. */
+/** Preserve the driver row; copy only when a Date or bytes need serialization. */
 export function serializeRowDates(row: Record<string, unknown>): Record<string, unknown> {
   let output = row;
   for (const key of Object.keys(row)) {
     const value = row[key];
-    if (!(value instanceof Date)) continue;
-    if (output === row) output = { ...row };
-    output[key] = Number.isNaN(value.getTime()) ? null : formatIso(value);
+    if (value instanceof Date) {
+      if (output === row) output = { ...row };
+      output[key] = Number.isNaN(value.getTime()) ? null : formatIso(value);
+    } else if (ArrayBuffer.isView(value) && !Buffer.isBuffer(value)) {
+      if (output === row) output = { ...row };
+      output[key] = serializeBytes(value);
+    }
   }
   return output;
 }

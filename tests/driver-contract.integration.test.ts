@@ -113,6 +113,53 @@ class ContractStamped extends PermissiveModel {
   static override softDeletes = true;
 }
 
+class ContractCast extends PermissiveModel {
+  declare id: number;
+  declare flag: boolean;
+  declare count: number;
+  declare price: string;
+  declare ratio: number;
+  declare measure: number;
+  declare label: string;
+  declare meta: { b: number; a: number[]; s: string; n: null };
+  declare tags: string[];
+  declare secret: string;
+  declare born_on: Date | string; // Written as the day, read as a Date.
+  declare seen_at: Date;
+  static override table = "contract_casts";
+  static override timestamps = false;
+  static override casts = {
+    flag: "boolean", count: "integer", price: "decimal:2", ratio: "float", measure: "double", label: "string",
+    meta: "json", tags: "array", secret: "base64", born_on: "date", seen_at: "datetime",
+  };
+}
+
+/** One value per built-in cast, plus two uncast columns whose driver types differ. */
+const CAST_INPUT = {
+  flag: true, count: 42, price: "1234.50", ratio: 3.14159, measure: 1234567.891,
+  label: "ñandúÄÖüß€", // Ten characters: the column's limit.
+  meta: { b: 1, a: [1, 2], s: "ñ€😀", n: null }, tags: ["x", "y"], secret: "héllo ✓",
+  born_on: "2024-01-15", seen_at: new Date(Date.UTC(2024, 0, 15, 12, 0, 0, 123)),
+  owner_id: 5, payload: new Uint8Array([0, 1, 127, 128, 255]),
+};
+
+/** What each cast promises in JSON (docs/models.md, "Built-in casts"). */
+const CAST_JSON = {
+  flag: true, count: 42, price: "1234.50", ratio: 3.14159, measure: 1234567.891, label: "ñandúÄÖüß€",
+  meta: { b: 1, a: [1, 2], s: "ñ€😀", n: null }, tags: ["x", "y"], secret: "héllo ✓",
+  born_on: "2024-01-15", seen_at: "2024-01-15T12:00:00.123Z",
+  owner_id: 5, payload: { type: "Buffer", data: [0, 1, 127, 128, 255] },
+};
+
+/** The same table with no casts: rawJson() hands its rows back almost as the driver returned them. */
+class ContractUncast extends PermissiveModel {
+  static override table = "contract_casts";
+  static override timestamps = false;
+}
+
+/** A value as JSON text would carry it, so that a Buffer compares by its bytes. */
+const asJson = (value: unknown) => JSON.parse(JSON.stringify(value));
+
 async function createContext(driver: ContractDriver): Promise<ContractContext> {
   if (driver !== "sqlite") return await createDriverContext(driver);
   const connection = new Connection({ url: "sqlite://:memory:" });
@@ -699,6 +746,90 @@ export default class CreateContractMigrated extends Migration {
         expect(describeRow(bound)).toEqual(expected);
       });
       expect(describeValue((await connection.query("SELECT COUNT(*) AS n FROM contract_column_types"))[0].n)).toBe(count);
+    });
+
+    // Every built-in cast, through the columns the schema builder creates:
+    // what the model holds after create() is what it reads back, the three
+    // JSON paths agree, and handing it the same values again changes nothing.
+    run("round-trips every built-in cast through the model with nothing left pending", async () => {
+      const connection = context.connection;
+      await Schema.create("contract_casts", (table) => {
+        table.increments("id");
+        table.boolean("flag");
+        table.integer("count");
+        table.decimal("price", 10, 2);
+        table.float("ratio");
+        table.double("measure");
+        table.string("label", 10);
+        table.json("meta");
+        table.jsonb("tags");
+        table.text("secret");
+        table.date("born_on");
+        table.dateTime("seen_at", 3);
+        table.bigInteger("owner_id");
+        table.binary("payload");
+      }, connection);
+
+      const created = await ContractCast.create({ ...CAST_INPUT });
+      expect(asJson(created.toJSON())).toEqual({ id: created.id, ...CAST_JSON });
+      expect(created.getDirty()).toEqual({});
+
+      const found = await ContractCast.findOrFail(created.id);
+      // An uncast BIGINT arrives from PostgreSQL as text, as its drivers hand it over.
+      const stored = { id: created.id, ...CAST_JSON, owner_id: driver === "postgres" ? "5" : 5 };
+      expect(found.getDirty()).toEqual({});
+      expect([found.flag, found.count, found.price, found.ratio, found.measure, found.label, found.meta, found.tags, found.secret])
+        .toEqual([true, 42, "1234.50", 3.14159, 1234567.891, "ñandúÄÖüß€", CAST_INPUT.meta, ["x", "y"], "héllo ✓"]);
+      expect([found.born_on, found.seen_at]).toEqual([new Date(Date.UTC(2024, 0, 15)), CAST_INPUT.seen_at]);
+      // Reading a json cast caches a mutable object; reading alone is no change.
+      expect(found.getDirty()).toEqual({});
+      expect(asJson(found.toJSON())).toEqual(stored);
+      expect(asJson(await ContractCast.query().whereKey(created.id).rawJson())).toEqual([stored]);
+      expect(asJson(await ContractCast.query().whereKey(created.id).json())).toEqual([stored]);
+      expect(asJson(await ContractUncast.query().select("payload").whereKey(created.id).rawJson())).toEqual([{ payload: CAST_JSON.payload }]);
+
+      // The same values again, the JSON with its keys in another order: no
+      // write, so no updated_at bump and no observer, where a driver hands back
+      // true for 1, 12.5 for "12.50", or a JSON object reordered.
+      const statements: string[] = [];
+      const stop = DB.listen((event) => { statements.push(event.sql); });
+      try {
+        found.fill({ ...CAST_INPUT, meta: { n: null, s: "ñ€😀", a: [1, 2], b: 1 }, payload: new Uint8Array(CAST_INPUT.payload) });
+        expect(found.getDirty()).toEqual({});
+        await found.save();
+        expect(statements).toEqual([]);
+
+        found.meta.b = 2;
+        found.tags.push("z");
+        found.flag = false;
+        expect(Object.keys(found.getDirty()).sort()).toEqual(["flag", "meta", "tags"]);
+        await found.save();
+        expect(statements.filter((sql) => /^\s*update/i.test(sql))).toHaveLength(1);
+        expect(found.getDirty()).toEqual({});
+      } finally {
+        stop();
+      }
+      const saved = await ContractCast.findOrFail(created.id);
+      expect(asJson(saved.toJSON())).toEqual({ ...stored, flag: false, meta: { ...CAST_JSON.meta, b: 2 }, tags: ["x", "y", "z"] });
+    });
+
+    run("binds a plain object as JSON, and an array as JSON or, on PostgreSQL, as an array", async () => {
+      const connection = context.connection;
+      await Schema.create("contract_loose", (table) => {
+        table.increments("id");
+        table.json("doc").nullable();
+        table.text("note").nullable();
+      }, connection);
+      const loose = () => new Builder(connection, "contract_loose");
+      const object = { b: 1, a: "ñ\"\\" };
+      await loose().insert({ doc: object, note: object });
+      await loose().insert({ note: ["a", 'b"c', null] });
+      const [withObject, withArray] = await connection.query("SELECT doc, note FROM contract_loose ORDER BY id");
+      // A JSON column comes back parsed from MySQL and PostgreSQL, as text from SQLite.
+      expect(driver === "sqlite" ? JSON.parse(withObject.doc) : withObject.doc).toEqual(object);
+      // A text column holds the JSON, never "[object Object]".
+      expect(JSON.parse(withObject.note)).toEqual(object);
+      expect(withArray.note).toBe(driver === "postgres" ? '{"a","b\\"c",NULL}' : '["a","b\\"c",null]');
     });
 
     run("stores a Date as its UTC wall clock whatever the process time zone", async () => {

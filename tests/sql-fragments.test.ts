@@ -22,7 +22,9 @@ AND flag = ${true}`)
       expect(query.bindings).toEqual([1, "key", ["a"], ["b"], 2, true, 3, 4, 5, 6]);
       if (driver === "postgres") expect([...(text.match(/\$\d+/g) ?? [])]).toEqual(Array.from({ length: 10 }, (_, i) => `$${i + 1}`));
       const { statements } = await connection.pretend(() => query.get());
-      expect(statements[0]).toEqual({ sql: text, bindings: query.bindings });
+      // An array reaches PostgreSQL as an array literal and the others as JSON text.
+      const [a, b] = driver === "postgres" ? ['{"a"}', '{"b"}'] : ['["a"]', '["b"]'];
+      expect(statements[0]).toEqual({ sql: text, bindings: [1, "key", a, b, 2, true, 3, 4, 5, 6] });
     } finally { await connection.close(); }
   });
 }
@@ -35,5 +37,9 @@ test.skipIf(!process.env.POSTGRES_TEST_URL)("PostgreSQL executes tagged JSON ope
       .whereRaw(sql`payload ? ${"key"} AND payload ?| array[${"key"}] AND payload ?& array[${"other"}] -- ?
 AND ${true}`);
     expect(Array.from(await query.get())).toEqual([{ literal: "two  spaces ?" }]);
+    // A JavaScript array binds as a PostgreSQL array on both runtimes; bun:sql alone sent "key,other".
+    const bound = new Builder(connection, "unused").fromSub("SELECT '{\"key\":1,\"other\":2}'::jsonb AS payload", "j")
+      .selectRaw(sql`payload ?& ${["key", "other"]} AS all_keys, payload ?| ${["nope", 'a"b\\c']} AS any_missing`);
+    expect(Array.from(await bound.get())).toEqual([{ all_keys: true, any_missing: false }]);
   } finally { await connection.close(); }
 });

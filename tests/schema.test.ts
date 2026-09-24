@@ -399,6 +399,53 @@ describe("Schema Builder", () => {
     await teardownTestDb(connection);
   });
 
+  // MySQL used to get FLOAT(8,2) and DOUBLE(8,2): every value rounded to two
+  // places and capped under a million, where the other databases kept it.
+  test("float and double store the value as given on every grammar: double precision, no fixed places", () => {
+    const blueprint = new Blueprint("measures");
+    blueprint.float("ratio");
+    blueprint.float("single", 24);
+    blueprint.float("wide", 25);
+    blueprint.double("measure");
+
+    expect(new MySqlGrammar().compileCreate(blueprint, "measures")).toBe(
+      "CREATE TABLE `measures` (\n" +
+      "    `ratio` DOUBLE NOT NULL,\n" +
+      "    `single` FLOAT NOT NULL,\n" +
+      "    `wide` DOUBLE NOT NULL,\n" +
+      "    `measure` DOUBLE NOT NULL\n" +
+      ")",
+    );
+    expect(new PostgresGrammar().compileCreate(blueprint, "measures")).toBe(
+      'CREATE TABLE "measures" (\n' +
+      '    "ratio" DOUBLE PRECISION NOT NULL,\n' +
+      '    "single" REAL NOT NULL,\n' +
+      '    "wide" DOUBLE PRECISION NOT NULL,\n' +
+      '    "measure" DOUBLE PRECISION NOT NULL\n' +
+      ")",
+    );
+    expect(new SQLiteGrammar().compileCreate(blueprint, "measures")).toBe(
+      'CREATE TABLE "measures" (\n' +
+      '    "ratio" REAL NOT NULL,\n' +
+      '    "single" REAL NOT NULL,\n' +
+      '    "wide" REAL NOT NULL,\n' +
+      '    "measure" REAL NOT NULL\n' +
+      ")",
+    );
+  });
+
+  test("float and double refuse a scale, and float a precision outside 1 to 53 bits", () => {
+    const blueprint = new Blueprint("measures") as any;
+    expect(() => blueprint.float("ratio", 8, 2)).toThrow('float("ratio") takes no scale: use decimal() for a fixed number of places.');
+    expect(() => blueprint.double("measure", 8, 2)).toThrow('double("measure") takes no precision or scale: use decimal() for a fixed number of places.');
+    expect(() => blueprint.double("measure", 8)).toThrow("takes no precision or scale");
+    for (const precision of [0, 54, 1.5, Number.NaN]) {
+      expect(() => blueprint.float("ratio", precision)).toThrow("Float precision must be an integer number of bits between 1 and 53.");
+    }
+    // A refused call adds no column.
+    expect(blueprint.columns).toEqual([]);
+  });
+
   test("mysql grammar emits the distinct char and text types", () => {
     const grammar = new MySqlGrammar();
     const blueprint = new Blueprint("documents");

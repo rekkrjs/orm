@@ -33,7 +33,7 @@ export class PostgresGrammar extends Grammar {
       case "tinyInteger":
         return "SMALLINT";
       case "float":
-        return `REAL`;
+        return (column.precision ?? 53) <= 24 ? "REAL" : "DOUBLE PRECISION";
       case "double":
         return `DOUBLE PRECISION`;
       case "decimal":

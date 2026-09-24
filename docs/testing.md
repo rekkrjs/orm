@@ -199,16 +199,19 @@ runIfPostgres("integration against Postgres", async () => {
 ```
 
 The repository uses `POSTGRES_TEST_URL`, `MYSQL_TEST_URL`, and
-`REDIS_TEST_URL` for its live integration suites. For example:
+`REDIS_TEST_URL` for its live integration suites, read from the environment or
+from `.env` by both `bun test` and vitest. For example:
 
 ```bash
-POSTGRES_TEST_URL=postgres://localhost/test_db bun test
-MYSQL_TEST_URL=mysql://localhost/test_db bun test
-REDIS_TEST_URL=redis://127.0.0.1:6379 bun test tests/redis.integration.test.ts
+POSTGRES_TEST_URL=postgres://localhost/test_db \
+MYSQL_TEST_URL=mysql://localhost/test_db \
+REDIS_TEST_URL=redis://127.0.0.1:6379 bun test
 ```
 
-Each live suite is skipped when its URL is absent, so `bun test` remains usable
-on machines that only have SQLite available.
+A live test skips itself when its URL is absent, so the repository's suite
+refuses to start with any of the three unset: a run that skipped them would
+come out green having tested no server. On a machine that only has SQLite, set
+`ORM_TEST_SKIP_SERVERS=1` to skip them knowingly.
 
 ## Common pitfalls
 
@@ -240,6 +243,6 @@ too.
 `bun run test:node` builds `dist/` and runs the same files under Node.js. The
 tests import their API from `tests/harness.ts`, which hands them `bun:test` on
 Bun and vitest on Node.js; the few that exercise something only one runtime has
-say so with `test.skipIf`. vitest does not load `.env`, so export the test URLs
-first. Benchmarks run separately, without
+say so with `test.skipIf`. vitest reads `.env` as `bun test` does,
+`${VAR}` references included. Benchmarks run separately, without
 the concurrent test suite competing for resources; see [history](../benchmarks/README.md).

@@ -234,7 +234,7 @@ it is unaffected by `Connection.keepMysqlEventLoopAlive`.
    removal:
 
    ```console
-   $ MYSQL_TEST_URL=mysql://root@127.0.0.1:3306/test bun test tests/bun-mysql-eventloop.integration.test.ts
+   $ MYSQL_TEST_URL=mysql://root@127.0.0.1:3306/test ORM_TEST_SKIP_SERVERS=1 bun test tests/bun-mysql-eventloop.integration.test.ts
    ```
 
    If it fails after the removal, Bun is not fixed after all — restore the

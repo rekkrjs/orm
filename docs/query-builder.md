@@ -1129,6 +1129,19 @@ User.orderByRaw("CASE WHEN role = ? THEN 0 ELSE 1 END", [preferredRole]);
 
 Builder instances passed to `fromSub`, `union`, `unionAll`, and `withRecursive` keep their bindings. A string passed as a subquery is raw SQL and must therefore contain no untrusted input.
 
+A binding that is a plain object is sent as JSON text, and so is an array,
+except on PostgreSQL, where an array is a PostgreSQL array. That is the same on
+every driver and runtime:
+
+```ts
+await DB.table("events").insert({ payload: { kind: "signup" } }); // JSON text
+Post.whereRaw("id = ANY(?)", [[1, 2, 3]]);                        // PostgreSQL: integer[]
+Post.whereRaw(sql`tags ?| ${["news", "sport"]}`);                 // PostgreSQL: text[]
+```
+
+On PostgreSQL, an array headed for a `json` or `jsonb` column has to be text
+already: `JSON.stringify(list)`, or a `json` cast on the model attribute.
+
 ## Locking
 
 Available on MySQL and PostgreSQL:

@@ -186,9 +186,10 @@ describe("Connection", () => {
 
     await conn.query("SELECT $1", [date, [date]]);
 
+    // Inside an array too: PostgreSQL receives an array literal, in UTC.
     expect(calls[0]).toEqual([
       "2026-05-16T16:00:00.000Z",
-      ["2026-05-16T16:00:00.000Z"],
+      '{"2026-05-16T16:00:00.000Z"}',
     ]);
   });
 

@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { timestampsEnabled } from "./TimestampScope.js";
 import { Connection } from "../connection/Connection.js";
 import { Builder } from "../query/Builder.js";
@@ -95,14 +96,50 @@ function mutableCastKeys(casts: Record<string, any>): MutableCastKeys {
   return entry;
 }
 
-/** Dates compare by instant: two Date objects for the same moment are equal. */
+const isNumeric = (value: unknown): boolean => typeof value === "number" || typeof value === "bigint";
+
+/**
+ * Dates compare by instant, bytes by content, and a number with its own
+ * digits: PostgreSQL hands back "5" for a BIGINT the model was given as 5.
+ */
 function sameAttributeValue(before: unknown, after: unknown): boolean {
+  if (before === after) return true;
+  if (typeof before !== "object" && typeof after !== "object") {
+    return typeof before === "string" ? isNumeric(after) && before === String(after)
+      : typeof after === "string" && isNumeric(before) && after === String(before);
+  }
   if (before instanceof Date || after instanceof Date) {
     const a = before instanceof Date ? before.getTime() : parseUtcDate(before as any).getTime();
     const b = after instanceof Date ? after.getTime() : parseUtcDate(after as any).getTime();
-    if (!Number.isNaN(a) && !Number.isNaN(b)) return a === b;
+    return a === b;
   }
-  return before === after;
+  return ArrayBuffer.isView(before) && ArrayBuffer.isView(after)
+    && Buffer.from(before.buffer, before.byteOffset, before.byteLength)
+      .equals(new Uint8Array(after.buffer, after.byteOffset, after.byteLength));
+}
+
+const PRIMITIVE_CASTS = new Set(["boolean", "bool", "number", "integer", "int", "float", "double", "decimal", "string"]);
+const JSON_CASTS = new Set(["json", "array", "object"]);
+
+/**
+ * Whether an attribute still holds its original value, compared as its cast
+ * reads it: the database hands back `true` where the model stores 1, 12.5 where
+ * it stores "12.50", or a JSON object with its keys in another order.
+ */
+function sameCastValue(cast: CastDefinition | undefined, before: unknown, after: unknown, model: ModelCore<any>, attribute: string): boolean {
+  if (sameAttributeValue(before, after)) return true;
+  if (typeof cast !== "string" || before === null || before === undefined || after === null || after === undefined) return false;
+  const { type } = castMetadata(cast);
+  const json = JSON_CASTS.has(type);
+  if (!json && !PRIMITIVE_CASTS.has(type)) return false;
+  try {
+    const context = { modelName: model.constructor.name, attribute };
+    const a = castBuiltInAttribute(cast, before, context);
+    const b = castBuiltInAttribute(cast, after, context);
+    return json ? isDeepStrictEqual(a, b) : a === b;
+  } catch {
+    return false; // Text that does not parse as the cast: a real change.
+  }
 }
 
 type MassAssignmentPolicy = {
@@ -783,7 +820,7 @@ export class ModelCore<T extends Record<string, any> = any> {
       const value = cached && jsonKeys.has(key)
         ? this.serializeCastAttribute(key, this.$castCache[key])
         : (this.$attributes as any)[key];
-      if (!sameAttributeValue((this.$original as any)[key], value)) {
+      if (!sameCastValue(this.$mergedCasts[key], (this.$original as any)[key], value, this, key)) {
         (dirty as any)[key] = value;
       }
     }
