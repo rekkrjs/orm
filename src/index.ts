@@ -1,5 +1,5 @@
 export { Connection } from "./connection/Connection.js";
-export type { WriteResult } from "./connection/Connection.js";
+export type { QueryEvent, WriteResult } from "./connection/Connection.js";
 export { UniqueConstraintViolationError } from "./connection/UniqueConstraintViolationError.js";
 export { ConnectionManager } from "./connection/ConnectionManager.js";
 export type { TenantCachePolicy, TenantResolution, TenantResolver } from "./connection/ConnectionManager.js";

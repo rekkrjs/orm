@@ -26,6 +26,18 @@
 - `prepare: true` works on Node.js too: PostgreSQL statements with bindings
   are named and planned once per session, as on Bun. The default stays `false`.
 
+### Added
+
+- `DB.listen(listener)` calls a function after each statement the application
+  runs, on every connection, with its SQL, bindings, duration, connection and,
+  if it failed, the error; it returns the function that stops it. Transaction
+  control, savepoints and the ORM's own session checks are not reported. A
+  listener that throws or rejects is reported with `console.error` and never
+  reaches the query. The events are published on the `node:diagnostics_channel`
+  channel `@rekkr/orm:query`, so APM and OpenTelemetry tooling can subscribe by
+  name. With no listener the cost is one boolean check per statement; measured
+  within noise on both runtimes. See [Configuration](./docs/configuration.md#listening-to-queries-in-code).
+
 ### Breaking
 
 - `Connection.driver` is typed `SqlDriver`, the ORM's own driver contract,

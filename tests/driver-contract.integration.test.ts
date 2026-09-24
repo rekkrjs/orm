@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test, evalCommand, isBun, ormModule, runProcess, writeText } from "./harness.js";
+import { afterAll, beforeAll, describe, expect, test, evalCommand, isBun, ormModule, runProcess, sleep, writeText } from "./harness.js";
 import { isUniqueConstraintViolation } from "../src/connection/UniqueConstraintViolationError.js";
 import { PermissiveModel } from "./helpers.js";
 import { mkdtemp, readdir, rm } from "fs/promises";
@@ -8,11 +8,13 @@ import { pathToFileURL } from "url";
 import {
   Builder,
   Connection,
+  DB,
   Migrator,
   Model,
   Schema,
   UniqueConstraintViolationError,
   backedEnum,
+  type QueryEvent,
 } from "../src/index.js";
 import { createDriverContext, serverUrl, type ServerDriver } from "./driver-harness.js";
 
@@ -69,6 +71,11 @@ class ContractFastJson extends PermissiveModel {
 class ContractCalendarDay extends PermissiveModel {
   static override table = "contract_calendar_days";
   static override casts = { born_on: "date", seen_at: "datetime" };
+}
+
+class ContractListened extends PermissiveModel {
+  static override table = "contract_listened";
+  static override timestamps = false;
 }
 
 class ContractZoneless extends PermissiveModel {
@@ -682,6 +689,81 @@ export default class CreateContractMigrated extends Migration {
         expect(new Date((row as any).at).toISOString()).toBe(instant.toISOString());
       });
     });
+
+    // DB.listen reports the application's statements: not the transaction
+    // control, savepoints and checks the ORM runs around them on each driver.
+    run("reports each application statement once, and nothing the ORM runs on its own", async () => {
+      const connection = context.connection;
+      await Schema.create("contract_listened", (table) => {
+        table.increments("id");
+        table.string("email").unique();
+        table.timestamp("seen_at", 3).nullable();
+      }, connection);
+      const events: QueryEvent[] = [];
+      // The connection is live: whether it is in a transaction is read on arrival.
+      const inTransaction = new Map<QueryEvent, boolean>();
+      const stop = DB.listen((event) => {
+        events.push(event);
+        inTransaction.set(event, event.connection.isInTransaction());
+      });
+      try {
+        // A Date makes MySQL check the session is UTC, and create() reads
+        // LAST_INSERT_ID there; PostgreSQL uses RETURNING instead.
+        await ContractListened.create({ email: "ada@example.com", seen_at: new Date("2024-01-15T12:00:00.000Z") });
+        await connection.transaction(async (tx) => {
+          await tx.query("SELECT 1 AS one");
+          await tx.transaction(async (inner) => { await inner.query("SELECT 2 AS two"); });
+        });
+        await connection.beginTransaction();
+        await connection.query("SELECT 3 AS three");
+        await connection.rollback();
+        await connection.pretend(async () => { await connection.query("SELECT 4 AS four"); });
+        const duplicate = await caught(ContractListened.create({ email: "ada@example.com" }));
+
+        // Plumbing never shows: transaction control, savepoints, connection
+        // pragmas, MySQL's UTC check and LAST_INSERT_ID.
+        const plumbing = /^\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b|PRAGMA (foreign_keys|journal_mode|synchronous|busy_timeout)|LAST_INSERT_ID|TIMESTAMPDIFF/i;
+        expect(events.map((event) => event.sql).filter((sql) => plumbing.test(sql))).toEqual([]);
+        // create() also reads the primary key's column, a real query that is
+        // reported like any other; how many it runs is not what this pins.
+        const statements = events.filter((event) => !/table_info|information_schema/i.test(event.sql));
+        expect(statements.map((event) => event.sql.split(/\s+/)[0]!.toUpperCase())).toEqual(["INSERT", "SELECT", "SELECT", "SELECT", "INSERT"]);
+        expect(statements.slice(0, 4).map((event) => event.error)).toEqual([undefined, undefined, undefined, undefined]);
+        expect(duplicate).toBeInstanceOf(UniqueConstraintViolationError);
+        expect(statements[4]!.error).toBe(duplicate);
+        for (const event of events) {
+          expect(event.durationMs).toBeGreaterThanOrEqual(0);
+          expect(event.connection.resourceConnection()).toBe(connection.resourceConnection());
+        }
+        // Inside a transaction the event names the session that ran it.
+        expect(statements.map((event) => inTransaction.get(event))).toEqual([false, true, true, true, false]);
+      } finally {
+        stop();
+      }
+    });
+
+    if (driver !== "sqlite") {
+      // Whether a statement is reported is decided when it starts: one already
+      // running when the first listener arrives stays unreported, and each of
+      // two overlapping statements carries its own duration.
+      run("decides at the start of each statement, and times overlapping ones apart", async () => {
+        const connection = context.connection;
+        const sleeping = connection.query(SLEEP_SQL[driver]);
+        await sleep(100);
+        const events: QueryEvent[] = [];
+        const stop = DB.listen((event) => { events.push(event); });
+        try {
+          await sleeping;
+          expect(events).toEqual([]);
+
+          await Promise.all([connection.query(SLEEP_SQL[driver]), connection.query(SLEEP_SQL[driver])]);
+          expect(events.map((event) => event.sql)).toEqual([SLEEP_SQL[driver], SLEEP_SQL[driver]]);
+          for (const event of events) expect(event.durationMs).toBeGreaterThanOrEqual(250);
+        } finally {
+          stop();
+        }
+      });
+    }
 
     // Date-time text without a zone is UTC: the ORM stores it that way and
     // SQLite's CURRENT_TIMESTAMP writes it that way. The engine alone reads it

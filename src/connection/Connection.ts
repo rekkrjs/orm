@@ -9,6 +9,7 @@ import { UniqueConstraintViolationError, isUniqueConstraintViolation } from "./U
 import { createDriver, type ReservedSqlDriver, type SqlDriver } from "./drivers/SqlDriver.js";
 import { TransactionContext } from "./TransactionContext.js";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { channel } from "node:diagnostics_channel";
 import { resolveConnection } from "./ExecutionContext.js";
 import { TenantContext } from "./TenantContext.js";
 import { ConnectionManager } from "./ConnectionManager.js";
@@ -40,6 +41,27 @@ export interface WriteResult extends Array<Record<string, any>> {
   insertId?: number | string | null;
   lastInsertRowid?: number | bigint | null;
 }
+
+/**
+ * One statement the application ran, published once it finishes. Statements
+ * the ORM runs on its own (BEGIN, COMMIT, ROLLBACK, savepoints, SQLite pragmas,
+ * MySQL's UTC check and LAST_INSERT_ID) are not reported.
+ */
+export interface QueryEvent {
+  readonly sql: string;
+  /** The values sent with the statement, unredacted: an exporter should not forward them by default. */
+  readonly bindings: readonly unknown[] | undefined;
+  readonly durationMs: number;
+  readonly connection: Connection;
+  /** Set when the statement failed: the same error its caller receives. */
+  readonly error?: unknown;
+}
+
+/**
+ * Where QueryEvents are published. `DB.listen()` is the guarded way in; APM and
+ * OpenTelemetry tooling can subscribe by name, and then owns its own errors.
+ */
+export const queryChannel = channel("@rekkr/orm:query");
 
 export class Connection {
   /** Every driver the ORM has a grammar for. Anything else is rejected up front. */
@@ -453,12 +475,25 @@ export class Connection {
       : error;
   }
 
-  private async executeStatement(driver: SqlDriver, sqlString: string, bindings?: any[]): Promise<any> {
+  /** `report` marks the application's own statements, the ones that reach `log()`. */
+  private async executeStatement(driver: SqlDriver, sqlString: string, bindings?: any[], report = false): Promise<any> {
+    // Nobody listening costs one boolean read: no timer, no event, no extra await.
+    // Decided here, so a listener that arrives mid-statement sees no half event.
+    const started = report && queryChannel.hasSubscribers ? performance.now() : undefined;
     try {
-      return await this.keepEventLoopAlive(() => driver.unsafe(sqlString, bindings));
+      const result = await this.keepEventLoopAlive(() => driver.unsafe(sqlString, bindings));
+      if (started !== undefined) this.publishQuery(sqlString, bindings, started);
+      return result;
     } catch (error) {
-      throw this.normalizeDriverError(error);
+      const normalized = this.normalizeDriverError(error);
+      if (started !== undefined) this.publishQuery(sqlString, bindings, started, normalized);
+      throw normalized;
     }
+  }
+
+  private publishQuery(sql: string, bindings: any[] | undefined, started: number, error?: unknown): void {
+    const event: QueryEvent = { sql, bindings, durationMs: performance.now() - started, connection: this };
+    queryChannel.publish(error === undefined ? event : { ...event, error });
   }
 
   /** Driver metadata only: MySQL reports changed rows; other drivers may count matched rows. */
@@ -496,7 +531,7 @@ export class Connection {
       const hasDate = this.carriesDate(bindings);
       this.log(sqlString, normalizedBindings);
       if (hasDate) await this.assertMysqlUtc(driver, this.dedicated || !!this.reservedDriver);
-      await this.executeStatement(driver, sqlString, normalizedBindings);
+      await this.executeStatement(driver, sqlString, normalizedBindings, true);
       const rows = await this.executeStatement(driver, "SELECT LAST_INSERT_ID() AS orm_insert_id") as any[];
       return rows[0]?.orm_insert_id ?? null;
     };
@@ -528,7 +563,7 @@ export class Connection {
 
     const driver = this.getDriver();
     if (this.driverName !== "mysql" || !hasDate) {
-      return await this.executeStatement(driver, sqlString, normalizedBindings);
+      return await this.executeStatement(driver, sqlString, normalizedBindings, true);
     }
 
     // A pool may hand two consecutive queries to different sessions. Reserve
@@ -537,14 +572,14 @@ export class Connection {
       const reserved = await this.keepEventLoopAlive(() => driver.reserve!());
       try {
         await this.assertMysqlUtc(reserved);
-        return await this.executeStatement(reserved, sqlString, normalizedBindings);
+        return await this.executeStatement(reserved, sqlString, normalizedBindings, true);
       } finally {
         reserved.release?.();
       }
     }
 
     await this.assertMysqlUtc(driver, this.dedicated || !!this.reservedDriver);
-    return await this.executeStatement(driver, sqlString, normalizedBindings);
+    return await this.executeStatement(driver, sqlString, normalizedBindings, true);
   }
 
   /** Whether a binding contains a semantic date rather than date-looking text. */

@@ -509,6 +509,57 @@ Controls SQL query logging.
 
 Useful in development; in production prefer the file form (or leave off) and ensure query sampling if volume is high.
 
+### Listening to queries in code
+
+`log` writes lines; `DB.listen()` hands each statement to a function, for slow
+query alerts, APM spans, or counting queries in a test:
+
+```ts
+import { DB } from "@rekkr/orm";
+
+const stop = DB.listen(({ sql, bindings, durationMs, connection, error }) => {
+  if (durationMs > 100) console.warn(`Slow query (${durationMs.toFixed(1)} ms): ${sql}`);
+});
+
+stop(); // no longer called
+```
+
+- **What is reported:** every statement your code runs, on every connection,
+  including tenant connections created later: queries, writes, raw SQL, and the
+  queries ORM makes on your behalf, such as reading a table's columns before an
+  insert. Not reported: `BEGIN`, `COMMIT`, `ROLLBACK`, savepoints, SQLite's
+  connection pragmas, MySQL's UTC check and `LAST_INSERT_ID()`, and anything
+  run under `pretend()`.
+- **When:** after the statement finishes, whether it succeeded or failed. A
+  failed statement carries `error`, the same error its caller receives. Whether
+  a statement is reported is decided when it starts.
+- **`connection`** is the connection that ran it: inside a transaction, the
+  transaction's session, so `connection.isInTransaction()` is true while your
+  listener runs. To keep one configured connection's statements, compare
+  `connection.resourceConnection()` with it.
+- **Errors in a listener** are caught and reported with `console.error`; they
+  never reach the query, which has already run. An async listener is not
+  awaited, so a slow one does not delay the query.
+- **Bindings are in clear text.** `log` hides them unless `bindings: true`;
+  a listener that exports queries elsewhere should drop or mask them.
+- **Cost:** with no listener, one boolean check per statement. A listener runs
+  in the query's async context, so APM tooling can attach it to the request
+  that caused it; a query it runs inside a transaction joins that transaction.
+
+The events are published on the `node:diagnostics_channel` channel
+`@rekkr/orm:query`, which tracing tools can subscribe to by name without
+touching the application. A subscriber added that way is not guarded: if it
+throws, the error surfaces as an uncaught exception.
+
+```ts
+// Count the statements a code path runs, e.g. to catch an N+1 in a test.
+const statements: string[] = [];
+const stop = DB.listen(({ sql }) => { statements.push(sql); });
+await loadDashboard();
+stop();
+expect(statements).toHaveLength(3);
+```
+
 ## `queue`
 
 Enables the background job queue. When present, `configureOrm()` configures the
