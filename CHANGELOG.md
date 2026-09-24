@@ -68,6 +68,12 @@
   commandsPath not found` on stderr, because the generated config points at
   `./app/commands` and init does not create it. A missing commands directory
   now means "no commands"; an unreadable one still fails.
+- Date-time text without a zone, such as SQLite's `CURRENT_TIMESTAMP` output
+  `2026-08-27 12:00:00`, was read in the process's local time zone: in New York
+  it became 16:00 UTC. It is now read as UTC, the way ORM stores dates, when a
+  `datetime` cast decodes it, when a model compares it for changes, and when it
+  is written to MySQL. Reading that text is also faster, 5–11% on `rawJson()`
+  of SQLite rows, because it is assembled rather than parsed.
 - Migrations are imported by file URL, not by raw path.
 - Four tests awaited nothing on `expect(...).rejects` and asserted nothing; they
   now assert.
@@ -80,6 +86,10 @@
 - Tests import their API from `tests/harness.ts`, which is `bun:test` on Bun and
   vitest on Node.js. `bun run test:node` runs the suite under Node.js, and CI
   runs both.
+- CI runs the suite on both runtimes with the process in seven more time zones,
+  from UTC−11 to UTC+14, including half- and three-quarter-hour offsets and
+  daylight saving in both hemispheres. It had only ever run in UTC, which hid
+  the zone-less date reading fixed above.
 
 ## 4.1.0 — 2026-09-21
 

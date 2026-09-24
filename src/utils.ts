@@ -188,6 +188,76 @@ export function formatIso(value: Date): string {
     + "Z";
 }
 
+/** Days per month in a common year; February gains one in a leap year. */
+export const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+/** The two digits at `index` as a number, or -1 when either is not a digit. */
+function twoDigitsAt(value: string, index: number): number {
+  const tens = value.charCodeAt(index) - 48;
+  const units = value.charCodeAt(index + 1) - 48;
+  return tens >= 0 && tens <= 9 && units >= 0 && units <= 9 ? tens * 10 + units : -1;
+}
+
+/**
+ * `new Date(value)`, except that date-time text without a zone designator,
+ * `YYYY-MM-DD HH:MM[:SS[.fraction]]` with a space or a `T`, is read as UTC: the
+ * way the ORM stores it and SQLite's `CURRENT_TIMESTAMP` writes it. The engine
+ * reads such text in the process's local time zone, so `"2026-08-27 12:00:00"`
+ * became 16:00 UTC in New York. Every string the ORM turns into a Date goes
+ * through here, so a decoded value and the text it came from name one instant.
+ *
+ * The common case is assembled with Date.UTC rather than parsed, which is also
+ * cheaper than the engine's own local parse. Anything unusual (a year below
+ * 100, a day the month lacks, hour 24) goes to the engine's ISO parser as
+ * `YYYY-MM-DDTHH:MM…Z`, so edge cases keep the engine's reading.
+ */
+export function parseUtcDate(value: string | number | Date): Date {
+  if (typeof value !== "string") return new Date(value);
+  const length = value.length;
+  const separator = value.charCodeAt(10);
+  if (
+    length < 16 || (separator !== 32 && separator !== 84)
+    || value.charCodeAt(4) !== 45 || value.charCodeAt(7) !== 45 || value.charCodeAt(13) !== 58
+  ) return new Date(value);
+
+  let second = 0;
+  let millisecond = 0;
+  if (length > 16) {
+    if (length < 19 || value.charCodeAt(16) !== 58) return new Date(value);
+    second = twoDigitsAt(value, 17);
+    if (length > 19) {
+      if (length === 20 || value.charCodeAt(19) !== 46) return new Date(value);
+      for (let index = 20; index < length; index++) {
+        const code = value.charCodeAt(index);
+        if (code < 48 || code > 57) return new Date(value);
+      }
+      // The first three fraction digits; the engine drops the rest too.
+      millisecond = (value.charCodeAt(20) - 48) * 100
+        + (length > 21 ? (value.charCodeAt(21) - 48) * 10 : 0)
+        + (length > 22 ? value.charCodeAt(22) - 48 : 0);
+    }
+  }
+
+  const century = twoDigitsAt(value, 0);
+  const yearInCentury = twoDigitsAt(value, 2);
+  const month = twoDigitsAt(value, 5);
+  const day = twoDigitsAt(value, 8);
+  const hour = twoDigitsAt(value, 11);
+  const minute = twoDigitsAt(value, 14);
+  // A -1 anywhere makes the OR negative: some field is not two digits.
+  if ((century | yearInCentury | month | day | hour | minute | second) < 0) return new Date(value);
+
+  const year = century * 100 + yearInCentury;
+  const leapDay = month === 2 && year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  if (
+    year < 100 || month < 1 || month > 12 || day < 1 || day > (leapDay ? 29 : MONTH_DAYS[month - 1]!)
+    || hour > 23 || minute > 59 || second > 59
+  ) {
+    return new Date(`${value.slice(0, 10)}T${value.slice(11)}Z`);
+  }
+  return new Date(Date.UTC(year, month - 1, day, hour, minute, second, millisecond));
+}
+
 /**
  * The calendar-day part of `formatIso()`, `YYYY-MM-DD`, built directly: slicing
  * the full string first flattens all fifteen pieces to keep three.

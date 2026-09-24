@@ -1,7 +1,7 @@
 import { describe, expect, test, evalCommand, ormModule, runProcess } from "./harness.js";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { formatDateForDriver, formatIso, formatIsoDate } from "../src/utils.js";
+import { formatDateForDriver, formatIso, formatIsoDate, parseUtcDate } from "../src/utils.js";
 import { serializeDate, serializeRowDates } from "../src/model/ModelJsonRow.js";
 import { Model } from "../src/index.js";
 // The query grammar, not the schema grammar the package exports under this name.
@@ -223,5 +223,43 @@ describe("the ORM emits ISO strings through formatIso alone", () => {
     }
 
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * `parseUtcDate()` assembles zone-less text with Date.UTC instead of parsing
+ * it. The definition it must match is the plain one: zone-less text gets a `T`
+ * and a `Z` and goes to the engine; any other text goes to the engine as is.
+ */
+describe("parseUtcDate", () => {
+  const ZONELESS = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
+  const reference = (text: string) => new Date(ZONELESS.test(text) ? `${text.replace(" ", "T")}Z` : text);
+  const disagreements = (texts: string[]) => texts.flatMap((text) => {
+    const actual = parseUtcDate(text).getTime();
+    const expected = reference(text).getTime();
+    return actual === expected || (Number.isNaN(actual) && Number.isNaN(expected)) ? [] : [`${text}: ${actual} ≠ ${expected}`];
+  });
+
+  test("matches the engine's UTC reading over a generated corpus", () => {
+    const texts: string[] = [];
+    for (let index = 0; index < 20_000; index++) {
+      const iso = new Date(Date.UTC(1900 + (index % 300), index % 12, 1 + (index % 31), index % 24, index % 60, (index * 7) % 60, index % 1000)).toISOString();
+      const fraction = [".", ".", ".1", ".12", ".123", ".123456"][index % 6]!;
+      texts.push(`${iso.slice(0, 10)}${index % 2 ? " " : "T"}${iso.slice(11, index % 5 ? 19 : 16)}${index % 5 && fraction !== "." ? fraction : ""}`);
+    }
+    expect(disagreements(texts)).toEqual([]);
+  });
+
+  test("hands edge cases and other shapes to the engine", () => {
+    expect(disagreements([
+      "2023-02-30 00:00:00", "2023-02-29 10:00", "2024-02-29 23:59:59", "2026-13-01 00:00:00", "2026-00-10 00:00",
+      "2026-08-20 24:00:00", "2026-08-20 10:11:60", "0050-01-01 00:00:00", "0000-01-01 00:00",
+      "2026-08-27 12:00:00.1234567890", "2026-08-27 12:00:00.", "2026-08-27 1a:00:00", "2026-08-27 12:00:0",
+      "2026-08-27 12:00:00+02", "2026-08-27T12:00:00-05:00", "2026-08-27T12:00:00Z", "2026-08-27T12:00:00.000Z",
+      "2026-08-27", "2026-08-27 ", "", "not a date at all",
+    ])).toEqual([]);
+    expect(parseUtcDate("2026-08-27 12:00:00").toISOString()).toBe("2026-08-27T12:00:00.000Z");
+    expect(parseUtcDate("2026-08-27 12:00:00.123456").toISOString()).toBe("2026-08-27T12:00:00.123Z");
+    expect(parseUtcDate(0).getTime()).toBe(0);
   });
 });

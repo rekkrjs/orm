@@ -1,5 +1,5 @@
 import { timestampsEnabled } from "./TimestampScope.js";
-import { formatDecimal, formatIso, formatIsoDate } from "../utils.js";
+import { MONTH_DAYS, formatDecimal, formatIso, formatIsoDate, parseUtcDate } from "../utils.js";
 import {
   assertBackedEnumValue,
   isBackedEnumDefinition,
@@ -113,8 +113,6 @@ export function implicitDateCasts(model: ModelConstructor): Record<string, CastD
   });
   return casts;
 }
-
-const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 /** The number the two digits at `index` spell; the scan above proved they are digits. */
 function twoDigits(value: string, index: number): number {
@@ -376,7 +374,7 @@ function castCompiledAttribute(cast: CastMetadata, value: unknown, context: Cast
     }
     case "datetime":
     case "timestamp":
-      return new Date(value as string | number | Date);
+      return parseUtcDate(value as string | number | Date);
     case "json":
     case "array":
     case "object":

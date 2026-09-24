@@ -7,7 +7,8 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
     exclude: ["tests/benchmark*"],
     setupFiles: ["tests/invariants.ts"],
-    // bun test runs in UTC unless TZ is set; the suite is written against that.
+    // UTC unless TZ is set, like bun test. CI also runs the suite in zones
+    // around the world (.github/workflows/test.yml): no result may depend on it.
     env: { TZ: process.env.TZ ?? "UTC" },
   },
 });

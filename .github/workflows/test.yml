@@ -61,5 +61,26 @@ jobs:
         run: bun run test
       - if: matrix.runtime == 'node'
         run: node --version && node ./node_modules/vitest/vitest.mjs run
+      # The suite again with the process in zones around the world: far west and
+      # far east of UTC, half- and three-quarter-hour offsets, and daylight saving
+      # in both hemispheres. The ORM stores UTC, so the process zone must not
+      # change a result. Every zone runs even after one fails.
+      - name: suite in other time zones
+        run: |
+          failed=""
+          for tz in Pacific/Pago_Pago America/New_York America/St_Johns Asia/Kathmandu Australia/Lord_Howe Pacific/Chatham Pacific/Kiritimati; do
+            echo "::group::TZ=$tz"
+            # An unknown zone falls back to UTC in silence and would pass for nothing.
+            if ! TZ=$tz ${{ matrix.runtime }} -e 'process.exit(new Date(Date.UTC(2024, 0, 15)).getTimezoneOffset() === 0 ? 1 : 0)'; then
+              echo "::error::TZ=$tz is not applied by ${{ matrix.runtime }}"
+              failed="$failed $tz"
+            elif [ "${{ matrix.runtime }}" = bun ]; then
+              TZ=$tz bun test --parallel --path-ignore-patterns='**/benchmark*' || failed="$failed $tz"
+            else
+              TZ=$tz node ./node_modules/vitest/vitest.mjs run || failed="$failed $tz"
+            fi
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then echo "::error::Suite failed with TZ=$failed"; exit 1; fi
       - if: matrix.runtime == 'bun'
         run: bun audit

@@ -23,7 +23,7 @@ import type {
   ModelKey,
   ModelMassAssignmentInput,
 } from "./ModelBase.js";
-import { formatDecimal, formatIso, snakeCase } from "../utils.js";
+import { formatDecimal, formatIso, parseUtcDate, snakeCase } from "../utils.js";
 import { MassAssignmentError } from "./MassAssignmentError.js";
 import { MissingAttributeError } from "./MissingAttributeError.js";
 import {
@@ -98,8 +98,8 @@ function mutableCastKeys(casts: Record<string, any>): MutableCastKeys {
 /** Dates compare by instant: two Date objects for the same moment are equal. */
 function sameAttributeValue(before: unknown, after: unknown): boolean {
   if (before instanceof Date || after instanceof Date) {
-    const a = before instanceof Date ? before.getTime() : new Date(before as any).getTime();
-    const b = after instanceof Date ? after.getTime() : new Date(after as any).getTime();
+    const a = before instanceof Date ? before.getTime() : parseUtcDate(before as any).getTime();
+    const b = after instanceof Date ? after.getTime() : parseUtcDate(after as any).getTime();
     if (!Number.isNaN(a) && !Number.isNaN(b)) return a === b;
   }
   return before === after;
@@ -732,7 +732,7 @@ export class ModelCore<T extends Record<string, any> = any> {
         const value = attributes[key];
         if (value === null || value === undefined) continue;
         if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) continue;
-        const date = value instanceof Date ? value : new Date(value);
+        const date = value instanceof Date ? value : parseUtcDate(value);
         if (Number.isNaN(date.getTime())) continue;
         copy = copy ?? { ...attributes };
         copy[key] = date;

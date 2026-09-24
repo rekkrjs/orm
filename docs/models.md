@@ -117,6 +117,9 @@ custom cast replaces it outright. Set `timestamps = false` to opt out of the
 columns entirely.
 
 The implicit cast has the same parsing rules as an explicit `datetime` cast.
+Text without a zone, such as `2026-08-27 12:00:00` from SQLite's
+`CURRENT_TIMESTAMP`, is read as UTC whatever the process time zone, because
+that is how ORM stores dates; JavaScript alone would read it as local time.
 Free-form values, MySQL's `0000-00-00 00:00:00`, and Unix timestamps stored as
 strings therefore become an invalid `Date`; numeric Unix seconds are treated as
 JavaScript milliseconds. Use an explicit `"string"` cast when the column is not

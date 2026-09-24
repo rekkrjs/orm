@@ -1,5 +1,5 @@
 import { SqlFragment } from "./SqlFragment.js";
-import { formatIso } from "../utils.js";
+import { formatIso, parseUtcDate } from "../utils.js";
 import { Connection } from "../connection/Connection.js";
 import type { WriteResult } from "../connection/Connection.js";
 import { UniqueConstraintViolationError } from "../connection/UniqueConstraintViolationError.js";
@@ -3087,7 +3087,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
         const value = record?.[column];
         if (value === null || value === undefined) continue;
         if (typeof value !== "string" && !(value instanceof Date)) continue;
-        const date = value instanceof Date ? value : new Date(value);
+        const date = value instanceof Date ? value : parseUtcDate(value);
         if (Number.isNaN(date.getTime())) continue;
         copy = copy ?? { ...record };
         copy[column] = date;

@@ -71,6 +71,12 @@ class ContractCalendarDay extends PermissiveModel {
   static override casts = { born_on: "date", seen_at: "datetime" };
 }
 
+class ContractZoneless extends PermissiveModel {
+  static override table = "contract_zoneless";
+  static override timestamps = false;
+  static override casts = { seen_at: "datetime" };
+}
+
 class ContractStamped extends PermissiveModel {
   static override table = "contract_stamped";
   static override softDeletes = true;
@@ -674,6 +680,31 @@ export default class CreateContractMigrated extends Migration {
         expect((await connection.query(read))[0].wall_clock).toBe(stored);
         const [row] = await new Builder(connection, "contract_instants").get();
         expect(new Date((row as any).at).toISOString()).toBe(instant.toISOString());
+      });
+    });
+
+    // Date-time text without a zone is UTC: the ORM stores it that way and
+    // SQLite's CURRENT_TIMESTAMP writes it that way. The engine alone reads it
+    // in the process's local time.
+    run("reads and writes zone-less date-time text as UTC, whatever the process time zone", async () => {
+      await Schema.create("contract_zoneless", (table) => {
+        table.increments("id");
+        table.dateTime("seen_at", 3);
+      }, context.connection);
+      const noon = "2026-08-27T12:00:00.000Z";
+      await inTimeZone("America/New_York", async () => {
+        // Text written by something other than the model, through the model,
+        // and through the model's query builder.
+        await new Builder(context.connection, "contract_zoneless").insert({ seen_at: "2026-08-27 12:00:00" });
+        await ContractZoneless.create({ seen_at: "2026-08-27 12:00:00" });
+        await ContractZoneless.query().insert({ seen_at: "2026-08-27 12:00:00" });
+
+        const rows = await ContractZoneless.query().orderBy("id").get();
+        expect(rows.map((row: any) => (row.seen_at as Date).toISOString())).toEqual([noon, noon, noon]);
+        const direct = await ContractZoneless.query().orderBy("id").rawJson();
+        expect(direct.map((row: any) => row.seen_at)).toEqual([noon, noon, noon]);
+        // Decoding the value is not a change: the text and its Date name one instant.
+        expect(rows.map((row: any) => row.isDirty())).toEqual([false, false, false]);
       });
     });
 

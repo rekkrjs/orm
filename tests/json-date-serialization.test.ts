@@ -10,7 +10,8 @@ const AWKWARD_STORED_DATES = [
   "2026-08-20T10:11:12.00Z",       // two decimals
   "2026-08-20T10:11:12.000+02:00", // offset
   "2026-08-20T10:11:12.000z",      // lowercase z
-  "2026-08-20 10:11:12",           // SQL form, parsed as local time
+  "2026-08-20 10:11:12",           // SQL form, no zone: UTC, as the ORM stores it
+  "2026-08-20T10:11:12",           // ISO form, no zone: UTC too
   "2023-02-30T00:00:00.000Z",      // day that does not exist
   "2024-02-29T00:00:00.000Z",      // leap day
   "2023-02-29T00:00:00.000Z",      // leap day in a common year
@@ -23,9 +24,13 @@ const AWKWARD_STORED_DATES = [
   "",
 ];
 
-/** What the cast path produces: the reference both serializers must match. */
+/**
+ * What the cast path produces: the reference both serializers must match.
+ * Zone-less date-time text is UTC; the engine alone would read it as local time.
+ */
 function throughDateRoundTrip(value: string): string | null {
-  const date = new Date(value);
+  const zoneless = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(value);
+  const date = new Date(zoneless ? `${value.replace(" ", "T")}Z` : value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
