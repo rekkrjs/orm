@@ -17,6 +17,8 @@ import {
   type QueryEvent,
 } from "../src/index.js";
 import { createDriverContext, serverUrl, type ServerDriver } from "./driver-harness.js";
+import { primaryKeyColumn } from "../src/model/PrimaryKeyResolution.js";
+import { shouldGeneratePrimaryKeyForColumn } from "../src/utils.js";
 
 type ContractDriver = "sqlite" | ServerDriver;
 
@@ -72,6 +74,28 @@ class ContractCalendarDay extends PermissiveModel {
   static override table = "contract_calendar_days";
   static override casts = { born_on: "date", seen_at: "datetime" };
 }
+
+class ContractKeyed extends PermissiveModel {
+  declare id: string | number;
+  static override table = "contract_keyed";
+  static override timestamps = false;
+}
+
+/** The same table keyed two ways, in raw DDL: a database-assigned integer, or a UUID the ORM generates. */
+const KEYED_DDL: Record<ContractDriver, { integer: string; uuid: string }> = {
+  sqlite: {
+    integer: "CREATE TABLE contract_keyed (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT)",
+    uuid: "CREATE TABLE contract_keyed (id VARCHAR(36) PRIMARY KEY, name TEXT)",
+  },
+  mysql: {
+    integer: "CREATE TABLE contract_keyed (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(50))",
+    uuid: "CREATE TABLE contract_keyed (id VARCHAR(36) PRIMARY KEY, name VARCHAR(50))",
+  },
+  postgres: {
+    integer: "CREATE TABLE contract_keyed (id SERIAL PRIMARY KEY, name VARCHAR(50))",
+    uuid: "CREATE TABLE contract_keyed (id VARCHAR(36) PRIMARY KEY, name VARCHAR(50))",
+  },
+};
 
 class ContractListened extends PermissiveModel {
   static override table = "contract_listened";
@@ -741,6 +765,93 @@ export default class CreateContractMigrated extends Migration {
         stop();
       }
     });
+
+    // create() decides how to fill and read back the key from the key column.
+    // It reads that column once per table, and again whenever this process may
+    // have changed the table: through the schema builder, raw DDL, or a
+    // transaction whose schema change was committed or undone.
+    run("reads a table's primary key column once, and again after this process changes the table", async () => {
+      const connection = context.connection;
+      const { integer, uuid } = KEYED_DDL[driver];
+      const isUuid = (id: unknown) => typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id);
+      const statements: string[] = [];
+      const stop = DB.listen((event) => { statements.push(event.sql); });
+      const lookups = () => statements.filter((sql) => /table_info|information_schema/i.test(sql)).length;
+      try {
+        await Schema.create("contract_keyed", (table) => {
+          table.increments("id");
+          table.string("name");
+        }, connection);
+        statements.length = 0;
+        for (const name of ["a", "b", "c"]) await ContractKeyed.create({ name });
+        await connection.transaction(async () => { await ContractKeyed.create({ name: "in a transaction" }); });
+        expect(lookups()).toBe(1);
+        expect(statements.filter((sql) => /^\s*insert/i.test(sql))).toHaveLength(4);
+
+        // Re-keyed through the schema builder: the ORM now generates a UUID.
+        await Schema.drop("contract_keyed");
+        await Schema.create("contract_keyed", (table) => {
+          table.string("id", 36).primary();
+          table.string("name");
+        }, connection);
+        expect(isUuid((await ContractKeyed.create({ name: "d" })).id)).toBe(true);
+
+        // Re-keyed through raw DDL: the database assigns the key again.
+        await connection.run("DROP TABLE contract_keyed");
+        await connection.run(integer);
+        const numbered = await ContractKeyed.create({ name: "e" });
+        expect(isUuid(numbered.id)).toBe(false);
+        expect(Number(numbered.id)).toBeGreaterThan(0);
+
+        // MySQL commits DDL on the spot; elsewhere a rolled-back change is undone,
+        // and what create() learned inside that transaction goes with it.
+        if (driver !== "mysql") {
+          const undo = new Error("undo the re-key");
+          const rolledBack = await caught(connection.transaction(async (tx) => {
+            await tx.run("DROP TABLE contract_keyed");
+            await tx.run(uuid);
+            expect(isUuid((await ContractKeyed.create({ name: "inside" })).id)).toBe(true);
+            throw undo;
+          }));
+          expect(rolledBack).toBe(undo);
+          expect(isUuid((await ContractKeyed.create({ name: "f" })).id)).toBe(false);
+
+          // The same through a manual transaction.
+          await connection.beginTransaction();
+          await connection.run("DROP TABLE contract_keyed");
+          await connection.run(uuid);
+          expect(isUuid((await ContractKeyed.create({ name: "manual" })).id)).toBe(true);
+          await connection.rollback();
+          expect(isUuid((await ContractKeyed.create({ name: "g" })).id)).toBe(false);
+        }
+      } finally {
+        stop();
+      }
+    });
+
+    if (driver === "postgres") {
+      // Schema-per-tenant: the same unqualified table name in two schemas of one
+      // database. The remembered key column belongs to the schema it came from.
+      run("keeps two schemas' key columns apart for the same table name", async () => {
+        const connection = context.connection;
+        const schemas = { assigned: `keyed_int_${process.pid}`, generated: `keyed_uuid_${process.pid}` };
+        try {
+          await connection.run(`CREATE SCHEMA "${schemas.assigned}"`);
+          await connection.run(`CREATE SCHEMA "${schemas.generated}"`);
+          await connection.run(`CREATE TABLE "${schemas.assigned}".keyed_rows (id SERIAL PRIMARY KEY)`);
+          await connection.run(`CREATE TABLE "${schemas.generated}".keyed_rows (id VARCHAR(36) PRIMARY KEY)`);
+          const assigned = connection.withSchema(schemas.assigned);
+          const generated = connection.withSchema(schemas.generated);
+          for (let round = 0; round < 2; round++) {
+            expect(shouldGeneratePrimaryKeyForColumn(await primaryKeyColumn(assigned, "keyed_rows", "id"))).toBe(false);
+            expect(shouldGeneratePrimaryKeyForColumn(await primaryKeyColumn(generated, "keyed_rows", "id"))).toBe(true);
+          }
+        } finally {
+          await connection.run(`DROP SCHEMA IF EXISTS "${schemas.assigned}" CASCADE`);
+          await connection.run(`DROP SCHEMA IF EXISTS "${schemas.generated}" CASCADE`);
+        }
+      });
+    }
 
     if (driver !== "sqlite") {
       // Whether a statement is reported is decided when it starts: one already

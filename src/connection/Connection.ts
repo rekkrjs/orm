@@ -63,6 +63,35 @@ export interface QueryEvent {
  */
 export const queryChannel = channel("@rekkr/orm:query");
 
+/**
+ * Bumped whenever this process may have changed a table's shape: after an
+ * application statement that can, and again when a transaction during which
+ * one ran ends, since until then other sessions still saw the old shape.
+ * Caches of introspected schema compare against it instead of being told.
+ */
+let schemaVersion = 0;
+
+export function currentSchemaVersion(): number {
+  return schemaVersion;
+}
+
+/**
+ * Whether a statement may change a table's shape, judged by its first word:
+ * ALTER, CREATE, DROP, DO, RENAME, and anything that opens with a comment. A
+ * false positive only costs a cache refill; SELECT, INSERT, UPDATE, DELETE and
+ * WITH are ruled out by their first letter.
+ */
+function mayChangeSchema(sql: string): boolean {
+  let index = 0;
+  let code = sql.charCodeAt(0);
+  while (code === 32 || code === 9 || code === 10 || code === 13) code = sql.charCodeAt(++index);
+  code |= 32; // ASCII lower case; leaves "-" and "/" as they are
+  if (code === 97 || code === 99 || code === 114 || code === 45 || code === 47) return true; // a c r - /
+  if (code !== 100) return false; // d
+  const next = sql.charCodeAt(index + 1) | 32;
+  return next === 114 || next === 111; // DROP, DO
+}
+
 export class Connection {
   /** Every driver the ORM has a grammar for. Anything else is rejected up front. */
   static readonly SUPPORTED_DRIVERS = ["sqlite", "mysql", "postgres"] as const;
@@ -74,6 +103,8 @@ export class Connection {
   private ownsDriver: boolean;
   private transactionDepth = 0;
   private transactionActive = false;
+  /** schemaVersion when this connection's manual root transaction began. */
+  private schemaVersionAtBegin?: number;
   private transactionRoot = false;
   private savepointId = 0;
   private dedicated = false;
@@ -482,9 +513,13 @@ export class Connection {
     const started = report && queryChannel.hasSubscribers ? performance.now() : undefined;
     try {
       const result = await this.keepEventLoopAlive(() => driver.unsafe(sqlString, bindings));
+      // After the statement, not before, so a lookup that overlapped it is not
+      // kept. On both paths rather than in a finally, which costs every query.
+      if (report && mayChangeSchema(sqlString)) schemaVersion++;
       if (started !== undefined) this.publishQuery(sqlString, bindings, started);
       return result;
     } catch (error) {
+      if (report && mayChangeSchema(sqlString)) schemaVersion++;
       const normalized = this.normalizeDriverError(error);
       if (started !== undefined) this.publishQuery(sqlString, bindings, started, normalized);
       throw normalized;
@@ -682,6 +717,7 @@ export class Connection {
     if (this.session) return this.session.beginTransactionBody();
     if (this.isPretending()) return;
     if (this.transactionDepth === 0 && !this.transactionActive) {
+      this.schemaVersionAtBegin = schemaVersion;
       this.manualLease = this.acquireLease();
       try {
         await this.ensureSqliteDefaults();
@@ -705,6 +741,10 @@ export class Connection {
   }
 
   private releaseReservedDriver(): void {
+    // The end of a manual root transaction, however it ended: schema changes
+    // made inside it are now visible, or undone, for every other session.
+    if (this.schemaVersionAtBegin !== undefined && this.schemaVersionAtBegin !== schemaVersion) schemaVersion++;
+    this.schemaVersionAtBegin = undefined;
     this.clearAbandonedTimer();
     this.manualLease?.();
     this.manualLease = undefined;
@@ -809,7 +849,13 @@ export class Connection {
 
   async transaction<T>(callback: (connection: Connection) => T | Promise<T>): Promise<T> {
     const effective = resolveConnection(this);
-    return effective.use(() => effective.runTransaction(callback));
+    const version = schemaVersion;
+    try {
+      return await effective.use(() => effective.runTransaction(callback));
+    } finally {
+      // Schema changes made inside it became visible, or were undone, only now.
+      if (schemaVersion !== version) schemaVersion++;
+    }
   }
 
   private async runTransaction<T>(callback: (connection: Connection) => T | Promise<T>): Promise<T> {

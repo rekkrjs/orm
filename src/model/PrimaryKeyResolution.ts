@@ -1,5 +1,5 @@
 import { Builder } from "../query/Builder.js";
-import type { Connection } from "../connection/Connection.js";
+import { currentSchemaVersion, type Connection } from "../connection/Connection.js";
 
 /** The introspected shape of a primary key column, as `Schema.getColumn` reports it. */
 export interface PrimaryKeyColumn {
@@ -11,6 +11,41 @@ export interface PrimaryKeyColumn {
   /** MySQL: the default is an expression such as `(uuid())`, not a literal. */
   defaultIsExpression?: boolean;
   length?: number;
+}
+
+interface RememberedColumn {
+  readonly schemaVersion: number;
+  readonly column: PrimaryKeyColumn;
+}
+
+/** Per database (the resource connection), per schema, table and column. */
+const rememberedColumns = new WeakMap<Connection, Map<string, RememberedColumn>>();
+
+/**
+ * The primary key column that UUID generation and `insertAndResolveKey` decide
+ * from, read once per table instead of before every insert: on PostgreSQL the
+ * lookup was 86% of a `create()`. It is read again once this process may have
+ * changed the schema (see `currentSchemaVersion`). A key changed by another
+ * process is seen after a restart, as a model's static configuration would be.
+ * A missing table is not remembered, so its creation is noticed.
+ */
+export async function primaryKeyColumn(connection: Connection, table: string, column: string): Promise<PrimaryKeyColumn | null> {
+  const database = connection.resourceConnection();
+  const key = `${connection.getSchema() ?? ""}\0${table}\0${column}`;
+  const schemaVersion = currentSchemaVersion();
+  const remembered = rememberedColumns.get(database)?.get(key);
+  if (remembered?.schemaVersion === schemaVersion) return remembered.column;
+
+  const { Schema } = await import("../schema/Schema.js");
+  const found = await Schema.getColumn(table, column, connection);
+  // Tagged with the version the read started at: one that overlapped a schema
+  // change is already stale when it lands.
+  if (found) {
+    let columns = rememberedColumns.get(database);
+    if (!columns) rememberedColumns.set(database, columns = new Map());
+    columns.set(key, { schemaVersion, column: found });
+  }
+  return found;
 }
 
 /**

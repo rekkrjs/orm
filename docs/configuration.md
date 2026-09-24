@@ -526,8 +526,8 @@ stop(); // no longer called
 
 - **What is reported:** every statement your code runs, on every connection,
   including tenant connections created later: queries, writes, raw SQL, and the
-  queries ORM makes on your behalf, such as reading a table's columns before an
-  insert. Not reported: `BEGIN`, `COMMIT`, `ROLLBACK`, savepoints, SQLite's
+  queries ORM makes on your behalf, such as reading a table's primary key
+  column the first time a model inserts into it. Not reported: `BEGIN`, `COMMIT`, `ROLLBACK`, savepoints, SQLite's
   connection pragmas, MySQL's UTC check and `LAST_INSERT_ID()`, and anything
   run under `pretend()`.
 - **When:** after the statement finishes, whether it succeeded or failed. A

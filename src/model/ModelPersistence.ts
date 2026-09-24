@@ -18,7 +18,7 @@ import type {
 import { ModelCore } from "./ModelCore.js";
 import { formatIso, shouldGeneratePrimaryKeyForColumn } from "../utils.js";
 import type { Connection, WriteResult } from "../connection/Connection.js";
-import { insertAndResolveKey, type PrimaryKeyColumn } from "./PrimaryKeyResolution.js";
+import { insertAndResolveKey, primaryKeyColumn, type PrimaryKeyColumn } from "./PrimaryKeyResolution.js";
 import { isBackedEnumDefinition } from "./BackedEnum.js";
 import { normalizeHydratedCastValue } from "./ModelJsonRow.js";
 
@@ -126,17 +126,12 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
   /**
    * How this model's primary key gets its value: whether we generate it, plus
    * the column itself, which is what decides how the key is read back after an
-   * insert. Fetched once so a save costs a single introspection.
+   * insert. The column is remembered per table (see `primaryKeyColumn`).
    */
   static async primaryKeyStrategy(connection?: Connection): Promise<{ generate: boolean; column: PrimaryKeyColumn | null }> {
     if ((this as any).usesUuids || this.keyType === "uuid") return { generate: true, column: null };
-    const { Schema } = await import("../schema/Schema.js");
     const activeConnection = connection ?? (this as any).getConnection();
-    const column = await Schema.getColumn(
-      (this as any).getQualifiedTable(activeConnection),
-      this.primaryKey,
-      activeConnection,
-    );
+    const column = await primaryKeyColumn(activeConnection, (this as any).getQualifiedTable(activeConnection), this.primaryKey);
     return { generate: shouldGeneratePrimaryKeyForColumn(column), column };
   }
 

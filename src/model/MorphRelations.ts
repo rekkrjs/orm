@@ -1,6 +1,5 @@
 import { Builder } from "../query/Builder.js";
-import { insertAndResolveKey, type PrimaryKeyColumn } from "./PrimaryKeyResolution.js";
-import { Schema } from "../schema/Schema.js";
+import { insertAndResolveKey, primaryKeyColumn, type PrimaryKeyColumn } from "./PrimaryKeyResolution.js";
 import { Collection } from "../support/Collection.js";
 import { pluralize, shouldGeneratePrimaryKeyForColumn, snakeCase } from "../utils.js";
 import { MorphMap } from "./MorphMap.js";
@@ -984,7 +983,7 @@ export class MorphToMany<
   get(): Promise<Collection<T>> { return this.getResults(); }
 
   protected async pivotPrimaryKeyColumn(primaryKey: string): Promise<PrimaryKeyColumn | null> {
-    return await Schema.getColumn(this.qualifiedPivotTable(), primaryKey, this.parent.getConnection());
+    return await primaryKeyColumn(this.parent.getConnection(), this.qualifiedPivotTable(), primaryKey);
   }
 
   protected async shouldAutoGeneratePivotPrimaryKey(primaryKey: string): Promise<boolean> {

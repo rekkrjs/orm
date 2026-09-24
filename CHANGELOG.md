@@ -38,6 +38,17 @@
   name. With no listener the cost is one boolean check per statement; measured
   within noise on both runtimes. See [Configuration](./docs/configuration.md#listening-to-queries-in-code).
 
+### Performance
+
+- `create()`, `save()` of a new model and pivot inserts no longer read the
+  table's primary key column from the schema before every insert. It is read
+  once per database, schema and table, and again after this process changes a
+  table's shape. On PostgreSQL that lookup was 86% of a `create()`: measured
+  per `create()`, 23.6× faster on Bun (1.61 → 0.07 ms) and 16.4× on Node.js
+  (1.75 → 0.11 ms); 1.6–1.8× on MySQL and 1.3–1.4× on SQLite. Checking each
+  statement for a schema change costs nothing measurable on either runtime.
+  A table re-keyed by another process is seen after a restart.
+
 ### Breaking
 
 - `Connection.driver` is typed `SqlDriver`, the ORM's own driver contract,
