@@ -1105,6 +1105,49 @@ export default class CreateContractMigrated extends Migration {
       }
     });
 
+    if (driver === "mysql") {
+      // A session in another zone stores a bound Date at the wrong TIMESTAMP
+      // instant and reads every TIMESTAMP shifted. bun:sql sets UTC as each
+      // connection opens since Bun 1.4.1 (oven-sh/bun#40439); the mysql2
+      // adapter matches it. The test server is UTC already, so the session's
+      // own statement history is what shows the SET.
+      run("opens every pooled session in UTC, before its first statement", async () => {
+        const SET_UTC = "SET time_zone = '+00:00'";
+        const HISTORY = "SELECT SQL_TEXT AS sql_text FROM performance_schema.events_statements_history WHERE THREAD_ID = PS_CURRENT_THREAD_ID() ORDER BY EVENT_ID";
+        const history = async (connection: Connection) => (await connection.query(HISTORY)).map((row: any) => row.sql_text);
+
+        const pooled = new Connection({ url: serverUrl(driver)!, max: 1 });
+        try {
+          await pooled.query("SELECT 1 AS one");
+          expect(await history(pooled)).toEqual([SET_UTC, "SELECT 1 AS one"]);
+        } finally {
+          await pooled.close();
+        }
+
+        // Transactions take their sessions through a reservation instead; two at once are two new sessions.
+        const reserved = new Connection({ url: serverUrl(driver)!, max: 2 });
+        try {
+          let arrived = 0;
+          let allArrived!: () => void;
+          const barrier = new Promise<void>((resolve) => { allArrived = resolve; });
+          const sessions = await Promise.all([0, 1].map(() => reserved.transaction(async (transaction) => {
+            if (++arrived === 2) allArrived();
+            await barrier;
+            const [session] = await transaction.query("SELECT CONNECTION_ID() AS id, @@session.time_zone AS tz");
+            return { ...session, statements: await history(transaction) };
+          })));
+          expect(new Set(sessions.map((session) => session.id)).size).toBe(2);
+          for (const { tz, statements } of sessions) {
+            expect(tz).toBe("+00:00");
+            expect(statements[0]).toBe(SET_UTC);
+            expect(statements.filter((sql: string) => /^\s*SET\b/i.test(sql))).toEqual([SET_UTC]);
+          }
+        } finally {
+          await reserved.close();
+        }
+      });
+    }
+
     if (driver === "sqlite") {
       // `orm make:migration` builds its Connection before it creates the database's directory.
       run("reports a file it cannot open on the first statement, not when the connection is built", async () => {

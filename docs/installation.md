@@ -9,7 +9,7 @@ Redis clients and needs no dependencies at all. On Node.js it uses the built-in
 
 | Runtime | Version | Declared in |
 |---|---|---|
-| [Bun](https://bun.com) | `1.4.1` or newer | `engines.bun` |
+| [Bun](https://bun.com) | `1.4.2` or newer | `engines.bun` |
 | [Node.js](https://nodejs.org) | `24.21.0` or newer | `engines.node` |
 
 Node.js 24.21 is the oldest release CI runs the suite on. Releases before 24.15

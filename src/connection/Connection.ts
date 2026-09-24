@@ -650,8 +650,9 @@ export class Connection {
    * time zone, so on a session that is not UTC a TIMESTAMP column silently
    * stores a different instant than the one handed to it — and a DATETIME
    * column disagrees with it. An explicit offset in the literal fixes TIMESTAMP
-   * and breaks DATETIME, and `SET time_zone` only reaches one connection of the
-   * pool, so the honest move is to say so instead of storing the wrong moment.
+   * and breaks DATETIME. Every connection opens in UTC (bun:sql sets it, and so
+   * does the mysql2 adapter); this catches a session changed since, which is
+   * reported instead of storing the wrong moment.
    */
   private async assertMysqlUtc(driver: SqlDriver, cache: boolean = false): Promise<void> {
     if (cache && this.mysqlUtcChecked) return;
@@ -666,7 +667,7 @@ export class Connection {
     throw new Error(
       `MySQL session time zone is ${offset > 0 ? "+" : ""}${(offset / 3600).toFixed(2)}h from UTC. ` +
         `ORM stores dates in UTC, and a TIMESTAMP column would keep a different instant than the one you wrote. ` +
-        `Set the server or connection to time_zone = '+00:00'.`
+        `Every connection opens at time_zone = '+00:00'; something since changed this one, such as a SET time_zone statement.`
     );
   }
 

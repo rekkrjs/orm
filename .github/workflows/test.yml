@@ -49,7 +49,7 @@ jobs:
       # Bun installs and builds in both jobs; only the Node.js job runs the suite on Node.
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.1
+          bun-version: 1.4.2
       - if: matrix.runtime == 'node'
         uses: actions/setup-node@v4
         with:

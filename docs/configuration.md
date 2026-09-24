@@ -105,40 +105,40 @@ connection: {
 }
 ```
 
-### MySQL sessions must use UTC
+### MySQL sessions run in UTC
 
 On MySQL, ORM passes model dates to the driver as native `Date` bindings,
 which it encodes as a UTC wall clock whatever the process time zone — `bun:sql`
-natively, `mysql2` because ORM configures it to. Every physical connection in the pool must
-therefore start with `time_zone = '+00:00'`. This remains a runtime requirement:
-`DATETIME` stores that wall clock directly, while `TIMESTAMP` interprets it in
-the session's time zone; a non-UTC session can silently store a different
-instant even though reading the value back appears to round-trip correctly.
+natively, `mysql2` because ORM configures it to. `DATETIME` stores that wall
+clock directly, while `TIMESTAMP` interprets it in the session's time zone: a
+session in another zone would store a different instant, and read every
+`TIMESTAMP` back shifted by its offset, without an error.
 
-Configure UTC as the server or pool default, then recreate existing
-connections. Running this once is not sufficient for a pool with more than one
-connection:
+So every pooled connection runs `SET time_zone = '+00:00'` as it opens, before
+its first statement, whatever the server's default. `bun:sql` does it itself
+(Bun 1.4.1 and later), and ORM's `mysql2` adapter does the same on Node.js.
+There is nothing to configure, even on a server whose default you cannot
+change, and it costs one statement per physical connection, not per query. A
+proxy that rejects `SET time_zone`, or does not keep it on the session, is not
+supported.
 
-```sql
-SET SESSION time_zone = '+00:00';
-```
+A `SET time_zone` the application runs afterwards still changes the one
+physical connection that executes it. ORM checks the session before every
+statement carrying a native `Date` binding that runs directly on a pool,
+because consecutive statements may use different sessions, and refuses to write
+the date to a session that is no longer UTC. Inside `connection.transaction(...)`
+the session is pinned and the successful check is reused for the rest of that
+transaction. Group related date writes in a short transaction when the extra
+round trip matters; `max: 1` alone does not suppress the check because that
+physical connection can still be replaced after a disconnect.
 
-`SET SESSION` affects only the physical connection that executes it. Verify the
-setting from application sessions; `offset_seconds` must be `0`:
+To see what a session is using (`offset_seconds` must be `0`):
 
 ```sql
 SELECT
   @@session.time_zone AS time_zone,
   TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW()) AS offset_seconds;
 ```
-
-ORM checks this before every statement carrying a native `Date` binding that
-runs directly on a pool, because consecutive statements may use different
-sessions. Inside `connection.transaction(...)` the session is pinned and the
-successful check is reused for the rest of that transaction. Group related date
-writes in a short transaction when the extra round trip matters; `max: 1` alone
-does not suppress the check because that physical connection can still be
-replaced after a disconnect.
 
 SQLite connections apply production-friendly defaults before the first query:
 

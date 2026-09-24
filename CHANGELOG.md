@@ -25,6 +25,13 @@
   so both share one `configureOrm()` state.
 - `prepare: true` works on Node.js too: PostgreSQL statements with bindings
   are named and planned once per session, as on Bun. The default stays `false`.
+- On MySQL, every pooled connection opens in UTC on Node.js as well: the
+  `mysql2` adapter runs `SET time_zone = '+00:00'` on each connection before
+  its first statement, as `bun:sql` has done itself since Bun 1.4.1. A server
+  whose default time zone is not UTC therefore needs no configuration on either
+  runtime; before, a date write was refused on such a server and `TIMESTAMP`
+  columns were read shifted by the session's offset. A proxy that rejects
+  `SET time_zone` is not supported. See [Configuration](./docs/configuration.md#mysql-sessions-run-in-utc).
 
 ### Added
 
@@ -51,6 +58,7 @@
 
 ### Breaking
 
+- Bun minimum is 1.4.2 (was 1.4.1), the release CI runs the suite on.
 - `Connection.driver` is typed `SqlDriver`, the ORM's own driver contract,
   instead of Bun's `SQL`. On Bun it is still the same `SQL` object, which
   satisfies the contract as it is; code that used a Bun-only member casts it

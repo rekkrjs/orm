@@ -1,9 +1,32 @@
-import { afterAll, describe, expect, test } from "./harness.js";
-import { Connection, Model, Schema } from "../src/index.js";
+import { createRequire } from "node:module";
+import { afterAll, describe, expect, isBun, test } from "./harness.js";
+import { Connection, DB, Model, Schema } from "../src/index.js";
 import { createDriverContext, mysqlUrl, postgresUrl, type DriverContext } from "./driver-harness.js";
 
 const runIfMySql = mysqlUrl ? test.serial : test.skip;
+const runIfNodeMySql = mysqlUrl && !isBun ? test.serial : test.skip;
 const runIfPostgres = postgresUrl ? test.serial : test.skip;
+
+/**
+ * A server whose sessions start at +02:00, for the mysql2 pools created during
+ * the callback. The test servers are UTC, and changing their global default
+ * would reach every suite running beside this one; a listener registered ahead
+ * of the ORM's runs first on each new session, as a server default does.
+ */
+async function withSkewedMysqlServer<T>(callback: () => Promise<T>): Promise<T> {
+  const mysql = createRequire(import.meta.url)("mysql2/promise");
+  const createPool = mysql.createPool;
+  mysql.createPool = (options: unknown) => {
+    const pool = createPool(options);
+    pool.pool.prependListener("connection", (session: any) => session.query("SET time_zone = '+02:00'"));
+    return pool;
+  };
+  try {
+    return await callback();
+  } finally {
+    mysql.createPool = createPool;
+  }
+}
 
 const contexts: DriverContext[] = [];
 
@@ -218,6 +241,58 @@ describe.serial("Date storage across drivers", () => {
     } finally {
       await skewed.close();
     }
+  });
+
+  runIfNodeMySql("reads and writes in UTC on a server whose sessions start in another zone", async () => {
+    const { connection } = await context("mysql");
+    const url = (connection as any).getConfig().url;
+    const noon = new Date("2026-01-15T12:00:00.000Z");
+    await connection.run("CREATE TABLE stamps (id INT PRIMARY KEY, taken_at TIMESTAMP(3))");
+    await connection.run("INSERT INTO stamps VALUES (1, '2026-01-15 12:00:00.000')");
+
+    await withSkewedMysqlServer(async () => {
+      const pool = new Connection({ url, max: 3 });
+      const statements: string[] = [];
+      const stop = DB.listen((event) => {
+        if (event.connection.resourceConnection() === pool) statements.push(event.sql);
+      });
+      try {
+        // Left at +02:00, this statement would read 14:00Z; the one that makes
+        // the pool open its first session must already run in UTC.
+        const [first] = await pool.query("SELECT @@session.time_zone AS tz, taken_at FROM stamps WHERE id = 1");
+        expect(first.tz).toBe("+00:00");
+        expect(first.taken_at.toISOString()).toBe("2026-01-15T12:00:00.000Z");
+
+        await pool.run("INSERT INTO stamps VALUES (?, ?)", [2, noon]);
+        const [stored] = await connection.query("SELECT UNIX_TIMESTAMP(taken_at) AS epoch FROM stamps WHERE id = 2");
+        expect(Number(stored.epoch)).toBe(noon.getTime() / 1000);
+
+        // Three sessions held at once: the idle one and two the pool opens for transactions.
+        let arrived = 0;
+        let allArrived!: () => void;
+        const barrier = new Promise<void>((resolve) => { allArrived = resolve; });
+        const sessions = await Promise.all([0, 1, 2].map(() => pool.transaction(async (transaction) => {
+          if (++arrived === 3) allArrived();
+          await barrier;
+          const [row] = await transaction.query("SELECT CONNECTION_ID() AS id, @@session.time_zone AS tz, taken_at FROM stamps WHERE id = 1");
+          await transaction.query("SELECT 1");
+          // The simulated server default's SET and the ORM's, however many
+          // statements ran: two show the simulation reached the session.
+          const [sets] = await transaction.query("SHOW SESSION STATUS LIKE 'Com_set_option'");
+          return { id: row.id, tz: row.tz, takenAt: row.taken_at.toISOString(), sets: sets.Value };
+        })));
+        expect(new Set(sessions.map((session) => session.id)).size).toBe(3);
+        expect(sessions.map(({ tz, takenAt, sets }) => ({ tz, takenAt, sets }))).toEqual(
+          Array(3).fill({ tz: "+00:00", takenAt: "2026-01-15T12:00:00.000Z", sets: "2" })
+        );
+
+        // Plumbing, like the UTC check: the application's statements only.
+        expect(statements.filter((sql) => /^\s*SET\b/i.test(sql))).toEqual([]);
+      } finally {
+        stop();
+        await pool.close();
+      }
+    });
   });
 
   runIfPostgres("PostgreSQL round-trips a date through the ORM's own schema", async () => {

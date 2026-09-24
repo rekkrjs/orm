@@ -331,6 +331,15 @@ function nodeMysqlDriver(config: ConnectionConfig, url: string | undefined, { ma
   // As bun:sql, an idle pool does not keep the process alive; a connection in use does.
   pool.pool.on("acquire", (connection: any) => connection.stream?.ref());
   pool.pool.on("release", (connection: any) => connection.stream?.unref());
+  // As bun:sql since Bun 1.4.1, every connection opens in UTC, whatever the
+  // server's default: the dates above travel as UTC wall clocks, and a session
+  // in another zone would store them at the wrong TIMESTAMP instant and shift
+  // every TIMESTAMP it reads. "connection" is emitted before the connection is
+  // handed out, so the SET is queued ahead of its first statement; a connection
+  // whose SET failed is discarded, failing that statement.
+  pool.pool.on("connection", (connection: any) => {
+    connection.query("SET time_zone = '+00:00'", (error: unknown) => { if (error) connection.destroy(); });
+  });
 
   const reserve = async (): Promise<ReservedSqlDriver> => {
     const connection = await pool.getConnection();

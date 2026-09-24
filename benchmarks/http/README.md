@@ -7,7 +7,7 @@ changing your checkout or resolving `@rekkr/orm` from another package.
 
 ## Run a comparison
 
-Requirements: Bun 1.4.1+, Git, `tar`, oha 1.16.0+, and an existing MySQL/MariaDB
+Requirements: Bun 1.4.2+, Git, `tar`, oha 1.16.0+, and an existing MySQL/MariaDB
 database. The database account needs CREATE TABLE, INSERT, SELECT and DROP TABLE.
 Use a benchmark database; the server creates uniquely named `bench_http_*` tables
 and deletes only tables it successfully created. It never drops the database,
