@@ -66,6 +66,16 @@ class ContractFastJson extends PermissiveModel {
   };
 }
 
+class ContractCalendarDay extends PermissiveModel {
+  static override table = "contract_calendar_days";
+  static override casts = { born_on: "date", seen_at: "datetime" };
+}
+
+class ContractStamped extends PermissiveModel {
+  static override table = "contract_stamped";
+  static override softDeletes = true;
+}
+
 async function createContext(driver: ContractDriver): Promise<ContractContext> {
   if (driver !== "sqlite") return await createDriverContext(driver);
   const connection = new Connection({ url: "sqlite://:memory:" });
@@ -664,6 +674,63 @@ export default class CreateContractMigrated extends Migration {
         expect((await connection.query(read))[0].wall_clock).toBe(stored);
         const [row] = await new Builder(connection, "contract_instants").get();
         expect(new Date((row as any).at).toISOString()).toBe(instant.toISOString());
+      });
+    });
+
+    // At the default precision the model's Date milliseconds used to be rounded
+    // by PostgreSQL and MySQL, so the saved model and the stored row disagreed.
+    run("keeps model timestamps equal in memory and in storage at the default precision", async () => {
+      await Schema.create("contract_stamped", (table) => {
+        table.increments("id");
+        table.string("name");
+        table.timestamps();
+        table.softDeletes();
+      }, context.connection);
+      const iso = (model: any, key: string) => (model[key] as Date).toISOString();
+      // A Date lands on .000 once in a thousand; three rounds make a false pass negligible.
+      for (const name of ["a", "b", "c"]) {
+        const model = await ContractStamped.create({ name });
+        const created = (await ContractStamped.find((model as any).id))!;
+        expect([iso(created, "created_at"), iso(created, "updated_at")])
+          .toEqual([iso(model, "created_at"), iso(model, "updated_at")]);
+
+        (model as any).name = `${name}-renamed`;
+        await model.save();
+        expect(iso((await ContractStamped.find((model as any).id))!, "updated_at")).toBe(iso(model, "updated_at"));
+
+        await model.delete();
+        const trashed = (await ContractStamped.withTrashed().find((model as any).id))!;
+        expect(iso(trashed, "deleted_at")).toBe(iso(model, "deleted_at"));
+        // Untouched by the later writes: created_at still matches what create() held.
+        expect(iso(trashed, "created_at")).toBe(iso(created, "created_at"));
+      }
+    });
+
+    // A `date` is a calendar day. As an instant, its UTC midnight is the day
+    // before for anyone west of UTC who formats it in local time.
+    run("serializes a date cast as its calendar day, whatever the process time zone", async () => {
+      await Schema.create("contract_calendar_days", (table) => {
+        table.increments("id");
+        table.date("born_on");
+        table.dateTime("seen_at", 3);
+        table.timestamps();
+      }, context.connection);
+      const midnight = new Date("2024-01-15T00:00:00.000Z");
+      await inTimeZone("America/New_York", async () => {
+        await ContractCalendarDay.create({ born_on: midnight, seen_at: midnight });
+        const model = (await ContractCalendarDay.query().first())!;
+        const hydrated = model.toJSON() as Record<string, any>;
+        const [direct] = await ContractCalendarDay.query().rawJson() as Record<string, any>[];
+
+        for (const json of [hydrated, model.json() as Record<string, any>, direct!]) {
+          expect(json.born_on).toBe("2024-01-15");
+          // Untouched: a datetime and the timestamps keep the whole instant.
+          expect(json.seen_at).toBe("2024-01-15T00:00:00.000Z");
+          expect(json.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+        }
+        expect(JSON.stringify(direct)).toBe(JSON.stringify(hydrated));
+        // Reading the attribute still gives the Date at UTC midnight.
+        expect(((model as any).born_on as Date).toISOString()).toBe(midnight.toISOString());
       });
     });
 

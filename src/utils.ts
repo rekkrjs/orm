@@ -188,6 +188,19 @@ export function formatIso(value: Date): string {
     + "Z";
 }
 
+/**
+ * The calendar-day part of `formatIso()`, `YYYY-MM-DD`, built directly: slicing
+ * the full string first flattens all fifteen pieces to keep three.
+ */
+export function formatIsoDate(value: Date): string {
+  const year = value.getUTCFullYear();
+  if (!(year >= 0 && year <= 9999) || value.constructor !== Date) {
+    const iso = value.toISOString();
+    return iso.slice(0, iso.indexOf("T"));
+  }
+  return pad4(year) + "-" + pad2(value.getUTCMonth() + 1) + "-" + pad2(value.getUTCDate());
+}
+
 /** Renders a Date for inline debug SQL; executed queries pass Date to Bun.SQL. */
 export function formatDateForDriver(
   value: Date,

@@ -1,7 +1,7 @@
 import { describe, expect, test, evalCommand, ormModule, runProcess } from "./harness.js";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { formatDateForDriver, formatIso } from "../src/utils.js";
+import { formatDateForDriver, formatIso, formatIsoDate } from "../src/utils.js";
 import { serializeDate, serializeRowDates } from "../src/model/ModelJsonRow.js";
 import { Model } from "../src/index.js";
 // The query grammar, not the schema grammar the package exports under this name.
@@ -25,6 +25,9 @@ function divergences(dates: Iterable<Date>): string[] {
     const expected = date.toISOString();
     const actual = formatIso(date);
     if (actual !== expected) failures.push(`${actual} ≠ ${expected}`);
+    // The `date` cast's output: the same text, up to the T.
+    const day = formatIsoDate(date);
+    if (day !== expected.slice(0, expected.indexOf("T"))) failures.push(`${day} ≠ day of ${expected}`);
   }
   return failures;
 }

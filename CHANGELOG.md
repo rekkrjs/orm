@@ -43,12 +43,31 @@
 - `RedisCacheStore` and `RedisQueueDriver` take the ORM's own client interfaces
   (`RedisLike`, `RedisQueueLike`) instead of `Pick<RedisClient, …>`. Bun's
   `RedisClient` still fits them.
+- An attribute with the `date` cast serializes as `"2024-01-15"` instead of
+  `"2024-01-15T00:00:00.000Z"`, in `toJSON()`, `json()` and `rawJson()`. The
+  midnight instant read as the previous day anywhere west of UTC: a browser in
+  New York formatting it showed 14 January. Reading the attribute still gives a
+  `Date` at UTC midnight; `datetime` attributes and timestamps keep the full
+  instant, and an accessor on the column still replaces the cast. A `DATE`
+  column without the cast is unchanged, so give calendar days the `date` cast.
+- `timestamps()`, `datetimes()`, `softDeletes()` and `softDeletesDatetime()`
+  default to precision 3 instead of the database's 0. The model writes these
+  columns from a `Date`, and at whole seconds PostgreSQL and MySQL rounded its
+  milliseconds: a model just created held `…42.578Z` while its row said
+  `…43.000Z`, which broke equality checks on `updated_at` and could push a row
+  into the next day. Pass `{ precision: 0 }` to keep whole seconds. Existing
+  tables are not altered; [Schema builder](./docs/schema-builder.md#convenience-helpers)
+  shows the `ALTER` that widens them. SQLite is unaffected.
 
 ### Fixed behaviour
 
 - With `log.file` set, a process restarted on the same day overwrote the day's
   query log from its first byte and left the tail of the old log behind. Lines
   are now appended.
+- Every command in a project fresh from `orm init` printed `[Commands]
+  commandsPath not found` on stderr, because the generated config points at
+  `./app/commands` and init does not create it. A missing commands directory
+  now means "no commands"; an unreadable one still fails.
 - Migrations are imported by file URL, not by raw path.
 - Four tests awaited nothing on `expect(...).rejects` and asserted nothing; they
   now assert.

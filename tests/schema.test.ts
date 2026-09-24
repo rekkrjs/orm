@@ -73,6 +73,23 @@ describe("Schema Builder", () => {
     expect(sqlite).not.toContain("(3)");
   });
 
+  test("an explicit precision on model-managed columns wins over the default, zero included", () => {
+    const blueprint = new Blueprint("explicit_precision");
+    blueprint.timestamps({ precision: 0 });
+    blueprint.datetimes("seen_at", "changed_at", { precision: 6 });
+    blueprint.softDeletes("deleted_at", { precision: 0 });
+    blueprint.softDeletesDatetime("archived_at", { precision: 2 });
+    blueprint.nullableTimestamps();
+
+    expect(blueprint.columns.map(({ name, precision }) => [name, precision])).toEqual([
+      ["created_at", 0], ["updated_at", 0],
+      ["seen_at", 6], ["changed_at", 6],
+      ["deleted_at", 0],
+      ["archived_at", 2],
+      ["created_at", 3], ["updated_at", 3],
+    ]);
+  });
+
   test("temporal precision rejects values unsupported by MySQL and PostgreSQL", () => {
     for (const precision of [-1, 7, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(() => new Blueprint("events").dateTime("happened_at", precision))
@@ -80,7 +97,9 @@ describe("Schema Builder", () => {
     }
   });
 
-  test("temporal DDL without precision is byte-identical to the previous output", () => {
+  // Plain temporal columns keep their DDL. The columns the model writes from a
+  // Date default to milliseconds, the precision a Date has.
+  test("temporal DDL without precision is unchanged, and model-managed columns get milliseconds", () => {
     const blueprint = new Blueprint("temporal_columns");
     blueprint.dateTime("happened_at");
     blueprint.timestamp("published_at");
@@ -103,9 +122,9 @@ describe("Schema Builder", () => {
       '    `happened_at` DATETIME NOT NULL,\n' +
       '    `published_at` TIMESTAMP NOT NULL,\n' +
       '    `opens_at` TIME NOT NULL,\n' +
-      '    `created_at` TIMESTAMP,\n' +
-      '    `updated_at` TIMESTAMP,\n' +
-      '    `deleted_at` TIMESTAMP\n' +
+      '    `created_at` TIMESTAMP(3),\n' +
+      '    `updated_at` TIMESTAMP(3),\n' +
+      '    `deleted_at` TIMESTAMP(3)\n' +
       ')',
     );
     expect(new PostgresGrammar().compileCreate(blueprint, "temporal_columns")).toBe(
@@ -113,9 +132,9 @@ describe("Schema Builder", () => {
       '    "happened_at" TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL,\n' +
       '    "published_at" TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL,\n' +
       '    "opens_at" TIME(0) WITHOUT TIME ZONE NOT NULL,\n' +
-      '    "created_at" TIMESTAMP(0) WITHOUT TIME ZONE,\n' +
-      '    "updated_at" TIMESTAMP(0) WITHOUT TIME ZONE,\n' +
-      '    "deleted_at" TIMESTAMP(0) WITHOUT TIME ZONE\n' +
+      '    "created_at" TIMESTAMP(3) WITHOUT TIME ZONE,\n' +
+      '    "updated_at" TIMESTAMP(3) WITHOUT TIME ZONE,\n' +
+      '    "deleted_at" TIMESTAMP(3) WITHOUT TIME ZONE\n' +
       ')',
     );
   });

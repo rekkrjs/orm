@@ -228,7 +228,7 @@ user.settings.theme;       // "dark" (parsed JSON)
 | `number`, `integer`, `int`, `float`, `double` | Reads / writes as a number |
 | `decimal:N` | Stores fixed precision string (e.g. `decimal:2` for money) |
 | `string` | Reads / writes as a string |
-| `date` | Stores `YYYY-MM-DD`; reads as a `Date` at UTC midnight |
+| `date` | Stores and serializes `YYYY-MM-DD`; reads as a `Date` at UTC midnight |
 | `datetime` | Reads as `Date`, stores a full UTC ISO string from `Date` input |
 | `timestamp` | Alias of `datetime` |
 | `json`, `array`, `object` | Stores JSON string, reads parsed value |
@@ -239,8 +239,13 @@ cast. Store epoch seconds with a `number` cast instead.
 
 The `date` cast represents a calendar day, not an instant: time components are
 discarded in UTC before storage. Reading the attribute gives a `Date` at UTC
-midnight, and serialization emits that full midnight value as a string, such as
-`2026-08-26T00:00:00.000Z`. Use `datetime` when the column must preserve a time.
+midnight, and serialization emits the day alone, such as `2026-08-26`. Use
+`datetime` when the column must preserve a time.
+
+A `DATE` column without a `date` cast arrives from PostgreSQL and MySQL as a
+`Date` at UTC midnight and serializes as a full instant,
+`2026-08-26T00:00:00.000Z`. A browser west of UTC that formats that instant in
+local time shows the day before, so give calendar-day columns the `date` cast.
 
 ### Backed enum casts
 
@@ -921,6 +926,7 @@ Dates come out as ISO strings, not `Date` objects:
 
 ```ts
 user.toJSON().created_at;   // "2026-08-20T10:11:12.000Z"
+user.toJSON().birthday;     // "1990-05-17" — a `date` cast emits the day alone
 user.created_at;            // Date — reading the attribute is unchanged
 ```
 

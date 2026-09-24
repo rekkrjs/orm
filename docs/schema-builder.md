@@ -235,12 +235,12 @@ into migration SQL verbatim.
 ## Convenience helpers
 
 ```ts
-table.timestamps();        // adds nullable created_at + updated_at TIMESTAMP columns
-table.timestamps({ precision: 3 }); // preserve milliseconds
+table.timestamps();        // adds nullable created_at + updated_at TIMESTAMP(3) columns
+table.timestamps({ precision: 0 }); // whole seconds
 table.timestamps("createdAt", "updatedAt", { precision: 6 }); // explicit names
-table.datetimes({ precision: 3 }); // same columns, DATETIME on MySQL
-table.softDeletes();       // adds nullable deleted_at TIMESTAMP
-table.softDeletes("removed_at", { precision: 3 }); // custom name + precision
+table.datetimes();         // same columns, DATETIME(3) on MySQL
+table.softDeletes();       // adds nullable deleted_at TIMESTAMP(3)
+table.softDeletes("removed_at", { precision: 0 }); // custom name + precision
 table.softDeletesDatetime(); // nullable deleted_at, DATETIME on MySQL
 table.rememberToken();     // adds nullable remember_token VARCHAR(100)
 ```
@@ -258,6 +258,30 @@ MySQL `TIMESTAMP`'s 1970–2038 range or must not undergo its session-time-zone
 conversion. PostgreSQL and SQLite compile both variants identically.
 `dropTimestamps()` drops the default `created_at` and `updated_at` names created
 by either helper; there is no separate `dropDatetimes()` method.
+
+These four helpers default to precision `3`, the milliseconds a JavaScript
+`Date` carries, because the model fills their columns from one. At precision
+`0` PostgreSQL and MySQL round those milliseconds to the second, so a model
+just saved held `…42.578Z` while its stored row said `…43.000Z`. Plain
+`dateTime()` and `timestamp()` columns keep the database's default precision.
+
+Tables created before this default keep their whole-second columns. To bring
+one in line, widen its columns in a migration:
+
+```ts
+// PostgreSQL
+await Schema.getConnection().run(`ALTER TABLE users
+  ALTER COLUMN created_at TYPE TIMESTAMP(3) WITHOUT TIME ZONE,
+  ALTER COLUMN updated_at TYPE TIMESTAMP(3) WITHOUT TIME ZONE`);
+
+// MySQL: repeat the column's existing nullability and default.
+await Schema.getConnection().run(`ALTER TABLE users
+  MODIFY created_at TIMESTAMP(3) NULL,
+  MODIFY updated_at TIMESTAMP(3) NULL`);
+```
+
+Widening keeps every stored value. SQLite needs nothing, since it stores the
+full ISO text.
 
 Temporal precision must be an integer from `0` through `6`. MySQL emits the
 matching `DATETIME(n)`, `TIMESTAMP(n)`, or `TIME(n)` declaration. PostgreSQL

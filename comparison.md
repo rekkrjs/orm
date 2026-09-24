@@ -2,7 +2,7 @@
 
 | Feature                  | Laravel style                                                                             | `@rekkr/orm` style                                                                  |
 | ------------------------ | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Runtime                  | Full PHP framework with Eloquent, Artisan, and Blade around it                            | Bun-only ORM built on `Bun.SQL`                                                        |
+| Runtime                  | Full PHP framework with Eloquent, Artisan, and Blade around it                            | ORM for Bun and Node.js 24.21+, with the same API and CLI on both                      |
 | Package shape            | Application framework plus ORM                                                            | ORM package focused on models, query builder, schema, migrations, and CLI              |
 | Model definition         | `class User extends Model { protected $table = 'users'; }`                                | `class User extends Model { static table = "users"; }`                                 |
 | Relationship definition  | `public function posts() { return $this->hasMany(Post::class); }`                         | `posts() { return this.hasMany(Post); }`                                               |
@@ -39,7 +39,7 @@
 | Observers                | `creating`, `created`, `updating`, `updated`, etc.                                        | `ObserverRegistry` with the same lifecycle events                                      |
 | REPL / shell             | `php artisan tinker`                                                                      | `orm repl`                                                                           |
 | REPL globals             | Laravel helpers and resolved app state                                                    | `Model`, `Schema`, `Connection`, `Collection`, `collect`, `Models`, `db`               |
-| Database support         | MySQL, PostgreSQL, SQLite via PDO drivers                                                 | SQLite, MySQL, PostgreSQL via Bun connections                                          |
+| Database support         | MySQL, PostgreSQL, SQLite via PDO drivers                                                 | SQLite, MySQL, PostgreSQL via `bun:sql` on Bun; `node:sqlite`, `pg`, `mysql2` on Node  |
 | Transactions             | Connection / database transactions, nested savepoints                                     | Built-in `Connection.transaction()` and manual transaction support                     |
 | Tenant resolution        | Usually custom app code or packages like tenancy libraries                                | Built-in `ConnectionManager` and `TenantContext` for database, schema, and RLS tenancy |
 | Tenant migrations        | Often separate app code or tenancy package conventions                                    | First-class landlord / tenant migration paths and grouped CLI execution                |

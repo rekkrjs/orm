@@ -49,8 +49,7 @@ async function expectPortableCalendarDate(connection: Connection): Promise<void>
 
   const reloaded = await CalendarReading.where("label", "one").first();
   expect((reloaded as any).observed_on.toISOString()).toBe("2026-08-26T00:00:00.000Z");
-  expect(JSON.parse(JSON.stringify(reloaded!.toJSON())).observed_on)
-    .toBe("2026-08-26T00:00:00.000Z");
+  expect(JSON.parse(JSON.stringify(reloaded!.toJSON())).observed_on).toBe("2026-08-26");
 }
 
 describe.serial("Date storage across drivers", () => {

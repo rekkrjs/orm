@@ -12,6 +12,10 @@ import { Connection } from "../connection/Connection.js";
 import { assertPostgresFullTextLanguage, type PostgresFullTextLanguage } from "../fulltext.js";
 
 const PORTABLE_INDEX_NAME_BYTES = 63;
+// The model writes these columns from a JavaScript Date, which carries
+// milliseconds. At precision 0 PostgreSQL and MySQL round them to the second,
+// so the model in memory and the stored row disagree after every save.
+const MANAGED_TIMESTAMP_PRECISION = 3;
 
 function shortHash(value: string): string {
   let hash = 0x811c9dc5;
@@ -223,7 +227,7 @@ export class Blueprint {
       throw new Error(`${method}() must use different created-at and updated-at columns.`);
     }
 
-    const precision = optionsOnly ? createdAtColumnOrOptions.precision : options?.precision;
+    const precision = (optionsOnly ? createdAtColumnOrOptions.precision : options?.precision) ?? MANAGED_TIMESTAMP_PRECISION;
     this.addTemporalColumn(type, created, precision).nullable();
     this.addTemporalColumn(type, updated, precision).nullable();
   }
@@ -608,11 +612,11 @@ export class Blueprint {
   }
 
   softDeletes(name: string = "deleted_at", options: { precision?: number } = {}): void {
-    this.timestamp(name, options.precision).nullable();
+    this.timestamp(name, options.precision ?? MANAGED_TIMESTAMP_PRECISION).nullable();
   }
 
   softDeletesDatetime(name: string = "deleted_at", options: { precision?: number } = {}): void {
-    this.dateTime(name, options.precision).nullable();
+    this.dateTime(name, options.precision ?? MANAGED_TIMESTAMP_PRECISION).nullable();
   }
 
   /** The 100-character nullable remember_token column session cookies are matched against. */

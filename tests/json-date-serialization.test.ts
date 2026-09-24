@@ -95,7 +95,7 @@ describe("JSON date serialization", () => {
     const json = user.toJSON() as Record<string, any>;
 
     expect(json.occurred_at).toBe("2026-08-20T10:11:12.000Z");
-    expect(json.born_on).toBe("1815-12-10T00:00:00.000Z");
+    expect(json.born_on).toBe("1815-12-10");
     expect(json.derived_at).toBe("2026-03-04T05:06:07.000Z");
     expect(findDates(json)).toEqual([]);
 
@@ -172,10 +172,27 @@ describe("JSON date serialization", () => {
       expect(hydrated.occurred_at).toBe(expected);
       expect(direct.occurred_at).toBe(expected);
       // Untouched neighbours: only the date column is normalized.
-      expect(direct.born_on).toBe("1815-12-10T00:00:00.000Z");
+      expect(direct.born_on).toBe("1815-12-10");
       expect(direct.looks_like_a_date).toBe("");
       expect(direct.name).toBe(name);
     }
+  });
+
+  test("an accessor replaces the date cast, so the Date it returns keeps its time", async () => {
+    class AccessorDateUser extends PlainJsonDateUser {
+      static override accessors = { born_on: { get: () => new Date("2026-03-04T05:06:07.000Z") } };
+    }
+    class FormattedDateUser extends PlainJsonDateUser {
+      static override casts = { occurred_at: "datetime", born_on: "date:Y-m-d" };
+    }
+    const accessor = (await AccessorDateUser.query().where("name", "Ada").first())!.toJSON() as any;
+    expect(accessor.born_on).toBe("2026-03-04T05:06:07.000Z");
+    expect(accessor.occurred_at).toBe("2026-08-20T10:11:12.000Z");
+
+    // `date:<format>` is still the date cast: the format is not applied, the day is.
+    const formatted = (await FormattedDateUser.query().where("name", "Ada").first())!.toJSON() as any;
+    const [direct] = await FormattedDateUser.query().where("name", "Ada").rawJson() as any[];
+    expect([formatted.born_on, direct.born_on]).toEqual(["1815-12-10", "1815-12-10"]);
   });
 
   test("renders an unparseable stored date as null, the way JSON.stringify does", async () => {

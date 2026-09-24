@@ -1,6 +1,6 @@
 import { ModelPersistence } from "./ModelPersistence.js";
 import { getModelTarget, type ModelJson, type DotPaths, type DeepPick } from "./ModelBase.js";
-import { castValueIsReady, serializeDate } from "./ModelJsonRow.js";
+import { castValueIsReady, serializeDate, serializeDateValue } from "./ModelJsonRow.js";
 
 function deepPick(obj: Record<string, any>, paths: string[]): Record<string, any> {
   const groups = new Map<string, string[]>();
@@ -129,8 +129,11 @@ export class ModelSerialization<T extends Record<string, any> = any> extends Mod
       if ((visible && !visible.has(key)) || hidden?.has(key)) continue;
       const value = attributes[key];
       const cast = casts[key];
-      const needsCastPath = Boolean(accessors[key]?.get) || (cast !== undefined && !castValueIsReady(cast, value));
-      result[key] = serializeDate(needsCastPath ? target.getAttributeFromTarget(receiver, key) : value);
+      const accessor = accessors[key]?.get;
+      const needsCastPath = Boolean(accessor) || (cast !== undefined && !castValueIsReady(cast, value));
+      const output = needsCastPath ? target.getAttributeFromTarget(receiver, key) : value;
+      // An accessor replaces the cast on read, so its Date keeps the full instant.
+      result[key] = output instanceof Date ? serializeDateValue(output, accessor ? undefined : cast) : output;
     }
     if (target.$appendsOverride !== undefined || (constructor.appends?.length || 0) > 0 || target.$appends.length > 0) {
       // Bind the Proxy intentionally so getAppends() overrides keep public

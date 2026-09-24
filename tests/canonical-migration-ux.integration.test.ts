@@ -220,13 +220,16 @@ describe.serial("a project fresh from orm init", () => {
   test("runs make:migration, migrate and migrate:status on the generated config", async () => {
     // A DATABASE_URL in the environment would replace the template's SQLite default.
     const env = { DATABASE_URL: "" };
-    expect(await runCli(project, ["init"], env)).toMatchObject({ exitCode: 0 });
-    expect(await runCli(project, ["make:migration", "create_posts_table"], env)).toMatchObject({ exitCode: 0 });
+    // The template points commandsPath at ./app/commands, which init does not
+    // create: a missing directory means "no commands", not a warning on stderr.
+    const clean = { exitCode: 0, stderr: "" };
+    expect(await runCli(project, ["init"], env)).toMatchObject(clean);
+    expect(await runCli(project, ["make:migration", "create_posts_table"], env)).toMatchObject(clean);
     const [migration] = await readdir(join(project, "database", "migrations"));
     expect(migration).toMatch(/^\d{14}_create_posts_table\.ts$/);
 
-    expect(await runCli(project, ["migrate"], env)).toMatchObject({ exitCode: 0, stdout: expect.stringContaining(`Migrated:  database/migrations/${migration}`) });
+    expect(await runCli(project, ["migrate"], env)).toMatchObject({ ...clean, stdout: expect.stringContaining(`Migrated:  database/migrations/${migration}`) });
     expect(existsSync(join(project, "database", "app.db"))).toBe(true);
-    expect(await runCli(project, ["migrate:status"], env)).toMatchObject({ exitCode: 0, stdout: expect.stringContaining(migration!.replace(/\.ts$/, "")) });
+    expect(await runCli(project, ["migrate:status"], env)).toMatchObject({ ...clean, stdout: expect.stringContaining(migration!.replace(/\.ts$/, "")) });
   }, 30_000);
 });

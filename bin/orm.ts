@@ -808,10 +808,9 @@ async function main() {
   // Walk user commandsPath and register user-defined commands
   for (const commandsPath of normalizePathList(config.commands?.commandsPath)) {
     const resolvedPath = resolve(process.cwd(), commandsPath);
-    if (!existsSync(resolvedPath)) {
-      console.warn(`[Commands] commandsPath not found: ${resolvedPath}`);
-      continue;
-    }
+    // Missing means "no commands yet" (orm init does not create it); an
+    // unreadable directory still throws from walkJobFiles.
+    if (!existsSync(resolvedPath)) continue;
     for (const file of await walkJobFiles(resolvedPath)) {
       const mod = await importFile(file);
       for (const exported of Object.values(mod)) {

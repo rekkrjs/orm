@@ -1,5 +1,5 @@
 import { timestampsEnabled } from "./TimestampScope.js";
-import { formatDecimal, formatIso } from "../utils.js";
+import { formatDecimal, formatIso, formatIsoDate } from "../utils.js";
 import {
   assertBackedEnumValue,
   isBackedEnumDefinition,
@@ -193,11 +193,22 @@ export function castValueIsReady(cast: unknown, value: unknown): boolean {
   }
 }
 
-/** Match JSON.stringify: invalid dates become null instead of throwing. */
-export function serializeDate(value: unknown): unknown {
-  return value instanceof Date
-    ? (Number.isNaN(value.getTime()) ? null : formatIso(value))
-    : value;
+/**
+ * Match JSON.stringify: invalid dates become null instead of throwing. A value
+ * under a `date` cast is a calendar day, so it serializes as `YYYY-MM-DD`: its
+ * UTC midnight instant reads as the previous day anywhere west of UTC.
+ */
+export function serializeDate(value: unknown, cast?: unknown): unknown {
+  return value instanceof Date ? serializeDateValue(value, cast) : value;
+}
+
+export function serializeDateValue(value: Date, cast: unknown): string | null {
+  if (Number.isNaN(value.getTime())) return null;
+  // Every Date passes here, so `datetime` and `timestamp` must fail on the
+  // cheapest test: their fifth character is not the ":" of `date:<format>`.
+  return cast === "date" || (typeof cast === "string" && cast.charCodeAt(4) === 58 && cast.startsWith("date"))
+    ? formatIsoDate(value)
+    : formatIso(value);
 }
 
 /** Preserve the driver row; copy only when a Date needs serialization. */
@@ -418,7 +429,7 @@ export function serializeRawJsonRow(
       || cast.backedEnum
       // An unsupported cast has to reach castCompiledAttribute to report itself.
       || (cast.supported && castValueIsReady(cast.definition, value));
-    output[key] = serializeDate(ready ? value : castCompiledAttribute(cast!, value));
+    output[key] = serializeDate(ready ? value : castCompiledAttribute(cast!, value), cast?.definition);
   }
   return output;
 }
