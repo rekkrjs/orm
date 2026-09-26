@@ -111,14 +111,14 @@ export default class FailingSeeder extends Seeder {
   test("--seed runs the default seeder after migrations", async () => {
     const result = await runCli(["migrate:fresh", "--seed"]);
 
-    expect(result.exitCode).toBe(0);
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
     expect(await itemNames(landlordDatabase)).toEqual(["default"]);
   });
 
   test("help advertises the seeding options", async () => {
     const result = await runCli(["migrate:fresh", "--help"]);
 
-    expect(result.exitCode).toBe(0);
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
     expect(result.stdout).toContain("--seed");
     expect(result.stdout).toContain("--seeder=<value>");
     expect(result.stdout).toContain("--force");
@@ -127,21 +127,21 @@ export default class FailingSeeder extends Seeder {
   test("--seeder runs only the selected seeder", async () => {
     const result = await runCli(["migrate:fresh", "--seed", "--seeder=UserSeeder"]);
 
-    expect(result.exitCode).toBe(0);
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
     expect(await itemNames(landlordDatabase)).toEqual(["user"]);
   });
 
   test("migrate:refresh runs the default seeder after migrations", async () => {
     const result = await runCli(["migrate:refresh", "--seed"]);
 
-    expect(result.exitCode).toBe(0);
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
     expect(await itemNames(landlordDatabase)).toEqual(["default"]);
   });
 
   test("migrate:refresh runs only the selected seeder", async () => {
     const result = await runCli(["migrate:refresh", "--seed", "--seeder=UserSeeder"]);
 
-    expect(result.exitCode).toBe(0);
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
     expect(await itemNames(landlordDatabase)).toEqual(["user"]);
   });
 
@@ -177,7 +177,7 @@ export default class FailingRollback extends Migration {
 `);
 
     try {
-      expect((await runCli(["migrate"])).exitCode).toBe(0);
+      expect(await runCli(["migrate"])).toMatchObject({ exitCode: 0, stderr: "" });
       await rm(seedMarker, { force: true });
       const result = await runCli(["migrate:refresh", "--seed"]);
       expect(result.exitCode).toBe(1);
@@ -213,12 +213,14 @@ export default class FailingRollback extends Migration {
     const tenant = await runCli(["migrate:fresh", "--seed", "--seeder=UserSeeder", "--tenant=acme"]);
     const tenants = await runCli(["migrate:fresh", "--seed", "--seeder=UserSeeder", "--tenants"]);
 
-    expect([landlord.exitCode, tenant.exitCode, tenants.exitCode]).toEqual([0, 0, 0]);
+    for (const result of [landlord, tenant, tenants]) {
+      expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    }
     expect(await itemNames(landlordDatabase)).toEqual(["user"]);
     expect(await itemNames(tenantDatabase)).toEqual(["user"]);
 
     const refreshedTenant = await runCli(["migrate:refresh", "--seed", "--tenant=acme"]);
-    expect(refreshedTenant.exitCode).toBe(0);
+    expect(refreshedTenant).toMatchObject({ exitCode: 0, stderr: "" });
     expect(await itemNames(tenantDatabase)).toEqual(["default"]);
   });
 
@@ -257,7 +259,7 @@ export default class FailingRollback extends Migration {
       ["migrate:fresh", "--seed", "--seeder=UserSeeder", "--force"],
       { NODE_ENV: "production" },
     );
-    expect(forced.exitCode).toBe(0);
+    expect(forced).toMatchObject({ exitCode: 0, stderr: "" });
     expect(await itemNames(landlordDatabase)).toEqual(["user"]);
   });
 });

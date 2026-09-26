@@ -57,6 +57,9 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run scripts/verify-services.ts
       - run: bun run build
+      - name: Smoke test packed package on Node.js and Bun
+        if: matrix.runtime == 'node' && matrix.node == '24.21.0'
+        run: node scripts/smoke-packed-package.mjs
       - if: matrix.runtime == 'bun'
         run: bun run test
       - if: matrix.runtime == 'node'

@@ -88,37 +88,47 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
   test("runs help, application commands, migrations, and seeders as subprocesses", async () => {
     const help = await runCli(["--help"]);
     expect(help.exitCode).toBe(0);
+    expect(help.stderr).toBe("");
     expect(help.stdout).toContain("Usage: orm");
     expect(help.stdout).not.toContain("\x1b[");
 
     const seedHelp = await runCli(["db:seed", "--help"]);
+    expect(seedHelp).toMatchObject({ exitCode: 0, stderr: "" });
     expect(seedHelp.stdout).toContain("--force");
 
     const custom = await runCli(["run", "smoke:hello", "Ada", "--loud"]);
     expect(custom.exitCode).toBe(0);
+    expect(custom.stderr).toBe("");
     expect(custom.stdout).toContain("HELLO ADA");
     const customHelp = await runCli(["run", "smoke:hello", "--help"]);
+    expect(customHelp).toMatchObject({ exitCode: 0, stderr: "" });
     expect(customHelp.stdout).toContain("Usage: orm run smoke:hello");
 
     const migrated = await runCli(["migrate"]);
     expect(migrated.exitCode).toBe(0);
+    expect(migrated.stderr).toBe("");
     expect(migrated.stdout).toContain("Migrated:");
 
     const ranStatus = await runCli(["migrate:status"]);
     expect(ranStatus.exitCode).toBe(0);
+    expect(ranStatus.stderr).toBe("");
     expect(ranStatus.stdout).toContain("Ran");
 
     const reset = await runCli(["migrate:reset"]);
     expect(reset.exitCode).toBe(0);
+    expect(reset.stderr).toBe("");
     const pendingStatus = await runCli(["migrate:status"]);
+    expect(pendingStatus).toMatchObject({ exitCode: 0, stderr: "" });
     expect(pendingStatus.stdout).toContain("Pending");
 
     const refreshed = await runCli(["migrate:refresh"]);
     expect(refreshed.exitCode).toBe(0);
+    expect(refreshed.stderr).toBe("");
     expect(refreshed.stdout).toContain("Migrated:");
 
     const seeded = await runCli(["db:seed", "CliItemSeeder"]);
     expect(seeded.exitCode).toBe(0);
+    expect(seeded.stderr).toBe("");
     const connection = new Connection({ url: `sqlite://${databasePath}` });
     try {
       expect(await connection.query("SELECT name FROM cli_items")).toEqual([{ name: "seeded" }]);
@@ -130,6 +140,7 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
 
       const forced = await runCli(["db:seed", "CliItemSeeder", "--force"], { env: { NODE_ENV: "production" } });
       expect(forced.exitCode).toBe(0);
+      expect(forced.stderr).toBe("");
       expect(await connection.query("SELECT name FROM cli_items")).toHaveLength(2);
     } finally {
       await connection.close();
@@ -140,11 +151,13 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
     const queueHelp = await runCli(["queue", "--help"]);
     expect(queueHelp.timedOut).toBe(false);
     expect(queueHelp.exitCode).toBe(0);
+    expect(queueHelp.stderr).toBe("");
     expect(queueHelp.stdout).toContain("Start the background job worker");
 
     const replHelp = await runCli(["repl", "--help"]);
     expect(replHelp.timedOut).toBe(false);
     expect(replHelp.exitCode).toBe(0);
+    expect(replHelp.stderr).toBe("");
     expect(replHelp.stdout).toContain("Start an interactive REPL");
   });
 
@@ -193,6 +206,7 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
 
     const second = await runRepl();
     expect(second.exitCode).toBe(0);
+    expect(second.stderr).toBe("");
     expect(second.stdout).toContain("REPL_SMOKE function object");
     expect((await readdir(cacheDir)).length).toBeGreaterThan(0);
 
@@ -213,11 +227,13 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
 
       const fromFiles = await runProcess([...ormCli, "migrate", "--json"], { cwd: dir, env: inherited });
       expect(fromFiles.exitCode).toBe(0);
+      expect(fromFiles.stderr).toBe("Nothing to migrate.\n");
       expect(existsSync(join(dir, "from-local.sqlite"))).toBe(true);
       expect(existsSync(join(dir, "from-dotenv.sqlite"))).toBe(false);
 
       const fromEnv = await runProcess([...ormCli, "migrate", "--json"], { cwd: dir, env: { ...inherited, DB_NAME: "from-env" } });
       expect(fromEnv.exitCode).toBe(0);
+      expect(fromEnv.stderr).toBe("Nothing to migrate.\n");
       expect(existsSync(join(dir, "from-env.sqlite"))).toBe(true);
     } finally {
       await rm(dir, { recursive: true, force: true });

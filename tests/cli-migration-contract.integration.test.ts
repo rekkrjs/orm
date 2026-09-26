@@ -9,9 +9,8 @@ import { Connection } from "../src/index.js";
  * because the CLI has been broken on one driver while green on another —
  * see .tmp_hacks/bun-mysql-event-loop.md.
  *
- * The load-bearing assertion in every case is the pair "exit code 0 **and**
- * output": a command that says it succeeded and printed nothing is the exact
- * failure this suite exists to catch.
+ * Successful read-only commands also require empty stderr. Mutating --json
+ * commands deliberately send migration progress there.
  */
 type Driver = "sqlite" | "mysql" | "postgres";
 
@@ -144,7 +143,7 @@ export default {
     it("reports pending migrations as JSON on stdout", async () => {
       const result = await runCli(project, ["migrate:status", "--json"]);
 
-      expect(result.exitCode).toBe(0);
+      expect(result).toMatchObject({ exitCode: 0, stderr: "" });
       expect(result.stdout.trim()).not.toBe("");
       const payload = JSON.parse(result.stdout);
       expect(payload.migrations.map((row: any) => row.status)).toEqual(["Pending", "Pending"]);
@@ -154,12 +153,12 @@ export default {
 
     it("pretends pending migrations with dialect SQL and bindings without mutations", async () => {
       const emptyRollback = await runCli(project, ["migrate:rollback", "--pretend", "--json"]);
-      expect(emptyRollback.exitCode).toBe(0);
+      expect(emptyRollback).toMatchObject({ exitCode: 0, stderr: "Nothing to rollback.\n" });
       expect(JSON.parse(emptyRollback.stdout)).toEqual({ pretend: [] });
 
       const result = await runCli(project, ["migrate", "--pretend", "--json"], { NODE_ENV: "production" });
 
-      expect(result.exitCode).toBe(0);
+      expect(result).toMatchObject({ exitCode: 0, stderr: "" });
       expect(result.stdout.trim().split("\n")).toHaveLength(1);
       const payload = JSON.parse(result.stdout);
       expect(payload.pretend).toHaveLength(2);
@@ -176,10 +175,13 @@ export default {
       );
       expect(statements[2].bindings).toEqual(["fixture"]);
 
-      const stillPending = JSON.parse((await runCli(project, ["migrate:status", "--json"])).stdout);
+      const pendingResult = await runCli(project, ["migrate:status", "--json"]);
+      expect(pendingResult).toMatchObject({ exitCode: 0, stderr: "" });
+      const stillPending = JSON.parse(pendingResult.stdout);
       expect(stillPending.migrations.map((row: any) => row.status)).toEqual(["Pending", "Pending"]);
 
       const plain = await runCli(project, ["migrate", "--pretend"]);
+      expect(plain).toMatchObject({ exitCode: 0, stderr: "" });
       expect(plain.stdout).toContain("(up)");
       expect(plain.stdout).toContain('Bindings: ["9007199254740993"]');
       expect(plain.stdout).toContain("Bindings: [\"fixture\"]");
@@ -200,9 +202,10 @@ export default {
     });
 
     it("reports the batch each migration ran in", async () => {
-      const { stdout, exitCode } = await runCli(project, ["migrate:status", "--json"]);
+      const { stdout, stderr, exitCode } = await runCli(project, ["migrate:status", "--json"]);
 
       expect(exitCode).toBe(0);
+      expect(stderr).toBe("");
       const rows = JSON.parse(stdout).migrations;
       expect(rows.map((row: any) => row.status)).toEqual(["Ran", "Ran"]);
       expect(rows.map((row: any) => row.batch)).toEqual([1, 1]);
@@ -321,7 +324,9 @@ export default {
         expect(payload.pretend[0].migration).toBe("database/migrations/20260104500000_create_pretend_batch_table.ts");
         expect(payload.pretend[0].direction).toBe("down");
 
-        const status = JSON.parse((await runCli(project, ["migrate:status", "--json"])).stdout);
+        const statusResult = await runCli(project, ["migrate:status", "--json"]);
+        expect(statusResult).toMatchObject({ exitCode: 0, stderr: "" });
+        const status = JSON.parse(statusResult.stdout);
         expect(status.migrations.every((row: any) => row.status === "Ran")).toBe(true);
       } finally {
         await runCli(project, ["migrate:rollback", "--step=1", "--json"]);
@@ -389,7 +394,7 @@ export default {
   test.serial("treats --json=false as false", async () => {
     const result = await runCli(configured, ["migrate:status", "--json=false"]);
 
-    expect(result.exitCode).toBe(0);
+    expect(result).toMatchObject({ exitCode: 0, stderr: "" });
     expect(result.stdout).not.toContain('"migrations"');
   });
 

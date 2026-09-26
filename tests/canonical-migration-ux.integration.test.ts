@@ -95,6 +95,9 @@ export default class ProductionGuardMigration extends Migration {
     const migrateHelp = await runCli(project, ["migrate", "--help"]);
     const rollbackHelp = await runCli(project, ["migrate:rollback", "--help"]);
     const refreshHelp = await runCli(project, ["migrate:refresh", "--help"]);
+    for (const result of [migrateHelp, rollbackHelp, refreshHelp]) {
+      expect(result).toMatchObject({ exitCode: 0, stderr: "" });
+    }
     expect(migrateHelp.stdout).toContain("--pretend");
     expect(migrateHelp.stdout).toContain("--force");
     expect(migrateHelp.stdout).toContain("Usage: orm migrate");
@@ -111,7 +114,7 @@ export default class ProductionGuardMigration extends Migration {
     expect(await hasTable("production_guard")).toBe(false);
 
     const pretend = await runCli(project, ["migrate", "--pretend", "--json"], production);
-    expect(pretend.exitCode).toBe(0);
+    expect(pretend).toMatchObject({ exitCode: 0, stderr: "" });
     const pretendResult = JSON.parse(pretend.stdout).pretend;
     expect(pretendResult).toHaveLength(1);
     expect(pretendResult[0].statements.map((statement: any) => statement.sql)).toEqual([
@@ -124,9 +127,9 @@ export default class ProductionGuardMigration extends Migration {
     expect(await userVersion()).toBe(0);
 
     const status = await runCli(project, ["migrate:status", "--json"], production);
-    expect(status.exitCode).toBe(0);
+    expect(status).toMatchObject({ exitCode: 0, stderr: "" });
 
-    expect((await runCli(project, ["migrate", "--force"], production)).exitCode).toBe(0);
+    expect(await runCli(project, ["migrate", "--force"], production)).toMatchObject({ exitCode: 0, stderr: "" });
     expect(await hasTable("production_guard")).toBe(true);
     expect(await hasTable("migration_locks")).toBe(true);
     expect(await observedMigrationLock()).toBe(1);
@@ -136,7 +139,7 @@ export default class ProductionGuardMigration extends Migration {
       ["migrate:rollback", "--pretend", "--json"],
       production,
     );
-    expect(rollbackPretend.exitCode).toBe(0);
+    expect(rollbackPretend).toMatchObject({ exitCode: 0, stderr: "" });
     expect(JSON.parse(rollbackPretend.stdout).pretend[0].direction).toBe("down");
     expect(await hasTable("production_guard")).toBe(true);
 
@@ -147,12 +150,12 @@ export default class ProductionGuardMigration extends Migration {
       expect(await hasTable("production_guard")).toBe(true);
 
       const forced = await runCli(project, [command, "--force"], production);
-      expect(forced.exitCode).toBe(0);
+      expect(forced).toMatchObject({ exitCode: 0, stderr: "" });
       const removesSchema = command === "migrate:rollback" || command === "migrate:reset";
       expect(await hasTable("production_guard")).toBe(!removesSchema);
       if (!removesSchema) expect(await observedMigrationLock()).toBe(1);
       if (removesSchema) {
-        expect((await runCli(project, ["migrate", "--force"], production)).exitCode).toBe(0);
+        expect(await runCli(project, ["migrate", "--force"], production)).toMatchObject({ exitCode: 0, stderr: "" });
       }
     }
   }, 30_000);
@@ -181,7 +184,8 @@ export default {
   test("keeps make:migration canonical and infers create and add-to-table stubs", async () => {
     const created = await runCli(project, ["make:migration", "create_accounts_table"]);
     const altered = await runCli(project, ["make:migration", "add_status_to_accounts_table", "--model"]);
-    expect([created.exitCode, altered.exitCode]).toEqual([0, 0]);
+    expect(created).toMatchObject({ exitCode: 0, stderr: "" });
+    expect(altered.exitCode).toBe(0);
     expect(altered.stderr).toContain("--model only applies to create_<table>_table migrations");
 
     const files = (await readdir(migrations)).sort();
@@ -196,6 +200,7 @@ export default {
     expect(alterSource.match(/Schema\.table\("accounts"/g)).toHaveLength(2);
 
     const help = await runCli(project, ["--help"]);
+    expect(help).toMatchObject({ exitCode: 0, stderr: "" });
     expect(help.stdout).toContain("make:migration");
     expect(help.stdout).not.toContain("migrate:make");
     const removed = await runCli(project, ["migrate:make", "legacy_name"]);
