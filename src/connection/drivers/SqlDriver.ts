@@ -12,6 +12,10 @@ import { createNodeDriver } from "./nodeDrivers.js";
  */
 export interface SqlDriver {
   unsafe(sql: string, bindings?: unknown[]): PromiseLike<unknown>;
+  /** True when each newly opened MySQL session starts in UTC. */
+  mysqlUtcOnConnect?: boolean;
+  /** MySQL write metadata keeps AUTO_INCREMENT ids exact, including those beyond 2^53. */
+  exactMysqlInsertId?: boolean;
   /** A pooled session of its own until `release()`. SQLite has a single session and needs none. */
   reserve?(): Promise<ReservedSqlDriver>;
   /** Runs the callback in a transaction on a session of its own. Without it Connection issues BEGIN itself. */

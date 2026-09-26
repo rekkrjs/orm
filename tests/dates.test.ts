@@ -210,7 +210,7 @@ describe("Date handling", () => {
     expect(queries.at(-1)?.bindings?.[0]).toBe(attributes.happened_at);
   });
 
-  test("MySQL checks and executes a date query on the same reserved session", async () => {
+  test("MySQL checks and executes a date query on the same reserved session after SET time_zone", async () => {
     const calls: string[] = [];
     let released = false;
     const reserved = {
@@ -229,13 +229,88 @@ describe("Date handling", () => {
       { driver: pool as any, ownsDriver: false }
     );
 
+    await connection.run("SET time_zone = '+00:00'");
     await connection.run("SELECT ?", [new Date("2026-08-19T14:00:00.123Z")]);
 
     expect(calls).toEqual([
+      "pool:SET time_zone = '+00:00'",
       "reserved:SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW()) AS offset_seconds",
       "reserved:SELECT ?",
     ]);
     expect(released).toBe(true);
+  });
+
+  test("MySQL sends ordinary date writes straight through its UTC pool", async () => {
+    const calls: string[] = [];
+    const pool = {
+      mysqlUtcOnConnect: true,
+      unsafe: async (sql: string) => { calls.push(sql); return []; },
+      reserve: async () => { throw new Error("ordinary date write reserved a session"); },
+    };
+    const connection = new Connection(
+      { url: "mysql://user:pass@localhost:3306/db" },
+      { driver: pool as any, ownsDriver: false }
+    );
+
+    const stamp = new Date("2026-08-19T14:00:00.123Z");
+    await connection.run("UPDATE events SET created_at = ?", [stamp]);
+    await connection.run("UPDATE events SET created_at = ?", [stamp]);
+
+    expect(calls).toEqual([
+      "UPDATE events SET created_at = ?",
+      "UPDATE events SET created_at = ?",
+    ]);
+  });
+
+  test("MySQL uses exact insert metadata without reserving or reading LAST_INSERT_ID", async () => {
+    const calls: string[] = [];
+    const driver = {
+      exactMysqlInsertId: true,
+      unsafe: async (sql: string) => {
+        calls.push(sql);
+        return Object.assign([], { lastInsertRowid: "9007199254740993" });
+      },
+      reserve: async () => { throw new Error("exact metadata reserved a session"); },
+    };
+    const connection = new Connection(
+      { url: "mysql://user:pass@localhost:3306/db" },
+      { driver: driver as any, ownsDriver: false }
+    );
+
+    expect(await connection.runAndGetMysqlInsertId("INSERT INTO events (name) VALUES (?)", ["one"]))
+      .toBe("9007199254740993");
+    expect(calls).toEqual(["INSERT INTO events (name) VALUES (?)"]);
+  });
+
+  test("MySQL reserves a session and reads LAST_INSERT_ID only for unsafe metadata", async () => {
+    const calls: string[] = [];
+    let releases = 0;
+    let inserts = 0;
+    const reserved = {
+      unsafe: async (sql: string) => {
+        calls.push(sql);
+        if (sql.startsWith("INSERT")) {
+          return Object.assign([], { lastInsertRowid: ++inserts === 1 ? 12 : 9007199254740992 });
+        }
+        return [{ orm_insert_id: "9007199254740993" }];
+      },
+      release: () => { releases++; },
+    };
+    const connection = new Connection(
+      { url: "mysql://user:pass@localhost:3306/db" },
+      { driver: { reserve: async () => reserved } as any, ownsDriver: false }
+    );
+
+    expect(await connection.runAndGetMysqlInsertId("INSERT INTO events (name) VALUES (?)", ["small"]))
+      .toBe(12);
+    expect(await connection.runAndGetMysqlInsertId("INSERT INTO events (name) VALUES (?)", ["large"]))
+      .toBe("9007199254740993");
+    expect(calls).toEqual([
+      "INSERT INTO events (name) VALUES (?)",
+      "INSERT INTO events (name) VALUES (?)",
+      "SELECT LAST_INSERT_ID() AS orm_insert_id",
+    ]);
+    expect(releases).toBe(2);
   });
 
   test("MySQL releases reserved sessions when date writes fail", async () => {
@@ -254,9 +329,10 @@ describe("Date handling", () => {
       };
       const connection = new Connection(
         { url: "mysql://user:pass@localhost:3306/db" },
-        { driver: { reserve: async () => reserved } as any, ownsDriver: false }
+        { driver: { unsafe: async () => [], reserve: async () => reserved } as any, ownsDriver: false }
       );
       const instant = new Date("2026-08-19T14:00:00.123Z");
+      await connection.run("SET time_zone = '+00:00'");
 
       const operation = failure === "check"
         ? connection.run("UPDATE events SET created_at = ?", [instant])

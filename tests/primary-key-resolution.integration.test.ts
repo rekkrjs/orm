@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "./harness.js";
-import { Connection, ConnectionManager, Model, Schema } from "../src/index.js";
+import { Builder, Connection, ConnectionManager, Model, Schema } from "../src/index.js";
 import { insertAndResolveKey } from "../src/model/PrimaryKeyResolution.js";
 
 const postgresUrl = process.env.POSTGRES_TEST_URL;
@@ -106,6 +106,32 @@ describe.serial("Database-assigned primary keys", () => {
       expect(Number(key)).toBeGreaterThan(0);
       const rows = await connection.query(`SELECT id FROM ${table}`);
       expect(Number(rows[0]?.id)).toBe(Number(key));
+    } finally {
+      await connection.run(`DROP TABLE IF EXISTS ${table}`);
+      await connection.close();
+    }
+  });
+
+  runIfMySql("keeps AUTO_INCREMENT keys exact above Number.MAX_SAFE_INTEGER", async () => {
+    const connection = new Connection({ url: mysqlUrl!, max: 1 });
+    const table = `pk_large_${process.pid}_${Date.now()}`;
+    class LargeKey extends Model {
+      static override table = table;
+      static override fillable = ["name"];
+      static override timestamps = false;
+    }
+    LargeKey.setConnection(connection);
+
+    try {
+      await connection.run(
+        `CREATE TABLE ${table} (id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, name VARCHAR(20)) AUTO_INCREMENT=9007199254740993`
+      );
+      const first = await new Builder(connection, table).insertGetId({ name: "first" });
+      const second = await LargeKey.create({ name: "second" } as any);
+      expect(String(first)).toBe("9007199254740993");
+      expect(String((second as any).id)).toBe("9007199254740994");
+      const stored = await connection.query<{ id: string }>(`SELECT CAST(id AS CHAR) AS id FROM ${table} ORDER BY id`);
+      expect(stored.map((row) => row.id)).toEqual(["9007199254740993", "9007199254740994"]);
     } finally {
       await connection.run(`DROP TABLE IF EXISTS ${table}`);
       await connection.close();

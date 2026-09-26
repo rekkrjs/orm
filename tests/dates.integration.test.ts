@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { afterAll, describe, expect, isBun, test } from "./harness.js";
-import { Connection, DB, Model, Schema } from "../src/index.js";
+import { Builder, Connection, DB, Model, Schema } from "../src/index.js";
 import { createDriverContext, mysqlUrl, postgresUrl, type DriverContext } from "./driver-harness.js";
 
 const runIfMySql = mysqlUrl ? test.serial : test.skip;
@@ -240,6 +240,42 @@ describe.serial("Date storage across drivers", () => {
       }
     } finally {
       await skewed.close();
+    }
+  });
+
+  runIfMySql("timestamped MySQL create and update add no UTC or id round trip", async () => {
+    const connection = new Connection({ url: mysqlUrl!, max: 1 });
+    const table = `utc_fast_${process.pid}_${Date.now()}`;
+    class Stamped extends Model {
+      static override table = table;
+      static override fillable = ["name"];
+    }
+    Stamped.setConnection(connection);
+    const historySql = "SELECT EVENT_ID AS id, SQL_TEXT AS statement FROM performance_schema.events_statements_history WHERE THREAD_ID = PS_CURRENT_THREAD_ID() ORDER BY EVENT_ID";
+    const history = () => connection.query<{ id: number; statement: string }>(historySql);
+
+    try {
+      await Schema.create(table, (column) => {
+        column.increments("id");
+        column.string("name");
+        column.timestamps();
+      }, connection);
+      const beforeInsert = Math.max(0, ...(await history()).map((event) => Number(event.id)));
+      const record = await Stamped.create({ name: "first" } as any);
+      const insertEvents = (await history()).filter((event) => Number(event.id) > beforeInsert).map((event) => event.statement);
+      expect(insertEvents.filter((sql) => /TIMESTAMPDIFF|LAST_INSERT_ID/i.test(sql))).toEqual([]);
+
+      const beforeUpdate = Math.max(0, ...(await history()).map((event) => Number(event.id)));
+      record.setAttribute("name", "updated");
+      await record.save();
+      const updateEvents = (await history()).filter((event) => Number(event.id) > beforeUpdate).map((event) => event.statement);
+      expect(updateEvents.filter((sql) => /TIMESTAMPDIFF|LAST_INSERT_ID/i.test(sql))).toEqual([]);
+      const stored = await connection.query<{ name: string }>(`SELECT name FROM ${table} WHERE id = ?`, [(record as any).id]);
+      expect(stored).toEqual([{ name: "updated" }]);
+      expect(await new Builder(connection, table).count()).toBe(1);
+    } finally {
+      await connection.run(`DROP TABLE IF EXISTS ${table}`);
+      await connection.close();
     }
   });
 

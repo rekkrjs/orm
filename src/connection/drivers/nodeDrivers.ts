@@ -351,6 +351,8 @@ function nodeMysqlDriver(config: ConnectionConfig, url: string | undefined, { ma
   };
 
   return {
+    mysqlUtcOnConnect: true,
+    exactMysqlInsertId: true,
     unsafe: (sql, bindings) => mysqlRun(pool, sql, bindings),
     reserve,
     begin: (callback) => beginOnReservedSession(reserve, callback),

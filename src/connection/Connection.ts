@@ -53,7 +53,7 @@ export interface WriteResult extends Array<Record<string, any>> {
   command?: string;
   affectedRows?: number | null;
   insertId?: number | string | null;
-  lastInsertRowid?: number | bigint | null;
+  lastInsertRowid?: number | string | bigint | null;
 }
 
 /**
@@ -156,6 +156,7 @@ export class Connection {
   private replicaIndex = 0;
   private sticky = false;
   private mysqlUtcChecked = false;
+  private mysqlUtcDirty = false;
   /** When set (ms), a manual beginTransaction() with no commit/rollback within this window is auto-rolled-back and its pooled connection released. Opt-in. */
   static abandonedTransactionTimeoutMs?: number;
   static logQueries = false;
@@ -193,6 +194,9 @@ export class Connection {
     }
 
     this.driver = options.driver || createDriver(this.driverName, config, url, Connection.defaultPostgresPoolMax);
+    // Built-in MySQL clients initialize every session in UTC. Injected clients
+    // must opt into that guarantee; otherwise keep checking their date writes.
+    this.mysqlUtcDirty = this.driverName === "mysql" && !!options.driver && !options.driver.mysqlUtcOnConnect;
 
     switch (this.driverName) {
       case "sqlite":
@@ -622,7 +626,7 @@ export class Connection {
     if (this.sticky && !this.isPretending()) readWriteScope.getStore()?.add(this);
   }
 
-  /** MySQL's result metadata rounds large AUTO_INCREMENT ids; read the exact id on the same session. */
+  /** Return MySQL's AUTO_INCREMENT id from metadata, with a same-session fallback when Bun rounds it. */
   async runAndGetMysqlInsertId(sqlString: string, bindings?: any[]): Promise<number | string | bigint | null> {
     const effective = resolveConnection(this);
     if (effective !== this) return effective.runAndGetMysqlInsertId(sqlString, bindings);
@@ -642,15 +646,25 @@ export class Connection {
     const execute = async (driver: SqlDriver) => {
       const hasDate = this.carriesDate(bindings);
       this.log(sqlString, normalizedBindings);
-      if (hasDate) await this.assertMysqlUtc(driver, this.dedicated || !!this.reservedDriver);
-      await this.executeStatement(driver, sqlString, normalizedBindings, true);
+      if (hasDate && (this.dedicated || this.reservedDriver || this.resourceConnection().mysqlUtcDirty)) {
+        await this.assertMysqlUtc(driver, this.dedicated || !!this.reservedDriver);
+      }
+      const write = await this.executeStatement(driver, sqlString, normalizedBindings, true) as WriteResult;
+      const id = write.lastInsertRowid ?? write.insertId;
+      if (typeof id === "string" || typeof id === "bigint" ||
+        (typeof id === "number" && Number.isSafeInteger(id))) return id;
+      if (driver.exactMysqlInsertId) {
+        throw new Error("MySQL driver reported an inexact or missing insert id despite exactMysqlInsertId.");
+      }
       const rows = await this.executeStatement(driver, "SELECT LAST_INSERT_ID() AS orm_insert_id") as any[];
       return rows[0]?.orm_insert_id ?? null;
     };
 
     await this.ensureSqliteDefaults();
     const driver = this.getDriver();
-    if (this.transactionActive || this.dedicated || this.reservedDriver || !driver.reserve) {
+    const checkPooledUtc = this.carriesDate(bindings) && this.resourceConnection().mysqlUtcDirty;
+    if (this.transactionActive || this.dedicated || this.reservedDriver || !driver.reserve ||
+      (driver.exactMysqlInsertId && !checkPooledUtc)) {
       return await execute(driver);
     }
 
@@ -669,12 +683,16 @@ export class Connection {
     await this.ensureSqliteDefaults();
     if (this.driverName === "mysql" && /^\s*SET\s+(?:SESSION\s+)?(?:@@session\.)?time_zone\b/i.test(sqlString)) {
       this.mysqlUtcChecked = false;
+      // A pooled SET may have changed any physical session, including one
+      // returned by a transaction. Check date writes again from now on.
+      this.resourceConnection().mysqlUtcDirty = true;
     }
     const hasDate = this.carriesDate(bindings);
     this.log(sqlString, normalizedBindings);
 
     const driver = this.getDriver();
-    if (this.driverName !== "mysql" || !hasDate) {
+    if (this.driverName !== "mysql" || !hasDate ||
+      !(this.dedicated || this.reservedDriver || this.resourceConnection().mysqlUtcDirty)) {
       return await this.executeStatement(driver, sqlString, normalizedBindings, true);
     }
 
