@@ -174,13 +174,17 @@ declare module "../User" {
     getAttribute<K extends keyof UsersAttributes>(key: K): UsersAttributes[K];
     getAttribute(key: string): any;
     setAttribute<K extends keyof UsersAttributes>(key: K, value: UsersAttributes[K]): void;
-    fill(attributes: Partial<UsersAttributes> & Record<string, any>): this;
   }
 }
 ```
 
 A nullable column is optional (`?`) and admits `null`. The interface is exported
 so your code can name it, for example in `AccessorMap<UsersAttributes, User>`.
+
+A column whose name is not an identifier (`first-name`, `2fa`) is quoted in the
+interface. One that a `Model` member already uses (`save`, `delete`, `toJSON`,
+`constructor`...) is left out of the class: it would replace the method. Both
+stay typed through `getAttribute()`: `user.getAttribute("first-name")`.
 
 Your model stays hand-written:
 

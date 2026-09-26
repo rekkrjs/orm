@@ -1,12 +1,10 @@
-import { afterAll, beforeAll, describe, expect, test } from "./harness.js";
+import { afterAll, beforeAll, describe, expect, ormCli, runProcess, test } from "./harness.js";
 import { execFileSync } from "node:child_process";
 import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { Connection, Schema, TypeGenerator } from "../src/index.js";
-import { buildModelStub, toTableName } from "../src/cli/MakeModelCommand.js";
-import { buildStub } from "../src/search/commands/MakeSearchableCommand.js";
 
 /**
  * What an installer's `tsc` sees. The package is copied — not linked — into a
@@ -62,35 +60,78 @@ const columns: Record<string, Record<string, unknown>> = {
 const projects = new Map<string, string>();
 
 /**
- * Code the ORM writes into an application: both scaffolds and a generated stub.
- * It is compiled with the consumer's flags, `noImplicitOverride` included.
+ * Code the ORM writes into an application, by path: every scaffold, as the CLI
+ * writes it, and the types `types:generate` emits both as declarations merged
+ * into models and as stub classes. It is compiled with the consumer's flags,
+ * `noImplicitOverride` included.
  */
 const generated = new Map<string, string>();
 
-async function generateSources(): Promise<void> {
-  for (const name of ["User", "Category"]) generated.set(`${name}.ts`, buildModelStub(name, toTableName(name)));
-  generated.set("Post.ts", buildStub("Post"));
+// Column names that are valid SQL but not TypeScript identifiers, or that
+// collide with members every model inherits from `Model`.
+const awkwardColumns = ["first-name", "2fa", "save", "delete", "constructor", "toJSON"];
 
-  const connection = new Connection({ url: "sqlite://:memory:" });
-  const out = mkdtempSync(join(tmpdir(), "orm-consumer-stubs-"));
+async function generateSources(): Promise<void> {
+  const scaffold = mkdtempSync(join(tmpdir(), "orm-consumer-scaffolds-"));
+  const cli = async (...args: string[]) => {
+    const result = await runProcess([...ormCli, ...args], { cwd: scaffold, timeoutMs: 30_000 });
+    if (result.exitCode !== 0 || result.stderr !== "") {
+      throw new Error(`orm ${args.join(" ")} failed (${result.exitCode}):\n${result.stderr}${result.stdout}`);
+    }
+  };
+  // The CLI imports the files it scaffolded (commands, models), which import the package.
+  mkdirSync(join(scaffold, "node_modules", "@rekkr"), { recursive: true });
+  symlinkSync(root, join(scaffold, "node_modules", "@rekkr", "orm"));
   try {
-    await Schema.create("accounts", (table) => {
-      table.increments("id");
-      table.string("name");
-      table.string("email").nullable();
-      table.timestamps();
-    }, connection);
-    await new TypeGenerator(connection, { outDir: out, stubs: true }).generate();
-    generated.set("accounts.ts", await readFile(join(out, "accounts.ts"), "utf-8"));
+    // Non-interactive `orm init` takes every default, search and queue included.
+    await cli("init");
+    mkdirSync(join(scaffold, "database"));
+    const connection = new Connection({ url: `sqlite://${join(scaffold, "database", "app.db")}` });
+    try {
+      await Schema.create("accounts", (table) => {
+        table.increments("id");
+        table.string("name");
+        table.string("email").nullable();
+        table.timestamps();
+      }, connection);
+      await connection.run(`CREATE TABLE "awkward_rows" ("id" INTEGER PRIMARY KEY, "title" TEXT NOT NULL, ${awkwardColumns.map((c) => `"${c}" TEXT`).join(", ")})`);
+
+      await cli("make:model", "Account");
+      await cli("make:model", "AwkwardRow");
+      await cli("make:model", "Category");
+      await cli("make:migration", "create_posts_table", "--model");
+      await cli("make:migration", "add_status_to_posts_table");
+      await cli("make:migration", "backfill_slugs");
+      await cli("make:command", "SendReport");
+      await cli("make:job", "ProcessPodcast");
+      await cli("make:policy", "Post", "--model=Post");
+      await cli("make:policy", "Comment");
+      await cli("make:searchable", "Article");
+      await cli("queue:install", "--models=app/models/queue");
+      await cli("types:generate");
+      await new TypeGenerator(connection, { outDir: join(scaffold, "stubs"), stubs: true }).generate();
+    } finally {
+      await connection.close();
+    }
+    for (const file of readdirSync(scaffold, { recursive: true, encoding: "utf8" })) {
+      if (file.endsWith(".ts") && !file.startsWith("node_modules")) generated.set(file, await readFile(join(scaffold, file), "utf-8"));
+    }
   } finally {
-    await connection.close();
-    rmSync(out, { recursive: true, force: true });
+    rmSync(scaffold, { recursive: true, force: true });
   }
   generated.set("use.ts", [
-    `import { AccountsBase } from "./accounts";`,
-    `import { Post } from "./Post";`,
-    `export class Account extends AccountsBase {}`,
-    `export const hits = Post.search("rust").get();`,
+    `import { AccountsBase, AwkwardRowsBase } from "./stubs";`,
+    `import { Account } from "./app/models/Account";`,
+    `import { AwkwardRow } from "./app/models/AwkwardRow";`,
+    `import { Article } from "./app/models/Article";`,
+    `export class StubAccount extends AccountsBase {}`,
+    `export const hits = Article.search("rust").get();`,
+    `export const email: string | null | undefined = new Account().email;`,
+    `export const title: string = new AwkwardRow().title;`,
+    `export const firstName = new AwkwardRow().getAttribute("first-name");`,
+    `export const stubTitle: string = new AwkwardRowsBase().title;`,
+    `export const saved: Promise<unknown> = new AwkwardRow().save();`,
+    `export const filled: Account = new Account().fill({ name: "Ana", email: null });`,
     ``,
   ].join("\n"));
 }
@@ -113,8 +154,10 @@ function createProject(types: "node" | "bun", fromGit = false): string {
     symlinkSync(join(root, "node_modules", name), join(project, "node_modules", name));
   }
   writeFileSync(join(project, "app.ts"), app);
-  mkdirSync(join(project, "generated"));
-  for (const [file, source] of generated) writeFileSync(join(project, "generated", file), source);
+  for (const [file, source] of generated) {
+    mkdirSync(dirname(join(project, "generated", file)), { recursive: true });
+    writeFileSync(join(project, "generated", file), source);
+  }
   return project;
 }
 

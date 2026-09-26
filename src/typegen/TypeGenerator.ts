@@ -7,6 +7,27 @@ import { TypeMapper } from "./TypeMapper.js";
 const DEFAULT_TIMESTAMP_COLUMNS = ["created_at", "updated_at"];
 import { discoverModelDeclarations, type ModelDeclarationInfo } from "./discoverModelTables.js";
 import { normalizePathList, snakeCase } from "../utils.js";
+import { Model } from "../model/Model.js";
+
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+
+/** A column name as a property key: quoted unless it is an identifier (`first-name`, `2fa`). */
+function propertyKey(name: string): string {
+  return IDENTIFIER.test(name) ? name : JSON.stringify(name);
+}
+
+/**
+ * Instance members every model inherits (`save`, `delete`, `toJSON`, `constructor`...).
+ * A column of that name cannot become a property of the model class; it stays
+ * reachable, typed, through `getAttribute()`.
+ */
+function modelMembers(): Set<string> {
+  const names = new Set(Object.keys(new Model()));
+  for (let proto = Model.prototype; proto && proto !== Object.prototype; proto = Object.getPrototypeOf(proto)) {
+    for (const name of Object.getOwnPropertyNames(proto)) names.add(name);
+  }
+  return names;
+}
 
 /**
  * tsconfig.json is JSON with comments and trailing commas. Strings are matched
@@ -114,19 +135,22 @@ export class TypeGenerator {
         lines.push(`export interface ${interfaceName} {`);
         for (const col of columns) {
           const tsType = columnType(col);
-          lines.push(`  ${col.name}${col.nullable ? "?" : ""}: ${tsType};`);
+          lines.push(`  ${propertyKey(col.name)}${col.nullable ? "?" : ""}: ${tsType};`);
         }
         lines.push("}");
         lines.push("");
 
+        const members = modelMembers();
+        const clashing = columns.filter((col) => members.has(col.name)).map((col) => JSON.stringify(col.name));
+        const merged = clashing.length > 0 ? `Omit<${interfaceName}, ${clashing.join(" | ")}>` : interfaceName;
+
         if (declarationOnly && modelDeclarations.length > 0) {
           for (const decl of modelDeclarations) {
             lines.push(`declare module "${decl.path}" {`);
-            lines.push(`  interface ${decl.className} extends ${interfaceName} {`);
+            lines.push(`  interface ${decl.className} extends ${merged} {`);
             lines.push(`    getAttribute<K extends keyof ${interfaceName}>(key: K): ${interfaceName}[K];`);
             lines.push(`    getAttribute(key: string): any;`);
             lines.push(`    setAttribute<K extends keyof ${interfaceName}>(key: K, value: ${interfaceName}[K]): void;`);
-            lines.push(`    fill(attributes: Partial<${interfaceName}> & Record<string, any>): this;`);
             lines.push(`  }`);
             lines.push("}");
             lines.push("");
@@ -139,6 +163,8 @@ export class TypeGenerator {
           lines.push("");
 
           for (const col of columns) {
+            // No accessor for a name that is not an identifier or that a Model member already takes.
+            if (!IDENTIFIER.test(col.name) || members.has(col.name)) continue;
             const tsType = columnType(col);
             // A nullable column is optional in the interface, so getAttribute() may return undefined.
             lines.push(`  get ${col.name}(): ${tsType}${col.nullable ? " | undefined" : ""} {`);

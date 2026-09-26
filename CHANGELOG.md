@@ -149,6 +149,19 @@
   `searchableAs()` returns its name, per tenant under `tenantScope`; an
   explicit config still wins. `orm queue` loads `modelsPath` when search is
   configured, so search jobs find the config in the worker too.
+- Everything the CLI writes compiles under `strict` with `noImplicitOverride`,
+  `exactOptionalPropertyTypes` and `noPropertyAccessFromIndexSignature`. The
+  `make:command`, `make:job` and `queue:install --models` stubs lacked
+  `override` on the statics they redefine; the `orm init` config read
+  `process.env.DATABASE_URL` without brackets. `types:generate` wrote a column
+  such as `first-name` or `2fa` as a bare property, which is a syntax error;
+  it is now quoted. A column named after a `Model` member (`save`, `delete`,
+  `toJSON`) no longer becomes a property or accessor of the class, where it
+  broke the model; it stays typed through `getAttribute()`. The `fill()`
+  overload the declarations added is gone: it failed under
+  `exactOptionalPropertyTypes`, and `Model.fill()` already takes the model's
+  attributes. A test now runs every scaffold command and compiles the output as
+  an installed project would.
 - `SqliteFTS5Engine` no longer writes to the table it indexes. Its FTS5 table
   took the index name, which defaults to the model's table: `createIndex()`
   found that table already there and did nothing, each save overwrote the row
