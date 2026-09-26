@@ -1,5 +1,5 @@
 import { expect, test, describe, beforeAll } from "./harness.js";
-import { Model, Schema, ModelNotFoundError } from "../src/index.js";
+import { DB, Model, Schema, ModelNotFoundError, ObserverRegistry } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 function expectType<T>(_value: T): void {}
@@ -237,6 +237,7 @@ describe("Increment / Decrement", () => {
     await Schema.create("votes", (table) => {
       table.increments("id");
       table.integer("count").default(0);
+      table.string("label").nullable();
       table.timestamps();
     });
   });
@@ -263,9 +264,6 @@ describe("Increment / Decrement", () => {
   });
 
   test("increment with extra attributes", async () => {
-    await Schema.table("votes", (table) => {
-      table.string("label").nullable();
-    });
     const vote = await Vote.create({ count: 0 });
     await vote.increment("count", 1, { label: "boosted" });
     expect(vote.count).toBe(1);
@@ -274,6 +272,74 @@ describe("Increment / Decrement", () => {
     const refreshed = await Vote.find(vote.id);
     expect(refreshed!.count).toBe(1);
     expect(refreshed!.getAttribute("label")).toBe("boosted");
+  });
+
+  test("instance increment and decrement fire updating then updated for the persisted change", async () => {
+    const vote = await Vote.create({ count: 5 });
+    const events: string[] = [];
+    ObserverRegistry.register(Vote, {
+      async updating(model) { events.push(`updating:${(await Vote.find(model.id))!.count}`); },
+      async updated(model) {
+        events.push(`updated:${model.count}:${model.wasChanged("count")}:${(await Vote.find(model.id))!.count}`);
+      },
+      saving() { events.push("saving"); },
+      saved() { events.push("saved"); },
+    });
+    try {
+      await vote.increment("count", 3);
+      await vote.decrement("count", 2);
+      expect(events).toEqual(["updating:5", "updated:8:true:8", "updating:8", "updated:6:true:6"]);
+      expect(vote.getChanges()).toEqual({ count: 6 });
+      expect((await Vote.find(vote.id))!.count).toBe(6);
+    } finally {
+      ObserverRegistry.unregister(Vote);
+    }
+  });
+
+  test("an updating error cancels instance increments without touching another row", async () => {
+    const vote = await Vote.create({ count: 5, label: "target" });
+    const sibling = await Vote.create({ count: 9, label: "sibling" });
+    const writes: string[] = [];
+    const stop = DB.listen(({ sql }) => {
+      if (/^UPDATE\b/i.test(sql) && /\bvotes\b/i.test(sql)) writes.push(sql);
+    });
+    const events: string[] = [];
+    ObserverRegistry.register(Vote, {
+      updating() { events.push("updating"); throw new Error("veto"); },
+      updated() { events.push("updated"); },
+    });
+    try {
+      await expect(vote.increment("count", 3, { label: "changed" })).rejects.toThrow("veto");
+      await expect(vote.decrement("count", 2)).rejects.toThrow("veto");
+      expect(events).toEqual(["updating", "updating"]);
+      expect(writes).toEqual([]);
+      expect([vote.count, vote.getAttribute("label")]).toEqual([5, "target"]);
+      const persisted = await Vote.find(vote.id);
+      const other = await Vote.find(sibling.id);
+      expect([persisted!.count, persisted!.getAttribute("label")]).toEqual([5, "target"]);
+      expect([other!.count, other!.getAttribute("label")]).toEqual([9, "sibling"]);
+    } finally {
+      ObserverRegistry.unregister(Vote);
+      stop();
+    }
+  });
+
+  test("quiet instance increment and decrement write without observers", async () => {
+    const vote = await Vote.create({ count: 5 });
+    const events: string[] = [];
+    ObserverRegistry.register(Vote, {
+      updating() { events.push("updating"); },
+      updated() { events.push("updated"); },
+    });
+    try {
+      await vote.incrementQuietly("count", 3);
+      await vote.decrementQuietly("count", 2);
+      expect(events).toEqual([]);
+      expect(vote.count).toBe(6);
+      expect((await Vote.find(vote.id))!.count).toBe(6);
+    } finally {
+      ObserverRegistry.unregister(Vote);
+    }
   });
 });
 

@@ -712,11 +712,19 @@ await user.decrement("stock", 10);
 await User.where("active", false).decrement("score", 2);   // bulk
 ```
 
+Instance `increment()` and `decrement()` fire `updating` before the write and
+`updated` after it. An `updating` observer can abort the write by throwing;
+these methods do not fire `saving` or `saved`. Query-level increments and
+decrements do not run these instance hooks. Use `incrementQuietly()` or
+`decrementQuietly()` to skip observers for one instance write.
+
 ### Quiet operations (skip observers)
 
 ```ts
 await user.saveQuietly();
 await user.updateQuietly({ name: "Imported name" });
+await user.incrementQuietly("login_count");
+await user.decrementQuietly("stock", 10);
 await user.deleteQuietly();
 await user.forceDeleteQuietly();
 await user.restoreQuietly();

@@ -140,6 +140,10 @@
 
 ### Fixed behaviour
 
+- Instance `increment()` and `decrement()` now fire `updating` before the SQL
+  write and `updated` afterward, without `saving` or `saved`. An `updating`
+  observer can abort by throwing. `incrementQuietly()` and
+  `decrementQuietly()` keep the previous observer-free behavior.
 - The PostgreSQL and SQLite search engines read the model's `fts` config in
   every process. Only `search:create-index`, `search:reindex` and
   `search:verify` passed it to the engine, so an application following the

@@ -723,6 +723,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     this.validateBackedEnumAttributes(extra);
     const incrementedValue = ((this.$attributes as any)[column] || 0) + amount;
 
+    await ObserverRegistry.dispatch("updating", this as any);
     await builder.increment(column, amount, extra);
     (this.$attributes as any)[column] = incrementedValue;
     delete this.$castCache[column as string];
@@ -730,15 +731,25 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       (this.$attributes as any)[key] = value;
       delete this.$castCache[key];
     }
+    this.$changes = { ...extra, [column]: incrementedValue } as Partial<T>;
     this.syncPersistedOriginal([column, ...Object.keys(extra)]);
     if (IdentityMap.current()) {
       IdentityMap.set(constructor.getQualifiedTable(connection), pk, this as any, connection);
     }
+    await ObserverRegistry.dispatch("updated", this as any);
     return this;
+  }
+
+  incrementQuietly<K extends string>(column: K, amount: number = 1, extra: Record<string, unknown> = {}): Promise<this> {
+    return ObserverRegistry.withoutEvents(() => this.increment(column, amount, extra));
   }
 
   async decrement<K extends string>(column: K, amount: number = 1, extra: Record<string, any> = {}): Promise<this> {
     return this.increment(column, -amount, extra);
+  }
+
+  decrementQuietly<K extends string>(column: K, amount: number = 1, extra: Record<string, unknown> = {}): Promise<this> {
+    return ObserverRegistry.withoutEvents(() => this.decrement(column, amount, extra));
   }
 
   async delete(): Promise<boolean> {

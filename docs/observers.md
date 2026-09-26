@@ -7,9 +7,10 @@ Observers let you hook into a model's lifecycle without scattering side-effects 
 - Maintaining derived columns (`updated_at` on a parent, `last_post_at` on an author).
 - Invalidating an external cache when a record is deleted.
 
-Instance writes (`user.save()`, `user.delete()`, `User.create(...)`) run the full
-observer lifecycle. Model-backed builder `update()` and `delete()` dispatch only
-their after-hooks; builder `insert()` and `upsert()` skip observers.
+Instance writes (`user.save()`, `user.delete()`, `User.create(...)`) run their
+observer lifecycle. Instance `increment()` and `decrement()` fire `updating` and
+`updated`. Model-backed builder `update()` and `delete()` dispatch only their
+after-hooks; builder `insert()` and `upsert()` skip observers.
 
 Inside a shared observer, `model.isInstanceOf(User)` is the easiest way to branch on the concrete model class.
 For IntelliSense to narrow correctly, type the hook parameter as `Model` or a union of model types, not `any`:
@@ -130,7 +131,13 @@ Order of firing on `save()` of a new instance: `saving` → `creating` → INSER
 
 On `save()` of an existing instance: `saving` → `updating` → UPDATE → `updated` → `saved`.
 
-Changes made by `saving` or `updating` are included in that UPDATE. Changes
+On instance `increment()` or `decrement()`: `updating` → UPDATE → `updated`.
+An `updating` observer that throws stops the write; returning `false` does not
+cancel it. Only the counter and explicit extra attributes are written, so
+other pending model changes remain unsaved. Use `incrementQuietly()` or
+`decrementQuietly()` to skip these events.
+
+For `save()`, changes made by `saving` or `updating` are included in the UPDATE. Changes
 made by `updated` or `saved` happen after SQL completes, so they remain dirty
 until another `save()` (including a nested save from the observer) persists them.
 
@@ -194,6 +201,8 @@ Sometimes you need to write without firing events — bulk imports, data migrati
 ```ts
 // One-shot: instance method
 await user.saveQuietly();
+await user.incrementQuietly("login_count");
+await user.decrementQuietly("stock", 10);
 await user.deleteQuietly();
 await user.forceDeleteQuietly();
 await user.restoreQuietly();
