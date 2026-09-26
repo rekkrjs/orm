@@ -65,6 +65,7 @@ import { Model } from "@rekkr/orm";
 
 class User extends Model {
   static override fillable = ["name", "email"];
+  static override softDeletes = true;
 
   posts() {
     return this.hasMany(Post);
@@ -80,36 +81,47 @@ class Post extends Model {
 }
 ```
 
-Tables with camelCase timestamps can configure the model and migration directly:
+Create the `users` and `posts` tables with default timestamp names and a
+foreign key between them:
 
 ```ts
-import { Model, Schema } from "@rekkr/orm";
+// database/migrations/<timestamp>_create_blog_tables.ts
+import { Migration, Schema } from "@rekkr/orm";
 
-class CamelUser extends Model {
-  static override fillable = ["accountId", "name", "email", "role", "locale"];
-  // Override the default created_at / updated_at / deleted_at names for this camelCase schema.
-  static override createdAtColumn = "createdAt";
-  static override updatedAtColumn = "updatedAt";
-  static override softDeletes = true;
-  static override deletedAtColumn = "deletedAt";
+export default class CreateBlogTables extends Migration {
+  async up() {
+    await Schema.create("users", (table) => {
+      table.id();
+      table.string("name");
+      table.string("email").unique();
+      table.string("role").default("member");
+      table.string("locale", 10).default("en");
+      table.timestamp("email_verified_at").nullable();
+      table.timestamps();
+      table.softDeletes();
+    });
+
+    await Schema.create("posts", (table) => {
+      table.id();
+      table.foreignId("user_id").constrained("users").cascadeOnDelete();
+      table.string("title");
+      table.text("body").nullable();
+      table.boolean("published").default(false);
+      table.timestamp("published_at").nullable();
+      table.timestamps();
+      table.index(["user_id", "created_at"]);
+    });
+  }
+
+  async down() {
+    await Schema.dropIfExists("posts");
+    await Schema.dropIfExists("users");
+  }
 }
-
-// Assumes the accounts table already exists.
-await Schema.create("camel_users", (table) => {
-  table.id();
-  table.foreignId("accountId").constrained("accounts").cascadeOnDelete();
-  table.string("name");
-  table.string("email");
-  table.string("role").default("member");
-  table.string("locale", 10).default("en");
-  table.timestamp("emailVerifiedAt").nullable();
-  table.softDeletes("deletedAt");
-  table.timestamps("createdAt", "updatedAt");
-
-  table.unique(["accountId", "email"]);
-  table.index(["accountId", "createdAt"]);
-});
 ```
+
+See [Models: timestamps](./docs/models.md#timestamps) for custom column names,
+including a camelCase model and matching schema.
 
 Native getters can be serialized with `appends` without duplicating them in
 `static accessors`:
@@ -169,7 +181,7 @@ See the [Quickstart guide](./docs/quickstart.md) for the full walkthrough.
 Use the canonical migration commands for generation, dry runs, and seeded rebuilds:
 
 ```bash
-orm make:migration create_users_table
+orm make:migration create_blog_tables
 orm migrate --pretend
 orm migrate:rollback --step=2 --pretend
 orm migrate:refresh --seed

@@ -115,6 +115,36 @@ class User extends Model {
 }
 ```
 
+For a camelCase table, give the model and migration the same column names:
+
+```ts
+import { Model, Schema } from "@rekkr/orm";
+
+class CamelUser extends Model {
+  static override fillable = ["accountId", "name", "email", "role", "locale"];
+  static override createdAtColumn = "createdAt";
+  static override updatedAtColumn = "updatedAt";
+  static override softDeletes = true;
+  static override deletedAtColumn = "deletedAt";
+}
+
+// Assumes the accounts table already exists.
+await Schema.create("camel_users", (table) => {
+  table.id();
+  table.foreignId("accountId").constrained("accounts").cascadeOnDelete();
+  table.string("name");
+  table.string("email");
+  table.string("role").default("member");
+  table.string("locale", 10).default("en");
+  table.timestamp("emailVerifiedAt").nullable();
+  table.softDeletes("deletedAt");
+  table.timestamps("createdAt", "updatedAt");
+
+  table.unique(["accountId", "email"]);
+  table.index(["accountId", "createdAt"]);
+});
+```
+
 A value you set yourself is kept, as in Eloquent: a write stamps the current
 time only on a timestamp column you left alone. That lets an import or a test
 record when a row was really created:
