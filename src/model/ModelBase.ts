@@ -893,8 +893,13 @@ export class HasMany<T extends ModelType = ModelType, ForeignKey extends string 
   }
 
   addEagerConstraints(models: ModelType[]): void {
+    this.addEagerConstraintsForKeys(models.map((m) => m.getAttribute(this.localKey)));
+  }
+
+  /** @internal Builder.json() passes the parents' keys straight from their rows. */
+  addEagerConstraintsForKeys(parentKeys: readonly unknown[]): void {
     this.builder = (this.related as any).on(this.parent.getConnection());
-    const keys = models.map((m) => m.getAttribute(this.localKey)).filter((k) => k != null);
+    const keys = parentKeys.filter((k) => k != null) as any[];
     if (keys.length === 0) { this.$skipEagerQuery = true; return; }
     this.builder.whereIn(this.foreignKey, keys);
     this.applyExtraConstraints();
@@ -963,8 +968,13 @@ export class BelongsTo<T extends ModelType = ModelType> extends Relation<T> {
   }
 
   addEagerConstraints(models: ModelType[]): void {
+    this.addEagerConstraintsForKeys(models.map((m) => m.getAttribute(this.foreignKey)));
+  }
+
+  /** @internal Builder.json() passes the children's keys straight from their rows. */
+  addEagerConstraintsForKeys(childKeys: readonly unknown[]): void {
     this.builder = (this.related as any).on(this.parent.getConnection());
-    const keys = models.map((m) => m.getAttribute(this.foreignKey)).filter((k) => k != null);
+    const keys = childKeys.filter((k) => k != null) as any[];
     if (keys.length === 0) { this.$skipEagerQuery = true; return; }
     this.builder.whereIn(this.localKey, keys);
     this.applyExtraConstraints();
@@ -1173,8 +1183,13 @@ export class HasOne<T extends ModelType = ModelType> extends Relation<T> {
   }
 
   addEagerConstraints(models: ModelType[]): void {
+    this.addEagerConstraintsForKeys(models.map((m) => m.getAttribute(this.localKey)));
+  }
+
+  /** @internal Builder.json() passes the parents' keys straight from their rows. */
+  addEagerConstraintsForKeys(parentKeys: readonly unknown[]): void {
     this.builder = (this.related as any).on(this.parent.getConnection());
-    const keys = models.map((m) => m.getAttribute(this.localKey)).filter((k) => k != null);
+    const keys = parentKeys.filter((k) => k != null) as any[];
     if (keys.length === 0) { this.$skipEagerQuery = true; return; }
     this.builder.whereIn(this.foreignKey, keys);
     this.applyExtraConstraints();

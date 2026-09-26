@@ -9,12 +9,13 @@ import { Cache } from "../cache/index.js";
 import { MorphTo } from "../model/MorphRelations.js";
 import type { WhereClause, OrderClause, HavingClause } from "../types/index.js";
 import type { AttachedToRelationName, BelongsToRelationName, DirectJson, EagerLoadDefinition, Model, ModelAttributeInput, ModelMassAssignmentInput, ModelColumn, ModelColumnValue, ModelConstructor, ModelKey, ModelRelationName, MorphToRelationName, SaveOptions, TypedEagerLoad, TypedConstraintMap, TypedConstraintSelection, TypedExistsConstraintMap, ExtractStringPaths, WithLoadedRelations, WithLoadedRelationsFromConstraintMap, WithRelationCount, WithRelationExists, WithRelationExistsMap, RelationConstraintQuery, NestedRelationPath, LiteralUnion, RelationRelatedModel, MorphToConstraintCallback } from "../model/Model.js";
-import { findRelationMethod, HasMany, Model as BaseModel } from "../model/Model.js";
+import { BelongsTo, findRelationMethod, HasMany, HasOne, Model as BaseModel } from "../model/Model.js";
+import { getModelTarget } from "../model/ModelBase.js";
 import { ObserverRegistry } from "../model/Observer.js";
 import { ModelNotFoundError } from "../model/ModelNotFoundError.js";
 import { IdentityMap } from "../model/IdentityMap.js";
 import { timestampsEnabled, withInsertTimestamps } from "../model/TimestampScope.js";
-import { assertSupportedStringCast, canReturnRawJsonRows, createHydratedJsonPlan, createRawJsonPlan, hydratedJsonSampleIsPlain, serializeRawJsonRow, serializeRowDates } from "../model/ModelJsonRow.js";
+import { assertSupportedStringCast, canReturnRawJsonRows, createHydratedJsonPlan, createRawJsonPlan, hasAccessorConfiguration, hydratedJsonSampleIsPlain, serializeRawJsonRow, serializeRowDates, type RawJsonPlan } from "../model/ModelJsonRow.js";
 import {
   assertBackedEnumValue,
   isBackedEnumDefinition,
@@ -102,6 +103,68 @@ function nonNegativeInteger(value: number, label: string): number {
     throw new Error(`${label} must be a non-negative integer.`);
   }
   return value;
+}
+
+/**
+ * The model behind its Proxy, for a create() nothing outside the ORM can
+ * observe. Methods run on the target read its fields without the Proxy trap,
+ * but hand the target, not the Proxy, to whatever they call with `this`. So
+ * the Proxy stays whenever such code exists: observers, the Identity Map,
+ * `touches`, accessors, custom casts, or a method that replaces a base one.
+ */
+function creationTarget<M>(model: ModelConstructor, instance: M): M {
+  const statics = model as any;
+  if (IdentityMap.current() || ObserverRegistry.hasAny(model) || statics.touches?.length
+    || hasAccessorConfiguration(statics.accessors)) return instance;
+  const target = getModelTarget(instance as object) as any;
+  for (const definition of Object.values(target.$mergedCasts ?? {})) {
+    if (typeof definition !== "string" && !isBackedEnumDefinition(definition)) return instance;
+  }
+  for (const key of Reflect.ownKeys(target)) if (key in BaseModel.prototype) return instance;
+  for (let proto = model.prototype; proto !== BaseModel.prototype; proto = Object.getPrototypeOf(proto)) {
+    if (!proto) return instance;
+    for (const key of Reflect.ownKeys(proto)) if (key !== "constructor" && key in BaseModel.prototype) return instance;
+  }
+  return target;
+}
+
+/** The direct JSON plan, once a fresh instance shows no per-instance behavior either. */
+function plainJsonPlan(model: ModelConstructor): RawJsonPlan | undefined {
+  const sample = new (model as any)();
+  const plan = createHydratedJsonPlan(model, BaseModel);
+  return plan && hydratedJsonSampleIsPlain(sample, new Set(Reflect.ownKeys(new (BaseModel as any)())), plan) ? plan : undefined;
+}
+
+/**
+ * The children of an eager relation for Builder.json(): rows serialized by the
+ * direct plan when the relation query allows it, hydrated models otherwise.
+ * `keyOf` reads the raw key that `match()` reads from `$attributes`.
+ */
+async function eagerJsonChildren(relation: any, childKey: string): Promise<{
+  items: any[]; keyOf: (child: any) => unknown; toJson: (child: any) => unknown;
+}> {
+  const query = relation.getQuery() as Builder<any>;
+  const related = relation.getRelatedModelConstructor() as ModelConstructor;
+  const models = { keyOf: (child: any) => child.$attributes[childKey], toJson: (child: any) => child.toJSON() };
+  if (query.model !== related || query.eagerLoads.length > 0 || !createHydratedJsonPlan(related, BaseModel)
+    || query.get !== Builder.prototype.get || query.clone !== Builder.prototype.clone) {
+    return { items: Array.from(await relation.getEager()), ...models };
+  }
+  if (relation.$skipEagerQuery) return { items: [], ...models };
+  const rowsQuery = query.clone();
+  rowsQuery.model = undefined;
+  const rows = Array.from(await rowsQuery.get()) as Record<string, unknown>[];
+  const plan = plainJsonPlan(related);
+  if (!plan || plan.casts[childKey]) {
+    const cached = (query as any).shouldUseCache();
+    return {
+      items: rows.map((row) => cached
+        ? (related as any).hydrate(row, query.connection)
+        : (BaseModel as any).hydrateOwnedRow.call(related, row, query.connection)),
+      ...models,
+    };
+  }
+  return { items: rows, keyOf: (row) => row[childKey], toJson: (row) => serializeRawJsonRow(row, plan) };
 }
 
 function positiveInteger(value: number, label: string): number {
@@ -2434,10 +2497,11 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   }
 
   async json(): Promise<CollectionJson<TResult>> {
-    if (!this.model || this.eagerLoads.length > 0 || IdentityMap.current()
+    if (!this.model || IdentityMap.current()
       || this.get !== Builder.prototype.get || this.clone !== Builder.prototype.clone) {
       return (await this.get()).toJSON();
     }
+    if (this.eagerLoads.length > 0) return this.eagerJson();
     const hydratedJson = async () =>
       (await this.connection.use(() => this.executeGet(true))).toJSON();
     const plan = createHydratedJsonPlan(this.model, BaseModel);
@@ -2459,6 +2523,88 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       return new Collection(models).toJSON() as CollectionJson<TResult>;
     }
     return Array.from(rows, (row) => serializeRawJsonRow(row as Record<string, unknown>, currentPlan)) as CollectionJson<TResult>;
+  }
+
+  /**
+   * Eager `json()` without models when the direct plan covers the parents:
+   * their rows are serialized as they are, and each HasMany, HasOne or
+   * BelongsTo is matched as its `match()` does. Children take the direct plan
+   * too when their query allows it, and are hydrated otherwise. Anything the
+   * plan cannot reproduce hydrates the rows already read, as `get()` would.
+   */
+  private async eagerJson(): Promise<CollectionJson<TResult>> {
+    const model = this.model!;
+    if (!createHydratedJsonPlan(model, BaseModel) || this.shouldUseCache()
+      || this.eagerLoads.some((load) => load.name.includes("."))) {
+      return (await this.get()).toJSON();
+    }
+    return this.connection.use(async () => {
+      const connection = this.connection;
+      const query = this.clone();
+      query.model = undefined;
+      query.eagerLoads = [];
+      const rows = Array.from(await query.get()) as Record<string, unknown>[];
+      if (rows.length === 0) return [] as unknown as CollectionJson<TResult>;
+
+      const hydrateRows = async () => {
+        const models = rows.map((row) => (BaseModel as any).hydrateOwnedRow.call(model, row, connection));
+        await (model as any).eagerLoadRelations(models, this.eagerLoads);
+        return new Collection(models).toJSON() as CollectionJson<TResult>;
+      };
+      const plan = plainJsonPlan(model);
+      if (!plan) return hydrateRows();
+
+      // As eagerLoadRelations(): one relation per name, built on the first
+      // parent, with the constraint of that name's first definition.
+      const first = (model as any).hydrate(rows[0], connection);
+      const loads = new Map<string, EagerLoadDefinition["constraint"]>();
+      for (const load of this.eagerLoads) if (!loads.has(load.name)) loads.set(load.name, load.constraint);
+      const relations: { name: string; relation: any; parentKey: string; childKey: string; constraint?: EagerLoadDefinition["constraint"] }[] = [];
+      for (const [name, constraint] of loads) {
+        const relation = findRelationMethod(first, name)?.call(first) as any;
+        const kind = relation?.constructor;
+        if ((kind !== HasMany && kind !== HasOne && kind !== BelongsTo) || relation.defaultAttributes !== undefined) {
+          return hydrateRows();
+        }
+        const [parentKey, childKey] = kind === BelongsTo
+          ? [relation.getForeignKeyName(), relation.getOwnerKeyName()]
+          : [relation.getLocalKeyName(), relation.getForeignKeyName()];
+        // match() reads the parent key through getAttribute(): only a raw,
+        // uncast value is the same key.
+        if (!Object.hasOwn(rows[0]!, parentKey) || plan.casts[parentKey]) return hydrateRows();
+        relations.push({ name, relation, parentKey, childKey, constraint });
+      }
+
+      const matched: { name: string; lookup: (row: Record<string, unknown>) => unknown }[] = [];
+      for (const { name, relation, parentKey, childKey, constraint } of relations) {
+        relation.addEagerConstraintsForKeys(rows.map((row) => row[parentKey]));
+        if (constraint) constraint(relation.getQuery());
+        const children = await eagerJsonChildren(relation, childKey);
+        if (relation.constructor === HasMany) {
+          const dictionary: Record<string, unknown[]> = {};
+          for (const child of children.items) {
+            const key = children.keyOf(child) as string;
+            if (!dictionary[key]) dictionary[key] = [];
+            dictionary[key].push(child);
+          }
+          matched.push({ name, lookup: (row) => (dictionary[String(row[parentKey])] || []).map(children.toJson) });
+        } else {
+          const dictionary: Record<string, unknown> = {};
+          for (const child of children.items) dictionary[String(children.keyOf(child))] = child;
+          matched.push({ name, lookup: (row) => {
+            const found = dictionary[String(row[parentKey])] ?? null;
+            return found === null ? null : children.toJson(found);
+          } });
+        }
+      }
+
+      const shown = matched.filter(({ name }) => (!plan.visible || plan.visible.has(name)) && !plan.hidden?.has(name));
+      return rows.map((row) => {
+        const output = serializeRawJsonRow(row, plan);
+        for (const { name, lookup } of shown) output[name] = lookup(row);
+        return output;
+      }) as CollectionJson<TResult>;
+    });
   }
 
   async rawJson(): Promise<DirectJson<T, TSelected, TResult>[]> {
@@ -2536,27 +2682,37 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     attributes: ModelAttributeInput<T> = {},
     values: ModelMassAssignmentInput<T> = {}
   ): T & BaseModel {
+    return this.filledModel(method, attributes, values).instance;
+  }
+
+  /** The new model, and the object to fill and save it through: its Proxy, or the target behind it when that is unobservable. */
+  private filledModel(
+    method: string,
+    attributes: ModelAttributeInput<T> = {},
+    values: ModelMassAssignmentInput<T> = {}
+  ): { instance: T & BaseModel; writer: T & BaseModel } {
     if (!this.model) {
       throw new Error(`${method} requires a model to be set on the builder`);
     }
     const instance = new (this.model as any)() as T & BaseModel;
-    if (typeof instance.setConnection === "function") {
-      instance.setConnection(this.connection);
+    const writer = creationTarget(this.model, instance);
+    if (typeof writer.setConnection === "function") {
+      writer.setConnection(this.connection);
     }
-    instance.fill(values as any);
-    instance.forceFill(attributes as any);
-    return instance;
+    writer.fill(values as any);
+    writer.forceFill(attributes as any);
+    return { instance, writer };
   }
 
   async create(attributes: ModelMassAssignmentInput<T>, options: SaveOptions = {}): Promise<T> {
-    const instance = this.newModelForCreation("create", {}, attributes);
-    await instance.save(options);
+    const { instance, writer } = this.filledModel("create", {}, attributes);
+    await writer.save(options);
     return instance;
   }
 
   async forceCreate(attributes: ModelAttributeInput<T>, options: SaveOptions = {}): Promise<T> {
-    const instance = this.newModelForCreation("forceCreate", attributes);
-    await instance.save(options);
+    const { instance, writer } = this.filledModel("forceCreate", attributes);
+    await writer.save(options);
     return instance;
   }
 

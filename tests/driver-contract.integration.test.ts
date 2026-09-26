@@ -98,6 +98,28 @@ class ContractAggregate extends PermissiveModel {
   static timestamps = false;
 }
 
+// Builder.json() serializes eager graphs of simple models from driver rows: a
+// BIGINT parent key next to an INTEGER foreign key is where drivers differ.
+class ContractEagerAuthor extends PermissiveModel {
+  static table = "contract_eager_authors";
+  static timestamps = false;
+  static casts = { active: "boolean", meta: "json", rating: "decimal:2" };
+
+  books() {
+    return this.hasMany(ContractEagerBook, "author_id");
+  }
+}
+
+class ContractEagerBook extends PermissiveModel {
+  static table = "contract_eager_books";
+  static timestamps = false;
+  static casts = { in_print: "boolean" };
+
+  author() {
+    return this.belongsTo(ContractEagerAuthor, "author_id");
+  }
+}
+
 class ContractUniqueRecord extends PermissiveModel {
   static table = "contract_unique_records";
   static timestamps = false;
@@ -431,6 +453,66 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
 
     // As in Eloquent: sum() of nothing is 0, while avg(), min() and max() of
     // nothing are SQL's NULL, so "no data" never reads as an average of zero.
+    run("eager json() from driver rows matches the hydrated graph", async () => {
+      const connection = context.connection;
+      await Schema.create("contract_eager_authors", (table) => {
+        table.bigIncrements("id");
+        table.string("name", 20);
+        table.boolean("active");
+        table.json("meta");
+        table.decimal("rating", 8, 2);
+      }, connection);
+      await Schema.create("contract_eager_books", (table) => {
+        table.increments("id");
+        table.integer("author_id").nullable();
+        table.string("title", 20);
+        table.boolean("in_print");
+      }, connection);
+      await ContractEagerAuthor.insert([
+        { name: "Núñez Ångström", active: true, meta: { tags: ["á", "ß"] }, rating: "4.50" },
+        { name: "Zoë", active: false, meta: {}, rating: "0.00" },
+        { name: "12345678901234567890", active: true, meta: { nested: { deep: [1] } }, rating: "999999.99" },
+      ]);
+      const [first, , third] = await ContractEagerAuthor.orderBy("id").pluck("id");
+      await ContractEagerBook.insert([
+        { author_id: Number(first), title: "Á", in_print: true },
+        { author_id: Number(third), title: "Ω", in_print: false },
+        { author_id: Number(first), title: "B", in_print: false },
+        { author_id: null, title: "Orphan", in_print: true },
+      ]);
+
+      const statements: string[] = [];
+      const stop = DB.listen((event) => { statements.push(event.sql); });
+      try {
+        for (const query of [
+          () => ContractEagerAuthor.with("books").orderBy("id"),
+          () => ContractEagerBook.with("author").orderBy("id"),
+        ]) {
+          statements.length = 0;
+          const json = await query().json();
+          const direct = [...statements];
+          statements.length = 0;
+          const expected = (await query().get()).toJSON();
+          expect(JSON.stringify(json)).toBe(JSON.stringify(expected));
+          expect(direct).toEqual(statements);
+          expect(direct).toHaveLength(2);
+        }
+      } finally {
+        stop();
+      }
+      const authors = await ContractEagerAuthor.with("books").orderBy("id").json() as any[];
+      expect(authors.map((author) => [author.name, author.active, author.rating, author.books.map((book: any) => book.title)]))
+        .toEqual([
+          ["Núñez Ångström", true, "4.50", ["Á", "B"]],
+          ["Zoë", false, "0.00", []],
+          ["12345678901234567890", true, "999999.99", ["Ω"]],
+        ]);
+      expect(authors[0].meta).toEqual({ tags: ["á", "ß"] });
+      const books = await ContractEagerBook.with("author").orderBy("id").json() as any[];
+      expect(books.map((book) => book.author?.name ?? null))
+        .toEqual(["Núñez Ångström", "12345678901234567890", "Núñez Ångström", null]);
+    });
+
     run("aggregates over no rows or only NULLs follow Eloquent", async () => {
       await Schema.create("contract_aggregates", (table) => {
         table.increments("id");

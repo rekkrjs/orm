@@ -61,6 +61,17 @@
   (1.75 → 0.11 ms); 1.6–1.8× on MySQL and 1.3–1.4× on SQLite. Checking each
   statement for a schema change costs nothing measurable on either runtime.
   A table re-keyed by another process is seen after a restart.
+- `json()` with eager-loaded `HasMany`, `HasOne` and `BelongsTo` relations
+  serializes models without accessors, appends, custom casts or overridden
+  methods straight from their rows, as `json()` without relations already did,
+  instead of building a model for every parent and child. The JSON is the same
+  byte for byte; anything else falls back to hydrating the rows already read.
+  With 500 parents and 1,000 children, 28% more reads per second on Node.js
+  with PostgreSQL and 44% with MySQL.
+- `create()` and `forceCreate()` fill and save a model without observers,
+  accessors, custom casts, `touches` or overridden methods, outside an Identity
+  Map, without going through its Proxy for each internal field. 13% less time
+  per `create()` on Node.js and 9% on Bun, with PostgreSQL.
 
 ### Breaking
 

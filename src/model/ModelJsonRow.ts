@@ -46,7 +46,7 @@ const unsupportedInstanceOverrides = [
   "setConnection",
 ] as const;
 
-function hasAccessorConfiguration(value: unknown): boolean {
+export function hasAccessorConfiguration(value: unknown): boolean {
   if (!value) return false;
   if (typeof value !== "object" && typeof value !== "function") return true;
   if (Reflect.ownKeys(value).length > 0) return true;
