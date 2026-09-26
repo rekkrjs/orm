@@ -67,7 +67,8 @@ async function loadSearchableModelMap(config: OrmConfig): Promise<Map<string, Se
 
 export async function loadSearchableModels(config: OrmConfig): Promise<SearchableModelConstructor[]> {
   const loaded = await loadSearchableModelMap(config);
-  return [...loaded.values()];
+  // One class is usually exported under several names (`Post`, its base, `default`).
+  return [...new Set(loaded.values())];
 }
 
 export async function resolveSearchableModel(

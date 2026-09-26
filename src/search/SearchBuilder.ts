@@ -7,10 +7,8 @@ import type {
   FacetRange,
   SearchCrop,
   SearchFilter,
-  SearchGeoSort,
   SearchHighlight,
   SearchHit,
-  SearchHybrid,
   SearchPage,
   SearchQuery,
   SearchSort,
@@ -65,9 +63,6 @@ export class SearchBuilder<M = Model> {
   private showScore = false;
   private rawQueryFlag = false;
   private bm25WeightsList?: number[];
-  private vectorList?: number[];
-  private hybridConfig?: SearchHybrid;
-  private geoSortConfig?: SearchGeoSort;
 
   constructor(
     private readonly modelClass: SearchableModelConstructor & ModelConstructor,
@@ -304,28 +299,6 @@ export class SearchBuilder<M = Model> {
     return this;
   }
 
-  /** Vector search — supply an embedding vector for k-NN retrieval. */
-  vector(vector: number[]): this {
-    this.vectorList = vector.map((value) => finiteSearchNumber(value, "Vector component"));
-    return this;
-  }
-
-  /** Hybrid search config (semantic + keyword blend). */
-  hybrid(config: SearchHybrid): this {
-    this.hybridConfig = { ...config };
-    return this;
-  }
-
-  /** Geo sort — closest first by default. Use `dir="desc"` for farthest first. */
-  orderByGeo(lat: number, lng: number, direction: "asc" | "desc" = "asc"): this {
-    this.geoSortConfig = {
-      lat: finiteSearchNumber(lat, "Latitude"),
-      lng: finiteSearchNumber(lng, "Longitude"),
-      direction: validSearchDirection(direction),
-    };
-    return this;
-  }
-
   private withQueryOverride(expr: string): this {
     (this as any).query = expr;
     return this;
@@ -452,9 +425,6 @@ export class SearchBuilder<M = Model> {
     if (this.showScore) q.showRankingScore = true;
     if (this.rawQueryFlag) q.rawQuery = true;
     if (this.bm25WeightsList) q.bm25Weights = this.bm25WeightsList;
-    if (this.vectorList) q.vector = this.vectorList;
-    if (this.hybridConfig) q.hybrid = this.hybridConfig;
-    if (this.geoSortConfig) q.geoSort = this.geoSortConfig;
     return q;
   }
 

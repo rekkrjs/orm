@@ -13,8 +13,6 @@ export type {
   SearchSimplePaginatorResult,
   SearchFetchResult,
 } from "./SearchBuilder.js";
-export { MeilisearchEngine } from "./engines/MeilisearchEngine.js";
-export type { MeilisearchEngineOptions, TenantTokenOptions } from "./engines/MeilisearchEngine.js";
 export { SqliteFTS5Engine, defineFtsConfig } from "./engines/SqliteFTS5Engine.js";
 export type {
   SqliteFTS5EngineOptions,
@@ -25,12 +23,6 @@ export type {
   PostgresFTSEngineOptions,
   PostgresFTSIndexConfig,
 } from "./engines/PostgresFTSEngine.js";
-export {
-  MEILISEARCH_SETTING_KEYS,
-  validateMeilisearchSettings,
-  InvalidMeilisearchSettingsError,
-} from "./MeilisearchSettingsSchema.js";
-export type { SettingsValidationResult } from "./MeilisearchSettingsSchema.js";
 export { MakeSearchableJob } from "./jobs/MakeSearchableJob.js";
 export { RemoveFromSearchJob } from "./jobs/RemoveFromSearchJob.js";
 export type {
@@ -42,13 +34,10 @@ export type {
   SearchQuery,
   SearchFilter,
   SearchSort,
-  SearchGeoSort,
-  SearchHybrid,
   SearchHealth,
   SearchHighlight,
   SearchCrop,
   SearchMultiResult,
-  SearchTaskStatus,
   SearchCapabilities,
   SearchCapability,
   SearchMatchesPositionSupport,

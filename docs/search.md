@@ -1,192 +1,166 @@
 # Search
 
-`@rekkr/orm/search` — Laravel Scout-inspired full-text search. Ships Meilisearch, PostgreSQL FTS, and SQLite FTS5 engines. The `SearchEngine` interface stays driver-agnostic so custom engines can drop in.
+`@rekkr/orm/search` — Laravel Scout-inspired full-text search over your own
+database, on PostgreSQL full-text search or SQLite FTS5. The index lives in the
+database you already run: there is no search service to install.
 
-For a native filter on an existing MySQL/PostgreSQL table, the main ORM also
-provides `table.fullText(...)` plus `Model.whereFullText(...)`. Use this Search
-module when you need a dedicated index lifecycle, SQLite FTS5, relevance,
-highlights, facets, typo tolerance, or synchronization across a search service.
+## Quick start
 
-## Install
-
-Meilisearch requires a reachable HTTP service. Local dev:
-
-```bash
-docker run -p 7700:7700 getmeili/meilisearch
-```
-
-No npm dep is required — the engine uses the runtime's built-in `fetch`. PostgreSQL FTS and SQLite FTS5 use the ORM connection and need no search service.
-
-## Configure
-
-Wire the engine into `configureOrm`. For default engine instances, use a string alias:
+Configure the engine that matches your database:
 
 ```ts
-import { configureOrm } from "@rekkr/orm";
-
-configureOrm({
-  connection: { url: "sqlite://app.db" },
-  modelsPath: "./app/Models",
-  search: {
-    engine: "sqlite", // "meilisearch" | "pg" | "sqlite"
-    // Optional for "pg" / "sqlite": use a dedicated search connection.
-    // connection: { url: "sqlite://search.db" },
-    // Optional: dispatch sync as queued jobs instead of running inline.
-    // queue: { name: "scout" },
-    chunk: 500,
-  },
-});
+// orm.config.ts
+export default {
+  connection: { url: "sqlite://./app.db" },
+  modelsPath: "./app/models",
+  search: { engine: "sqlite" },   // "pg" on PostgreSQL
+};
 ```
 
-Aliases:
-
-| Alias | Engine | Defaults |
-|---|---|---|
-| `"meilisearch"` or `"meili"` | `MeilisearchEngine` | host from `MEILISEARCH_HOST`, `MEILI_HOST`, or `http://127.0.0.1:7700`; key from `MEILISEARCH_API_KEY`, `MEILI_KEY`, or `MEILI_MASTER_KEY` |
-| `"pg"`, `"postgres"`, or `"postgres-fts"` | `PostgresFTSEngine` | `{ shared: true }`, reuses the default ORM PostgreSQL connection |
-| `"sqlite"` or `"sqlite-fts5"` | `SqliteFTS5Engine` | `{ shared: true }`, reuses the default ORM SQLite connection |
-
-For `"meilisearch"`, provide `host` and `apiKey` directly:
-
-```ts
-configureOrm({
-  connection: { url: process.env.DATABASE_URL! },
-  search: {
-    engine: "meilisearch",
-    host: "http://127.0.0.1:7700",
-    apiKey: process.env.MEILI_KEY,
-  },
-});
-```
-
-For `"pg"` and `"sqlite"`, provide `search.connection` to use a dedicated connection while still using the string alias:
-
-```ts
-configureOrm({
-  connection: { url: process.env.DATABASE_URL! },
-  search: {
-    engine: "pg",
-    connection: { url: process.env.SEARCH_DATABASE_URL! },
-  },
-});
-```
-
-`search.connection` accepts either a `ConnectionConfig` or an existing `Connection` instance. It is not used for `"meilisearch"`. For custom engine instances, pass options directly to the engine constructor.
-
-Pass an engine instance when you need options or a custom engine:
-
-```ts
-import { configureOrm } from "@rekkr/orm";
-import { MeilisearchEngine } from "@rekkr/orm/search";
-
-configureOrm({
-  connection: { url: "sqlite://app.db" },
-  modelsPath: "./app/Models",
-  search: {
-    engine: new MeilisearchEngine({
-      host: "http://127.0.0.1:7700",
-      apiKey: process.env.MEILI_KEY,
-    }),
-  },
-});
-```
-
-Or configure outside the ORM facade:
-
-```ts
-import { Search } from "@rekkr/orm/search";
-
-Search.configure({ engine: "pg" });
-```
-
-## Make a model searchable
-
-### Recommended — `Search.register()` on a base class
-
-Keep the model declaration clean. Register it once to attach the observer and produce the searchable export.
+Register the model:
 
 ```ts
 // app/models/Post.ts
 import { Model } from "@rekkr/orm";
 import { Search } from "@rekkr/orm/search";
 
-export interface PostAttributes {
-  id: number;
-  title: string;
-  body: string;
-  status: "draft" | "published";
+export class PostRecord extends Model {
+  static override table = "posts";
+  static override fillable = ["title", "body", "status"];
 }
 
-class _Post extends Model.define<PostAttributes>("posts") {
-  static fillable = ["title", "body", "status"];
-}
-
-export const Post = Search.register(_Post, {
-  index: "posts_v2",
-  settings: {
-    filterableAttributes: ["status"],
-    sortableAttributes: ["created_at"],
-    searchableAttributes: ["title", "body"],
-  },
-  toSearchableArray: (m) => ({
-    id: m.getAttribute("id"),
-    title: m.getAttribute("title"),
-    body: m.getAttribute("body"),
-  }),
-  shouldBeSearchable: (m) => m.getAttribute("status") === "published",
-});
+export const Post = Search.register(PostRecord);
 
 export type PostInstance = InstanceType<typeof Post>;
-export default Post;
 ```
 
-Default-export `Post` carries the full searchable constructor type. The companion `export type PostInstance` lets consumers annotate instances (`const p: PostInstance = ...`). The underscore-prefixed `_Post` stays local — it is the un-augmented base.
+Create the index and load the rows that already exist:
 
-```ts
-// consumer
-import Post from "./app/models/Post";
-import type { PostInstance } from "./app/models/Post";
-
-const hits: PostInstance[] = await Post.search("rust").get();
+```bash
+orm search:create-index Post
+orm search:import Post
 ```
 
-Scaffold via CLI: `orm make:searchable Post`.
-
-### Alternative — `Search.define()`
-
-Wrap an existing model class, add the searchable API, and register the
-observer automatically.
+From then on, `Post.create()`, `post.save()` and `post.delete()` keep the index
+in sync. Search it:
 
 ```ts
-import { Model } from "@rekkr/orm";
-import { Search } from "@rekkr/orm/search";
+const posts = await Post.search("rust").where("status", "published").get();
+```
 
-class _Post extends Model.define<PostAttrs>("posts") {
-  static fillable = ["title", "body", "status"];
+That is all the setup. The index covers the table: its text columns are
+searched, and every column can be used in `where()` and `orderBy()`, with no
+change to the model. Only the primary key and the model's `hidden` columns are
+left out.
+
+## Searching
+
+`Post.search(text)` returns a builder. Chain filters and sorting, then run it:
+
+```ts
+const results = await Post.search("alpha").get();          // hydrated Post models
+const top10   = await Post.search("alpha").take(10).get();
+const rawHits = await Post.search("alpha").raw();          // skip hydration
+```
+
+### Filters
+
+```ts
+await Post.search("rust")
+  .where("status", "published")
+  .where("views", ">", 100)
+  .whereIn("category", ["tech", "news"])
+  .get();
+```
+
+Filter on any column of the model's table; there is nothing to declare first.
+If the model sets `fts` or its own `toSearchableArray()`, filters can use only
+the fields those put in the index.
+
+Every filter:
+
+```ts
+await Post.search("alpha")
+  .where("status", "published")
+  .where("rank", ">", 5)               // comparison ops: = != > >= < <=
+  .whereNot("type", "draft")
+  .whereIn("tag", ["tech", "news"])
+  .whereNotIn("category", ["spam"])
+  .whereBetween("price", [10, 99])
+  .whereNotBetween("rank", [0, 1])
+  .whereNull("deleted_at")
+  .whereNotNull("published_at")
+  .whereExists("title")
+  .whereDoesntExist("archived_at")
+  .whereRaw("status <> ?", ["archived"])  // raw SQL on stored columns
+  .get();
+```
+
+### OR and nested groups
+
+```ts
+await Post.search("alpha")
+  .where("status", "published")
+  .orWhere("featured", true)                   // OR sibling
+  .where((q) => {                              // nested AND group
+    q.where("rank", ">", 10).orWhere("priority", "high");
+  })
+  .get();
+```
+
+Every method has an `or*` variant: `orWhere`, `orWhereIn`, `orWhereNotIn`, `orWhereBetween`, `orWhereNotBetween`, `orWhereRaw`.
+
+### Sorting
+
+Results come ordered by relevance. `orderBy()` replaces that order:
+
+```ts
+await Post.search("rust")
+  .orderBy("rank", "desc")
+  .thenBy("created_at", "desc")   // alias of orderBy, reads as a tie-breaker
+  .get();
+```
+
+Sort fields apply left to right.
+
+### Pagination
+
+```ts
+const page  = await Post.search("alpha").paginate(15, 2);
+// { data: Collection<Post>, total, page, perPage }
+
+const rawPage = await Post.search("alpha").rawPaginate(15, 2);
+// { hits: SearchHit[], total, page, perPage, facetDistribution? }
+
+const simple = await Post.search("alpha").simplePaginate(15, 2);
+// { data: Collection<Post>, page, perPage, hasMore } — no total count query
+```
+
+### Eager loading
+
+```ts
+const posts = await Post.search("alpha").with("author", "tags").get();
+posts[0].author;   // loaded
+```
+
+Hydrated search results use the same `Collection` type as ORM queries.
+`raw()` is the escape hatch when you want plain engine hits.
+
+### Streaming
+
+```ts
+for await (const post of Post.search("alpha").cursor(100)) {
+  // streams pages of 100, yields one hydrated model at a time
 }
-
-export const Post = Search.define(_Post, { index: "posts_v2" });
-export type PostInstance = InstanceType<typeof Post>;
-export default Post;
 ```
 
-### Alternative — `Searchable` mixin
+Hits hydrate via a single `whereIn(primaryKey, ids)` query through the ORM. Casts, accessors, and `.with()` eager-loading all apply.
 
-```ts
-import { Searchable, Search } from "@rekkr/orm/search";
+## Keeping the index in sync
 
-export class Post extends Searchable(Model.define<PostAttrs>("posts"), { index: "posts_v2" }) {
-  static fillable = ["title", "body", "status"];
-}
-
-Search.register(Post);   // mixin adds statics + types; this attaches the observer
-```
-
-### Settings validation
-
-`searchIndexSettings` keys are validated against the Meilisearch schema before being pushed. Unknown keys throw `InvalidMeilisearchSettingsError`. Disable with `new MeilisearchEngine({ ..., validate: false })`.
-
-Once registered, `Post.create()`, `post.save()`, and `post.delete()` automatically push to the index via the model observer. Soft-deleted rows are removed from the index.
+Once registered, `Post.create()`, `post.save()`, and `post.delete()` push to the
+index through the model observer, after the surrounding transaction commits.
+Soft-deleted rows are removed from the index.
 
 Manual control:
 
@@ -195,7 +169,7 @@ await post.searchable();    // force-index this row
 await post.unsearchable();  // remove from index
 ```
 
-### Bulk path auto-sync
+### Bulk writes
 
 When any observer is registered for a model, these paths now fire observer events too:
 
@@ -218,91 +192,7 @@ await Post.removeAllFromSearch();    // wipe model's index
 
 `Model.trashed()` returns `true` when `static softDeletes = true` and the `deleted_at` column is set on the instance. `SearchObserver` uses it to remove soft-deleted rows from the index automatically.
 
-## Querying
-
-```ts
-const results = await Post.search("alpha").get();          // hydrated Post models
-const top10   = await Post.search("alpha").take(10).get();
-const rawHits = await Post.search("alpha").raw();          // skip hydration
-```
-
-### Filters
-
-```ts
-await Post.search("alpha")
-  .where("status", "published")
-  .where("rank", ">", 5)               // comparison ops: = != > >= < <=
-  .whereNot("type", "draft")
-  .whereIn("tag", ["tech", "news"])
-  .whereNotIn("category", ["spam"])
-  .whereBetween("price", [10, 99])
-  .whereNotBetween("rank", [0, 1])
-  .whereNull("deleted_at")
-  .whereNotNull("published_at")
-  .whereExists("title")
-  .whereDoesntExist("archived_at")
-  .whereRaw('_geoRadius(48, 2, 1000)')  // raw engine expression
-  .orderBy("created_at", "desc")
-  .get();
-```
-
-### OR + nested groups
-
-```ts
-await Post.search("alpha")
-  .where("status", "published")
-  .orWhere("featured", true)                   // OR sibling
-  .where((q) => {                              // nested AND group
-    q.where("rank", ">", 10).orWhere("priority", "high");
-  })
-  .get();
-```
-
-Every method has an `or*` variant: `orWhere`, `orWhereIn`, `orWhereNotIn`, `orWhereBetween`, `orWhereNotBetween`, `orWhereRaw`.
-
-### Eager loading
-
-```ts
-const posts = await Post.search("alpha").with("author", "tags").get();
-posts[0].author;   // loaded
-```
-
-Hydrated search results use the same `Collection` type as ORM queries.
-`raw()` is the escape hatch when you want plain engine hits.
-
-### Pagination
-
-```ts
-const page  = await Post.search("alpha").paginate(15, 2);
-// { data: Collection<Post>, total, page, perPage }
-
-const rawPage = await Post.search("alpha").rawPaginate(15, 2);
-// { hits: SearchHit[], total, page, perPage, facetDistribution? }
-
-const simple = await Post.search("alpha").simplePaginate(15, 2);
-// { data: Collection<Post>, page, perPage, hasMore } — no total count query
-```
-
-### Streaming
-
-```ts
-for await (const post of Post.search("alpha").cursor(100)) {
-  // streams pages of 100, yields one hydrated model at a time
-}
-```
-
-Hits hydrate via a single `whereIn(primaryKey, ids)` query through the ORM. Casts, accessors, and `.with()` eager-loading all apply.
-
-### Multi-sort (tie-breakers)
-
-```ts
-await Post.search("rust")
-  .orderBy("rank", "desc")
-  .thenBy("created_at", "desc")   // alias of orderBy, reads as a tie-breaker
-  .get();
-```
-
-Sort fields apply left-to-right in array order.
+## More search features
 
 ### Facets
 
@@ -330,7 +220,7 @@ const result = await Post.search("rust").facet("status").fetch(20);
 // { data: Post[], total: 142, facetDistribution: { status: {...} } }
 ```
 
-> Meilisearch requires each faceted field to be listed in `searchIndexSettings.filterableAttributes`.
+> As with filters, a facet works on any table column unless the model sets `fts` or its own `toSearchableArray()`.
 
 ### Score threshold
 
@@ -386,7 +276,7 @@ hits[0].matchesPosition;    // { title: [{ start: 0, length: 4 }], body: [...] }
 
 ### Multi-query search
 
-Run multiple indexes / models in a single round-trip:
+Run several queries, across models or indexes, and get the raw hits of each:
 
 ```ts
 import { Search } from "@rekkr/orm/search";
@@ -402,7 +292,182 @@ postResults.total;            // 42
 postResults.facetDistribution; // optional, if .facet() was used
 ```
 
-Returns raw hits per builder — no ORM hydration. Hydrate manually with `Post.whereIn("id", postResults.hits.map(h => h.id)).get()` if needed. Falls back to sequential `engine.search()` calls when the engine has no native `multiSearch`.
+Returns raw hits per builder — no ORM hydration. Hydrate manually with `Post.whereIn("id", postResults.hits.map(h => h.id)).get()` if needed. Both built-in engines run the queries one after another; an engine that implements `multiSearch()` answers them in one call.
+
+## Model options
+
+### `Search.register()`
+
+`Search.register()` makes `PostRecord` searchable in place and returns that same
+class, typed with the search API: `Post` and `PostRecord` are one class, and
+`Post` is the name to use in code. Export the model class by name as well:
+the declarations from `orm types:generate` merge into it, which is what types
+`post.title` and the results of `Post.search()`. Its name no longer matches the
+table, so name the table in `static table`.
+
+```ts
+// consumer
+import { Post, type PostInstance } from "./app/models/Post";
+
+const hits: PostInstance[] = await Post.search("rust").get();
+```
+
+Search commands find the model by either export name: `orm search:import Post`.
+
+Scaffold via CLI: `orm make:searchable Post`.
+
+Options:
+
+| Option | Purpose |
+|---|---|
+| `fts` | Which fields are searched and which are only stored. Defaults to the table's columns. See below. |
+| `index` | Index name. Defaults to the model's table. |
+| `toSearchableArray(model)` | The fields sent to the index. Defaults to `model.toJSON()`. |
+| `shouldBeSearchable(model)` | Return `false` to keep a row out of the index (it is removed if present). |
+| `settings` | Engine index settings, for [custom engines](#custom-engines) that support them. |
+
+### Choosing what to index — `fts`
+
+Without `fts`, the index is built from the model's table, as described in the
+[quick start](#quick-start). Declare `fts` to search fewer columns, to index
+fields that are not table columns (computed in `toSearchableArray()`), or to
+choose a language or tokenizer:
+
+```ts
+export const Post = Search.register(PostRecord, {
+  fts: {
+    columns: ["title", "body"],   // tokenized and searched
+    unindexed: ["status"],        // stored for filters, facets and sorting
+  },
+  toSearchableArray: (m) => ({
+    title: m.getAttribute("title"),
+    body: m.getAttribute("body"),
+    status: m.getAttribute("status"),
+  }),
+  shouldBeSearchable: (m) => m.getAttribute("status") === "published",
+});
+```
+
+Both engines read it the same way:
+
+| Key | Meaning |
+|---|---|
+| `columns` | Fields that are tokenized and matched by the search query. |
+| `unindexed` | Fields stored next to them for `where()`, `facet()`, `orderBy()` and `retrieve()`, but not matched. |
+| `language` | PostgreSQL only: text search configuration (default `"english"`). |
+| `tokenizer` | SQLite only: FTS5 tokenizer, such as `"porter unicode61"` (default `unicode61`). |
+| `contentTable`, `contentRowid` | Source table and key for trigger sync and `search:fts:rebuild`. See each engine. |
+| `triggerWhere` | SQL conditions that gate the sync triggers. |
+
+Each field in `columns` and `unindexed` is read from `toSearchableArray()`; a field it does not return is stored as `NULL`.
+
+The engine finds the model from the index name: for an index it was not
+configured for explicitly, it uses the `fts`, or the table, of the registered
+model whose `searchableAs()` returns that name. That holds in every process that imports the
+model: the CLI, the application, and the `orm queue` worker, which loads
+`modelsPath` when search is configured. A worker you start yourself must import
+the searchable models before it runs search jobs. With
+[`tenantScope`](#multi-tenancy), the name is resolved in the active tenant
+context, so per-tenant indexes find their model too.
+
+To configure an index by hand instead, call `engine.configureIndex(name, config)`
+or pass `indexes` to the engine constructor. That config wins over the model's,
+and the table is not read.
+
+### Alternative — `Search.define()`
+
+Wrap an existing model class, add the searchable API, and register the
+observer automatically.
+
+```ts
+import { Model } from "@rekkr/orm";
+import { Search } from "@rekkr/orm/search";
+
+export class PostRecord extends Model {
+  static override table = "posts";
+  static override fillable = ["title", "body", "status"];
+}
+
+export const Post = Search.define(PostRecord);
+export type PostInstance = InstanceType<typeof Post>;
+```
+
+### Alternative — `Searchable` mixin
+
+For models typed with [`Model.define<T>()`](./typescript.md#modeldefinettable) instead of generated declarations:
+
+```ts
+import { Model } from "@rekkr/orm";
+import { Searchable, Search } from "@rekkr/orm/search";
+
+interface PostAttributes {
+  id: number;
+  title: string;
+  body: string;
+  status: "draft" | "published";
+}
+
+export class Post extends Searchable(Model.define<PostAttributes>("posts")) {
+  static override fillable = ["title", "body", "status"];
+}
+
+Search.register(Post);   // mixin adds statics + types; this attaches the observer
+```
+
+`Searchable()` adds its statics to the class it receives. `Model.define()` hands
+it a fresh class; never pass `Model` itself, or every model becomes searchable
+under one index. With generated declarations, use `Search.register()` or
+`Search.define()` above: the mixin types search results as its base class, which
+would then have to be exported and searchable as well.
+
+## Configure
+
+Set `search` in `configureOrm()` or `orm.config.ts`. The engine is a string
+alias or an engine instance:
+
+| Alias | Engine | Defaults |
+|---|---|---|
+| `"pg"`, `"postgres"`, or `"postgres-fts"` | `PostgresFTSEngine` | `{ shared: true }`: reuses the default ORM PostgreSQL connection |
+| `"sqlite"` or `"sqlite-fts5"` | `SqliteFTS5Engine` | `{ shared: true }`: reuses the default ORM SQLite connection |
+
+```ts
+import { configureOrm } from "@rekkr/orm";
+
+configureOrm({
+  connection: { url: process.env.DATABASE_URL! },
+  modelsPath: "./app/models",
+  search: {
+    engine: "pg",
+    // Optional: keep the index on a dedicated connection.
+    // connection: { url: process.env.SEARCH_DATABASE_URL! },
+    // Optional: sync through queued jobs instead of inline.
+    // queue: { name: "search" },
+    chunk: 500,
+  },
+});
+```
+
+`search.connection` accepts a `ConnectionConfig` or an existing `Connection`.
+To set engine options, pass an instance instead of the alias:
+
+```ts
+import { PostgresFTSEngine, SqliteFTS5Engine } from "@rekkr/orm/search";
+
+search: { engine: new PostgresFTSEngine({ shared: true, defaultLanguage: "spanish" }) }
+search: { engine: new SqliteFTS5Engine({ shared: true, walMode: true }) }
+```
+
+Engine options are listed under [PostgreSQL FTS](#engine-postgresftsengine) and
+[SQLite FTS5](#engine-sqlitefts5engine). `connection` next to an engine instance
+is rejected; pass it to the constructor instead.
+
+Outside the ORM facade:
+
+```ts
+import { Search } from "@rekkr/orm/search";
+
+Search.configure({ engine: "sqlite" });
+```
 
 ## CLI
 
@@ -412,12 +477,12 @@ When `search` is configured, these commands register automatically:
 |---|---|
 | `orm search:import <Model>` | Bulk-index all rows of a model (chunked). |
 | `orm search:flush <Model>` | Wipe the index for a model. |
-| `orm search:sync-index-settings [Model]` | Push `searchIndexSettings` to Meilisearch. |
-| `orm search:status` | Engine health + configured indexes. SQLite and PostgreSQL FTS engines expose engine diagnostics. |
-| `orm search:create-index <Model>` | Create the model's index. Auto-applies `Model.searchFtsConfig` via `engine.configureIndex()` when the engine supports it (SQLite FTS5 and PostgreSQL FTS). |
+| `orm search:sync-index-settings [Model]` | Push the model's `settings` to an engine that supports index settings. Neither built-in engine does; see [Custom engines](#custom-engines). |
+| `orm search:status` | Engine health and diagnostics (page counts, journal mode, row counts of explicitly configured indexes). |
+| `orm search:create-index <Model>` | Create the model's index, from its `fts` or its table. |
 | `orm search:delete-index <Model> --force` | Delete the model's index. `--force` required. |
 | `orm search:reimport <Model> [--chunk=N]` | Flush + bulk-import in one step. |
-| `orm search:reindex <Model> [--chunk=N] [--suffix=_next]` | Build, swap, and drop a temporary index without downtime; requires an engine with `swapIndexes()` support. |
+| `orm search:reindex <Model> [--chunk=N] [--suffix=_next]` | Build, swap, and drop a temporary index without downtime. Needs an engine with `swapIndexes()`, which neither built-in engine has; use `search:reimport` with them. |
 | `orm search:import <Model> [--chunk=N] [--dry-run]` | `--dry-run` counts rows without pushing. |
 | `orm search:fts:optimize <Model>` | FTS5-only. Merges b-tree levels, reduces fragmentation. |
 | `orm search:fts:rebuild <Model>` | FTS engines with `rebuild()`. Repopulates the index from the source content table. |
@@ -470,9 +535,9 @@ Exit code:
 - `0` when all indexes present
 - `1` when any index missing (without `--fix`) or any engine error
 
-`--fix` re-uses each model's `searchFtsConfig` + engine `createIndex()` to provision missing entries. Safe to re-run; existing indexes are skipped.
+`--fix` creates each missing index as `search:create-index` does. Safe to re-run; existing indexes are skipped.
 
-Requires `engine.indexExists?()` — implemented by `MeilisearchEngine` (via `GET /indexes/{name}`, 404 → false), `SqliteFTS5Engine` (via `sqlite_master` lookup filtered to FTS5 virtual tables), and `PostgresFTSEngine` (via `pg_class`). Engines without it skip with a warning.
+Requires `engine.indexExists?()` — implemented by `SqliteFTS5Engine` (via `sqlite_master`, filtered to FTS5 virtual tables) and `PostgresFTSEngine` (via `pg_class`). Engines without it skip with a warning.
 
 `<Model>` matches the exported class name discovered in `config.modelsPath`.
 
@@ -482,7 +547,7 @@ Set `search.queue` to push observer-triggered updates onto the existing queue su
 
 ```ts
 search: {
-  engine: new MeilisearchEngine({ host: "http://127.0.0.1:7700" }),
+  engine: "pg",
   queue: { name: "search" },
 }
 ```
@@ -492,6 +557,9 @@ Then run a worker that picks up `MakeSearchableJob` / `RemoveFromSearchJob`:
 ```bash
 orm queue --queue=search
 ```
+
+The worker loads the models in `modelsPath`, so the engine finds each index's
+model there as it does in the application.
 
 ### Routing to a dedicated queue driver
 
@@ -505,7 +573,7 @@ Queue.registerDriver("search-driver", new RedisQueueDriver({ /* ... */ }));
 configureOrm({
   // ...
   search: {
-    engine: new MeilisearchEngine({ host: "http://127.0.0.1:7700" }),
+    engine: "pg",
     queue: { name: "search", connection: "search-driver" },
   },
 });
@@ -522,7 +590,7 @@ configureOrm({
   // ...
   tenancy: { resolveTenant: yourResolver },
   search: {
-    engine: new MeilisearchEngine({ host: "..." }),
+    engine: "pg",
     tenantScope: (base, tenantId) => tenantId ? `${base}_t_${tenantId}` : base,
   },
 });
@@ -537,7 +605,10 @@ await TenantContext.run("42", async () => {
 await Post.create({ title: "..." });      // landlord → "posts"
 ```
 
-**How it composes with queue mode:** `SearchObserver` resolves the index name at dispatch time, baking it into `SearchableRecord.index`. The queue worker re-enters `TenantContext.run(payload.tenantId, ...)` before calling `engine.update()`, so per-tenant connection routing (schema, RLS) is preserved end-to-end.
+Create each tenant's index with `orm search:create-index Post --tenant=42`, or
+all of them with `orm search:verify --all-tenants --fix`.
+
+**How it composes with queue mode:** `SearchObserver` resolves the index name at dispatch time, baking it into `SearchableRecord.index`. The queue worker re-enters `TenantContext.run(payload.tenantId, ...)` before calling `engine.update()`, so per-tenant connection routing (schema, RLS) is preserved end-to-end, and the engine resolves the tenant's index name to its model in that same context.
 
 **Resolve outside model context:**
 
@@ -560,7 +631,7 @@ Wire `listTenants` either on the search config or inherit it from `tenancy.listT
 configureOrm({
   tenancy: { resolveTenant, listTenants: () => listTenantIds() },
   search: {
-    engine,
+    engine: "pg",
     tenantScope: (b, tid) => tid ? `${b}_t_${tid}` : b,
     // `listTenants` inherits from tenancy.listTenants when omitted here
   },
@@ -590,11 +661,11 @@ Other shipped commands (`search:create-index`, `search:import`, etc.) operate on
 
 ## Batch coalescing
 
-For high-write workloads where queue mode is overkill, opt-in to in-process batching. The buffer dedupes by `${index}:${id}` so a record updated 3× in one window collapses to one HTTP push:
+For high-write workloads where queue mode is overkill, opt in to in-process batching. The buffer dedupes by tenant, index and id, so a record updated 3× in one window is written to the index once:
 
 ```ts
 search: {
-  engine: new MeilisearchEngine({ host: "http://127.0.0.1:7700" }),
+  engine: "sqlite",
   batch: { maxItems: 100, maxMs: 500 },
 }
 ```
@@ -648,88 +719,58 @@ Engines do not have identical native features. Use capabilities when UI or CLI c
 const caps = Search.capabilities();
 
 caps.matchesPosition;       // "native" | "approximate" | false
-caps.nativeMultiSearch;     // true for Meilisearch, false for PG/SQLite fallback
+caps.nativeMultiSearch;     // false for both built-in engines: Search.multi() runs sequentially
 caps.indexSettings;         // true when updateIndexSettings() is supported
 
-if (Search.supports("typoTolerance")) {
-  // show typo tolerance controls
+if (Search.supports("highlight")) {
+  // show highlighted snippets
 }
 ```
 
-Current shipped engines:
+| Capability | PostgreSQL FTS | SQLite FTS5 |
+|---|---|---|
+| `nativeMultiSearch` | ❌ sequential fallback | ❌ sequential fallback |
+| `indexSettings` | ❌ | ❌ |
+| `matchesPosition` | `"approximate"` | `"approximate"` |
+| `highlight` / `crop` | ✅ | ✅ |
+| `facets` | ✅ | ✅ |
+| `minScore` | ✅ | ✅ |
+| `searchOn` | ✅ | ✅ |
+| `rawQuery` | ✅ | ✅ |
 
-| Capability | Meilisearch | PostgreSQL FTS | SQLite FTS5 |
-|---|---|---|---|
-| `nativeMultiSearch` | ✅ | ❌ sequential fallback | ❌ sequential fallback |
-| `indexSettings` | ✅ | ❌ | ❌ |
-| `matchesPosition` | `"native"` | `"approximate"` | `"approximate"` |
-| `highlight` / `crop` | ✅ | ✅ | ✅ |
-| `facets` | ✅ | ✅ | ✅ |
-| `minScore` | ✅ | ✅ | ✅ |
-| `searchOn` | ✅ | ✅ | ✅ |
-| `rawQuery` | ❌ | ✅ | ✅ |
-| `typoTolerance` | ✅ | ❌ | ❌ |
-| `vector` / `hybrid` | ✅ | ❌ | ❌ |
+### Builder features by engine
 
-## Architecture
+| Builder feature | PostgreSQL FTS | SQLite FTS5 |
+|---|---|---|
+| `where` / `whereIn` / `whereBetween` / `whereNull` / `whereExists` / `whereRaw` | ✅ SQL on stored columns | ✅ SQL on `unindexed` columns |
+| OR / nested groups | ✅ | ✅ |
+| `orderBy` | ✅ — default is `ts_rank()` relevance | ✅ — default is `bm25()` relevance |
+| `take` / pagination / `simplePaginate` / `cursor` | ✅ | ✅ |
+| `.facet()` / facet distribution | ✅ SQL `GROUP BY` | ✅ SQL `GROUP BY` |
+| `.minScore()` | ✅ `ts_rank()` threshold | ✅ `bm25()` threshold |
+| `.searchOn()` / `.boost()` | ✅ column-scoped `tsvector` | ✅ FTS5 column-scoped match |
+| `.retrieve()` / `.display()` | ✅ | ✅ |
+| `.matchRaw()` | ✅ raw PostgreSQL `to_tsquery()` | ✅ raw FTS5 syntax |
+| `.bm25Weights()` | ❌ ignored | ✅ |
+| `.withScore()` | ✅ exposes `ts_rank()` | ✅ exposes `-bm25()` |
+| `.highlight()` / `.crop()` | ✅ `ts_headline()` | ✅ `highlight()` + `snippet()` |
+| `matchesPosition` | ✅ best-effort character offsets | ✅ best-effort character offsets |
+| `Search.multi([...])` | sequential | sequential |
 
-- `SearchEngine` — driver interface (`update`, `delete`, `search`, `paginate`, `multiSearch?`, `flush`, `createIndex`, `deleteIndex`, `updateIndexSettings?`, `capabilities?`, `health?`).
-- `MeilisearchEngine` — HTTP driver. Filters compile to Meili expressions (`field = "v"`, `field IN [..]`); sorts to `field:dir`; facets/highlight/crop/min-score/attributesToSearchOn passed through.
-- `PostgresFTSEngine` — PostgreSQL `tsvector` driver. Uses a shadow table, GIN index, optional triggers, `websearch_to_tsquery()` for normal queries, and `to_tsquery()` for `.matchRaw()`.
-- `SqliteFTS5Engine` — SQLite FTS5 driver. Uses an FTS5 virtual table, optional triggers, BM25 ranking, snippets, and column-scoped matches.
-- `Searchable(Base)` — mixin adding the static API and a per-instance `searchable()` / `unsearchable()` pair.
-- `SearchObserver` — internal `ObserverContract` impl attached via `Search.register(Model)`. Fires on `saved`/`deleted`.
-- `SearchBuilder` — fluent query builder; returns hydrated ORM models.
-- `MakeSearchableJob` / `RemoveFromSearchJob` — queue jobs for async sync.
-- `Search.multi(builders)` — single round-trip across multiple indexes; routes through `engine.multiSearch()` when available, falls back to sequential `engine.search()`.
+Neither engine has typo tolerance: they match words and prefixes, not
+misspellings.
 
 ## Engine: `PostgresFTSEngine`
 
-For PostgreSQL apps, `PostgresFTSEngine` provides full-text search without a separate service. It creates one shadow table per index, stores searchable columns plus filter/facet fields, maintains a `tsvector`, and creates a GIN index.
+For PostgreSQL apps. It creates one shadow table per index (`_fts_<index>`), stores the searchable columns plus filter/facet fields, maintains a `tsvector`, and creates a GIN index.
 
-### Setup — same PostgreSQL database
-
-Declare the FTS schema on the model. `columns` are tokenized. `unindexed` columns are stored for filters, facets, sorting, and raw display payloads.
+### Setup
 
 ```ts
+search: { engine: "pg" }
+
 // app/models/Post.ts
-import { Model } from "@rekkr/orm";
-import { Search } from "@rekkr/orm/search";
-
-class _Post extends Model.define<PostAttributes>("posts") {
-  static fillable = ["title", "body", "status"];
-}
-
-export const Post = Search.define(_Post, {
-  index: "posts",
-  fts: {
-    columns: ["title", "body"],
-    unindexed: ["status", "author_id"],
-    language: "english",
-    contentTable: "posts",  // required for trigger/rebuild mode
-    contentRowid: "id",
-  },
-  toSearchableArray: (post) => ({
-    title: post.getAttribute("title"),
-    body: post.getAttribute("body"),
-    status: post.getAttribute("status"),
-    author_id: post.getAttribute("author_id"),
-  }),
-});
-
-export type PostInstance = InstanceType<typeof Post>;
-export default Post;
-```
-
-```ts
-// app.ts
-import { configureOrm } from "@rekkr/orm";
-
-configureOrm({
-  connection: { url: process.env.DATABASE_URL! },
-  modelsPath: "./app/models",
-  search: { engine: "pg" },
-});
+export const Post = Search.register(PostRecord);
 ```
 
 ```bash
@@ -737,45 +778,33 @@ orm search:create-index Post
 orm search:import Post
 ```
 
-The `"pg"` alias creates `new PostgresFTSEngine({ shared: true })`, so it reuses the ORM's active PostgreSQL connection. Add `search.connection` to keep the string alias but use a separate PostgreSQL connection:
+The `"pg"` alias creates `new PostgresFTSEngine({ shared: true })`, which reuses the ORM's active PostgreSQL connection. Add `search.connection` to keep the alias but store the index on another PostgreSQL connection. Stemming uses the `english` configuration; set `fts.language` on the model, or `defaultLanguage` on the engine, for another language.
 
-```ts
-search: {
-  engine: "pg",
-  connection: { url: process.env.SEARCH_DATABASE_URL! },
-}
-```
+Constructor options:
 
-For custom engine options:
-
-```ts
-import { PostgresFTSEngine } from "@rekkr/orm/search";
-
-search: {
-  engine: new PostgresFTSEngine({
-    shared: true,
-    prefix: "_fts_",
-    defaultLanguage: "english",
-    useTriggers: true,
-  }),
-}
-```
+| Option | Default | Purpose |
+|---|---|---|
+| `shared` | `true` | Reuse the ORM's default connection. |
+| `connection` | — | An explicit `Connection` instead. |
+| `prefix` | `"_fts_"` | Shadow table name prefix. |
+| `defaultLanguage` | `"english"` | Text search configuration when `fts.language` is not set. |
+| `useTriggers` | `true` | Create sync triggers for indexes whose `fts` has `contentTable`. |
+| `indexes` | — | Index configs by name; they win over the models' `fts`. |
 
 ### Trigger mode
 
-When `useTriggers` is enabled and the model's `fts` config has `contentTable`, `createIndex()` creates PostgreSQL triggers that keep the shadow table synchronized on `INSERT`, `UPDATE`, and `DELETE`.
+When the model's `fts` has `contentTable` (and `useTriggers` is on, the default), `createIndex()` also creates PostgreSQL triggers that keep the shadow table in sync on `INSERT`, `UPDATE` and `DELETE`, including writes that bypass the ORM:
 
 ```ts
-const engine = new PostgresFTSEngine({ shared: true, useTriggers: true });
-engine.configureIndex("posts", {
+fts: {
   columns: ["title", "body"],
   unindexed: ["status"],
   contentTable: "posts",
   contentRowid: "id",
-});
-
-await engine.createIndex("posts");
+}
 ```
+
+The model observer keeps writing as well; both upsert the same row. `contentTable` also enables `orm search:fts:rebuild Post`, which rebuilds the shadow table from the source rows.
 
 Trigger functions are schema-qualified when the active connection uses schema-qualified tenancy, so schema-per-tenant setups can reuse the same index names safely.
 
@@ -783,8 +812,8 @@ Trigger functions are schema-qualified when the active connection uses schema-qu
 
 ```ts
 await Post.search("rust postgres")
-  .searchOn("title")       // searches only title
-  .retrieve("title", "status") // raw() returns only these fields in hit.data
+  .searchOn("title")            // searches only title
+  .retrieve("title", "status")  // raw() returns only these fields in hit.data
   .where("status", "published")
   .highlight("title")
   .crop("body", 20)
@@ -800,129 +829,133 @@ await Post.search("").matchRaw("rust:* & postgres").raw();
 ### Caveats
 
 - Shadow-table columns are stored as `TEXT`. Numeric filters/ranges are cast to numeric by the engine; keep filter values consistent.
-- `search:create-index` creates the shadow table and GIN index. Existing rows still need `search:import` or `engine.rebuild()`.
-- `search:fts:rebuild` requires `contentTable` and rebuilds the shadow table from source rows.
-- `updateIndexSettings()` is unsupported for PostgreSQL FTS; use the model's `fts` config and recreate/rebuild indexes when schema changes.
-- PostgreSQL FTS is keyword search. It does not provide typo tolerance like Meilisearch.
+- `search:create-index` creates the shadow table and GIN index. Existing rows still need `search:import` or `search:fts:rebuild`.
+- Changing `fts`, or the table's columns when there is no `fts`, means recreating the index: `search:delete-index --force`, `search:create-index`, then `search:import`.
 
 ## Engine: `SqliteFTS5Engine`
 
-For apps where you don't want to run a separate Meilisearch service, SQLite's built-in FTS5 full-text engine works as a drop-in `SearchEngine`. Same interface, same builder API, all filters/facets/score/highlight (where SQLite has equivalents).
+For SQLite apps, or as a single-file index next to another database. It stores each index in an FTS5 virtual table named `_fts_<index>`, so the default index name (the model's table) never collides with the table it indexes.
 
-### Setup — same DB as the app (recommended for SQLite apps)
-
-Declare the FTS5 schema on the model. `search:create-index` discovers it automatically.
+### Setup — same file as the app
 
 ```ts
-// app/models/Post.ts
-import { Model } from "@rekkr/orm";
-import { Search } from "@rekkr/orm/search";
-
-class _Post extends Model.define<PostAttributes>("posts") {
-  static fillable = ["title", "body", "status"];
-}
-
-export const Post = Search.register(_Post, {
-  index: "posts_fts",
-  fts: {
-    columns: ["title", "body"],          // tokenized
-    unindexed: ["status", "author_id"],  // stored for filters
-    tokenizer: "porter unicode61",       // optional
-  },
-  toSearchableArray: (m) => ({
-    title: m.getAttribute("title"),
-    body: m.getAttribute("body"),
-    status: m.getAttribute("status"),
-  }),
-});
-
-export type PostInstance = InstanceType<typeof Post>;
-export default Post;
-```
-
-```ts
-// app.ts
-import { configureOrm } from "@rekkr/orm";
-import { SqliteFTS5Engine } from "@rekkr/orm/search";
-
 configureOrm({
   connection: { url: "sqlite://./app.db" },
   modelsPath: "./app/models",
-  search: { engine: new SqliteFTS5Engine({ shared: true }) },
+  search: { engine: "sqlite" },
 });
 ```
 
 ```bash
-orm search:create-index Post   # picks up Post.searchFtsConfig automatically
+orm search:create-index Post
+orm search:import Post
 ```
 
-`shared: true` reuses the ORM's default connection — index lives in the same SQLite file as app data. Backups cover both. One file.
+The index lives in the same SQLite file as the app data, so one backup covers both. It tokenizes with `unicode61`; set `fts.tokenizer` on the model for another, such as `"porter unicode61"` for English stemming.
 
-### Setup — separate SQLite index file (Postgres/MySQL app)
+### Setup — separate SQLite index file
+
+Keep app data in PostgreSQL or MySQL and the index in one SQLite file:
 
 ```ts
-import { Connection } from "@rekkr/orm";
-
-const searchConn = new Connection({ url: "sqlite://./search.db" });
-const fts = new SqliteFTS5Engine({ connection: searchConn });
-fts.configureIndex("posts_fts", { columns: ["title", "body"], unindexed: ["status"] });
-
 configureOrm({
   connection: { url: "postgres://app:pw@host/db" },
-  search: { engine: fts },
+  modelsPath: "./app/models",
+  search: { engine: "sqlite", connection: { url: "sqlite://./search.db" } },
 });
-await fts.createIndex("posts_fts");
 ```
 
-App data stays in Postgres; the search index lives in a single SQLite file. Sync via the same `SearchObserver` flow as Meilisearch.
+Sync runs through the same model observer as the same-file setup.
 
-### Trigger mode — instant in-transaction sync (same-DB only)
+Constructor options:
 
-When app data and FTS5 table share the same SQLite file, you can let SQLite handle sync via AFTER INSERT/UPDATE/DELETE triggers. The observer self-disables — every write (including raw SQL) updates the index inside the same transaction.
+| Option | Default | Purpose |
+|---|---|---|
+| `shared` | `false` (`true` through the alias) | Reuse the ORM's default connection. |
+| `connection` | — | An explicit `Connection`. |
+| `memory` | `false` | Open a private in-memory database, for tests. |
+| `prefix` | `"_fts_"` | FTS5 table name prefix. |
+| `useTriggers` | `false` | Create sync triggers; needs `contentTable` in every index's `fts`. |
+| `walMode` / `journalMode` | — | Set the journal mode on first use. |
+| `indexes` | — | Index configs by name; they win over the models' `fts`. |
+
+### Trigger mode — sync inside the write (same file only)
+
+When app data and the FTS5 table share the same SQLite file, SQLite triggers can keep the index in sync, including raw SQL writes:
 
 ```ts
-const fts = new SqliteFTS5Engine({ shared: true, useTriggers: true });
-fts.configureIndex("posts_fts", {
+import { SqliteFTS5Engine } from "@rekkr/orm/search";
+
+search: { engine: new SqliteFTS5Engine({ shared: true, useTriggers: true }) }
+
+// in the model
+fts: {
   columns: ["title", "body"],
-  contentTable: "posts",    // required for triggers
-  contentRowid: "id",       // PK column on the source table
-});
-await fts.createIndex("posts_fts");
+  unindexed: ["status"],
+  contentTable: "posts",   // required for triggers
+  contentRowid: "id",      // key column on the source table
+}
 ```
 
-`createIndex()` emits the FTS5 table **and** three triggers (`posts_fts_ai`, `_ad`, `_au`). `deleteIndex()` drops them.
-
-### Capability matrix
-
-| Builder feature | Meilisearch | PostgreSQL FTS | SQLite FTS5 |
-|---|---|---|---|
-| `where` / `whereIn` / `whereBetween` / `whereNull` / `whereExists` / `whereRaw` | ✅ | ✅ via SQL on stored columns | ✅ via SQL on UNINDEXED columns |
-| OR / nested groups | ✅ | ✅ | ✅ |
-| `orderBy` | ✅ | ✅ — default is `ts_rank()` relevance | ✅ — default is `bm25()` relevance |
-| `take` / pagination / `simplePaginate` / `cursor` | ✅ | ✅ | ✅ |
-| `.facet()` / facet distribution | ✅ native | ✅ — SQL `GROUP BY` | ✅ — SQL `GROUP BY` |
-| `.minScore()` | ✅ | ✅ — `ts_rank()` threshold | ✅ — `bm25()` threshold |
-| `.searchOn()` / `.boost()` | ✅ | ✅ — dynamic column-scoped `tsvector` | ✅ — FTS5 column-scoped match |
-| `.retrieve()` / `.display()` | ✅ | ✅ | ✅ |
-| `.matchRaw()` | engine syntax | ✅ — raw PostgreSQL `to_tsquery()` | ✅ — raw FTS5 syntax |
-| `.withScore()` | ✅ | ✅ — exposes `ts_rank()` | ✅ — exposes `-bm25()` |
-| `.highlight()` / `.crop()` | ✅ | ✅ — `ts_headline()` | ✅ — `highlight()` + `snippet()` |
-| `matchesPosition` | ✅ native | ✅ best-effort character offsets | ✅ best-effort character offsets |
-| `Search.multi([...])` | native multi-search | sequential | sequential |
+`createIndex()` creates the FTS5 table **and** three triggers (`_fts_posts_ai`, `_ad`, `_au`); `deleteIndex()` drops them. The model observer keeps writing as well, which is redundant but leaves the index consistent. `contentTable` also enables `orm search:fts:rebuild Post`.
 
 ### Caveats
 
 - **Single writer.** SQLite serializes writes. Run search sync through a queue worker (`orm queue --queue=search`) in multi-process apps to avoid lock contention.
-- **Single node.** SQLite file lives on one disk. For replicated reads, use Litestream/rqlite.
-- **Schema-tied.** Columns are fixed at `createIndex()` time. Renaming a tracked column means `deleteIndex()` + `createIndex()` + `orm search:reimport`.
-- **Enable WAL.** `PRAGMA journal_mode=WAL` for concurrent readers.
-- **Migrations.** When using `useTriggers`, treat the FTS table + triggers as part of your migrations so they survive `migrate:fresh`.
+- **Single node.** The SQLite file lives on one disk. For replicated reads, use Litestream/rqlite.
+- **Schema-tied.** Columns are fixed at `createIndex()` time. Changing `fts`, or the table's columns when there is no `fts`, means `search:delete-index --force`, `search:create-index`, then `search:reimport`.
+- **Enable WAL.** `walMode: true` (or `PRAGMA journal_mode=WAL`) for concurrent readers.
+- **Migrations.** When using `useTriggers`, treat the FTS table and triggers as part of your schema so they survive `migrate:fresh`.
+
+## Custom engines
+
+Implement `SearchEngine` and pass the instance as `search.engine`:
+
+```ts
+import type { SearchEngine } from "@rekkr/orm/search";
+
+class MyEngine implements SearchEngine {
+  async update(records) { /* upsert { index, id, data } */ }
+  async delete(records) { /* remove by { index, id } */ }
+  async search(query) { return []; }
+  async paginate(query, perPage, page) { return { hits: [], total: 0, page, perPage }; }
+  async flush(index) {}
+  async createIndex(name, options) {}
+  async deleteIndex(name) {}
+}
+
+configureOrm({ /* ... */ search: { engine: new MyEngine() } });
+```
+
+Optional methods unlock more of the API:
+
+| Method | Enables |
+|---|---|
+| `capabilities()` | `Search.capabilities()` / `Search.supports()` |
+| `health()` | `orm search:status` |
+| `indexExists(name)` | `orm search:verify` |
+| `multiSearch(queries)` | `Search.multi()` in one call |
+| `updateIndexSettings(name, settings)` | the model's `settings` option and `orm search:sync-index-settings` (report `indexSettings: true` in `capabilities()`) |
+| `swapIndexes(a, b)` | `orm search:reindex` |
+
+`fts` and `configureIndex()` belong to the built-in engines; a custom engine
+reads whatever it needs from `SearchableRecord.data` and its own options.
+
+## Architecture
+
+- `SearchEngine` — driver interface (`update`, `delete`, `search`, `paginate`, `flush`, `createIndex`, `deleteIndex`, plus the optional methods above).
+- `PostgresFTSEngine` — PostgreSQL `tsvector` driver. Uses a shadow table, GIN index, optional triggers, `websearch_to_tsquery()` for normal queries, and `to_tsquery()` for `.matchRaw()`.
+- `SqliteFTS5Engine` — SQLite FTS5 driver. Uses an FTS5 virtual table, optional triggers, BM25 ranking, snippets, and column-scoped matches.
+- `Searchable(Base)` — mixin adding the static API and a per-instance `searchable()` / `unsearchable()` pair.
+- `SearchObserver` — internal `ObserverContract` impl attached via `Search.register(Model)`. Fires on `saved`/`deleted`.
+- `SearchBuilder` — fluent query builder; returns hydrated ORM models.
+- `MakeSearchableJob` / `RemoveFromSearchJob` — queue jobs for async sync.
+- `Search.multi(builders)` — several queries at once; routes through `engine.multiSearch()` when available, falls back to sequential `engine.search()`.
 
 ## Not yet implemented
 
-- Other engines (Algolia, Typesense, FlexSearch, MySQL `MATCH AGAINST`) — interface is ready, implementations are not.
-- Task completion polling (Meilisearch async operations return task UIDs; the current implementation does not wait).
-- Native tokenizer-backed matches-position passthrough for PostgreSQL and SQLite FTS. Current implementation computes best-effort character offsets from returned field text.
+- Other engines (Meilisearch, Algolia, Typesense, MySQL `MATCH AGAINST`) — write one against the [`SearchEngine` interface](#custom-engines).
+- Native tokenizer-backed match positions for PostgreSQL and SQLite FTS. The current implementation computes best-effort character offsets from returned field text.
 
 ## Transaction and batch behavior in v3
 

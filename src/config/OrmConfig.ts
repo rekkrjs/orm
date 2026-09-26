@@ -140,7 +140,7 @@ function prepare(config: OrmConfig) {
         input.connection = db;
       }
       const engine = resolveSearchEngine(input);
-      const { connection: _, host: _host, apiKey: _key, ...rest } = input as any;
+      const { connection: _, ...rest } = input as any;
       search = { ...rest, engine, listTenants: input.listTenants ?? config.tenancy?.listTenants };
     }
     return { connection, owned, cleanup, queue, search };

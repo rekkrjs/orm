@@ -7,7 +7,7 @@ import { runWithTenant } from "./runWithTenant.js";
 
 /**
  * Zero-downtime reindex: build a fresh `*_next` index, swap with the live
- * one, then drop the old. Requires an engine with `swapIndexes()` (Meili).
+ * one, then drop the old. Requires an engine with `swapIndexes()`; neither built-in engine has one.
  */
 export function makeSearchReindexCommand(config: OrmConfig) {
   return class extends Command.define(

@@ -1,5 +1,6 @@
 import type { Model, ModelConstructor } from "../model/Model.js";
 import { TenantContext } from "../connection/TenantContext.js";
+import { Schema } from "../schema/Schema.js";
 import { SearchBuilder } from "./SearchBuilder.js";
 import { getSearchConfig, getSearchEngine } from "./SearchManager.js";
 import type { SearchableRecord } from "./SearchEngine.js";
@@ -10,10 +11,10 @@ export interface SearchableOptions<M extends Model = Model> {
   toSearchableArray?(model: M): Record<string, unknown>;
   shouldBeSearchable?(model: M): boolean;
   /**
-   * Engine-specific schema hint. Currently consumed by `SqliteFTS5Engine` —
-   * the `search:create-index` CLI auto-applies it via `engine.configureIndex()`.
-   * Shape varies per engine; kept as opaque `Record<string, unknown>` here so
-   * the core type doesn't import engine modules.
+   * Index schema for the built-in PostgreSQL and SQLite engines: which columns
+   * are searched and which are stored for filtering. Optional: without it the
+   * index covers the model's table, searching its text columns. Kept as an
+   * opaque `Record<string, unknown>` so the core type doesn't import engine modules.
    */
   fts?: Record<string, unknown>;
 }
@@ -39,6 +40,40 @@ export interface SearchableModelStatics<M = Model> {
 export type SearchableModelConstructor<M = Model> =
   ModelConstructor & SearchableModelStatics<M>;
 
+// Newest last, so a model redefined under the same index name wins.
+const registered = new Set<SearchableModelConstructor>();
+const tableConfigs = new WeakMap<SearchableModelConstructor, Record<string, unknown>>();
+
+function modelFor(index: string): SearchableModelConstructor | undefined {
+  return [...registered].reverse().find((model) => model.searchableAs() === index);
+}
+
+/** The index schema of the searchable model whose `searchableAs()` is `index` in the current tenant context. */
+export function modelFtsConfig(index: string): Record<string, unknown> | undefined {
+  const model = modelFor(index);
+  return model && (model.searchFtsConfig ?? tableConfigs.get(model));
+}
+
+/**
+ * For a model without `fts`, reads its table once and indexes every column but
+ * the primary key and `hidden` ones: text columns are searched, the rest stored
+ * for filters and sorting. Engines await this before reading `modelFtsConfig()`.
+ */
+export async function loadModelFtsConfig(index: string): Promise<void> {
+  const model = modelFor(index) as (SearchableModelConstructor & { hidden?: readonly string[] }) | undefined;
+  if (!model || model.searchFtsConfig || tableConfigs.has(model)) return;
+  const connection = model.getConnection();
+  const hidden = new Set(model.hidden ?? []);
+  const fields = (await Schema.getColumns(model.getQualifiedTable(connection), connection))
+    .filter((column) => !column.primary && !hidden.has(column.name));
+  const isText = (type: string) => /char|text|clob/i.test(type);
+  const columns = fields.filter((column) => isText(column.type)).map((column) => column.name);
+  if (columns.length === 0) {
+    throw new Error(`${model.name}: table "${model.getTable()}" has no text columns to search. Declare \`fts\` on the model.`);
+  }
+  tableConfigs.set(model, { columns, unindexed: fields.filter((column) => !isText(column.type)).map((column) => column.name) });
+}
+
 function defaultToSearchableArray(model: Model): Record<string, unknown> {
   return (model as any).toJSON ? (model as any).toJSON() : { ...(model as any).$attributes };
 }
@@ -54,6 +89,7 @@ export function applySearchableStatics<M extends Model>(
 
   ctor.searchable = true;
   ctor.__searchableApplied = true;
+  registered.add(ctor);
 
   if (options.index !== undefined) ctor.searchIndex = options.index;
   if (options.settings !== undefined) ctor.searchIndexSettings = options.settings;

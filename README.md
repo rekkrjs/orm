@@ -25,7 +25,7 @@ An **Eloquent-inspired ORM** for [Bun](https://bun.com) and [Node.js](https://no
 - 🏗️ **Schema Builder** — Programmatic table creation, indexes, foreign keys
 - 🔍 **Query Builder** — Chainable joins, unions, relation and pivot shortcuts, SQL diagnostics, and Laravel-style aliases
 - ⚡ **Predictable direct JSON** — `rawJson()` skips per-row hydration or reports why it cannot
-- 🔎 **Search** — Meilisearch, PostgreSQL full-text search, and SQLite FTS5 engines
+- 🔎 **Search** — PostgreSQL full-text search and SQLite FTS5 engines, no search service to run
 - 🧠 **Tagged Cache** — Redis-backed cache facade, query `remember()`, and exact tag invalidation
 - 📣 **Events** — Application-level event dispatcher with function listeners and class handlers
 - 📨 **Queue Jobs** — Database- and Redis-backed background job queue with named queues, retries, delays, and an `orm queue` worker
@@ -210,7 +210,7 @@ one document.
 |---|---|
 | [Query Builder](./docs/query-builder.md) | Chainable `where` / `join` / `with` / aggregates, `DB` facade, raw queries. |
 | [Cache](./docs/cache.md) | Redis-backed cache API, query `remember()`, exact tag invalidation. |
-| [Search](./docs/search.md) | Meilisearch, PostgreSQL full-text search, and SQLite FTS5. |
+| [Search](./docs/search.md) | PostgreSQL full-text search and SQLite FTS5. |
 | [Collections](./docs/collections.md) | `map`, `filter`, `groupBy`, and other helpers returned by `get()`. |
 | [Models](./docs/models.md) | Defining models, casts, accessors, soft deletes, persistence. |
 | [Relationships](./docs/relationships.md) | `hasMany`, `belongsTo`, `belongsToMany`, polymorphic, eager loading. |

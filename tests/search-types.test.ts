@@ -10,7 +10,7 @@ import {
   Search,
   Searchable,
   SearchBuilder,
-  MeilisearchEngine,
+  SqliteFTS5Engine,
   type SearchableModelConstructor,
   type SearchHit,
   type SearchPaginatorResult,
@@ -151,10 +151,8 @@ function _typeAssertions(): void {
     expectType<number>(post.getAttribute("id"));
     expectType<string>(post.getAttribute("title"));
 
-    // Engine API — Search.configure accepts MeilisearchEngine instance.
-    Search.configure({ engine: new MeilisearchEngine({ host: "http://x" }) });
-    Search.configure({ engine: "meilisearch" });
-    Search.configure({ engine: "meili" });
+    // Engine API — Search.configure accepts an engine instance or a built-in alias.
+    Search.configure({ engine: new SqliteFTS5Engine({ memory: true }) });
     Search.configure({ engine: "pg" });
     Search.configure({ engine: "postgres" });
     Search.configure({ engine: "postgres-fts" });
@@ -163,11 +161,8 @@ function _typeAssertions(): void {
     Search.configure({ engine: "pg", connection: { url: "postgres://localhost/postgres" } });
     Search.configure({ engine: "sqlite", connection: { url: "sqlite://:memory:" } });
     Search.configure({ engine: "sqlite", connection: new Connection({ url: "sqlite://:memory:" }) });
-    Search.configure({ engine: "meilisearch", host: "http://localhost:7700" });
-    Search.configure({ engine: "meilisearch", apiKey: "secret" });
-    Search.configure({ engine: "meilisearch", host: "http://localhost:7700", apiKey: "secret" });
     Search.configure({
-      engine: new MeilisearchEngine({ host: "http://x" }),
+      engine: new SqliteFTS5Engine({ memory: true }),
       queue: { name: "scout" },
       chunk: 100,
     });
@@ -179,18 +174,12 @@ function _typeAssertions(): void {
     Search.configure({ engine: "elastic" });
     // @ts-expect-error - connection must be a Connection or ConnectionConfig.
     Search.configure({ engine: "sqlite", connection: "search" });
-    // @ts-expect-error - Meilisearch alias does not accept database connection.
-    Search.configure({ engine: "meilisearch", connection: { url: "sqlite://:memory:" } });
-    // @ts-expect-error - host must be a string.
-    Search.configure({ engine: "meilisearch", host: 123 });
-    // @ts-expect-error - apiKey must be a string.
-    Search.configure({ engine: "meilisearch", apiKey: 123 });
-    // @ts-expect-error - PostgreSQL alias does not accept Meilisearch host.
+    // @ts-expect-error - the Meilisearch engine was removed.
+    Search.configure({ engine: "meilisearch" });
+    // @ts-expect-error - no engine alias takes a host.
     Search.configure({ engine: "pg", host: "http://localhost:7700" });
-    // @ts-expect-error - SQLite alias does not accept Meilisearch API key.
-    Search.configure({ engine: "sqlite", apiKey: "secret" });
     // @ts-expect-error - custom engine instances do not accept alias options.
-    Search.configure({ engine: new MeilisearchEngine({ host: "http://x" }), host: "http://localhost:7700" });
+    Search.configure({ engine: new SqliteFTS5Engine({ memory: true }), connection: { url: "sqlite://:memory:" } });
     // @ts-expect-error - non-searchable Model.define result has no .search() static.
     Model.define<{ id: number }>("nope").search("x");
     // @ts-expect-error - chunkSize must be number.
@@ -309,15 +298,15 @@ function _typeAssertions(): void {
     // ── Search.configure accepts new `batch` option ─────────────────────────
 
     Search.configure({
-      engine: new MeilisearchEngine({ host: "http://x" }),
+      engine: new SqliteFTS5Engine({ memory: true }),
       batch: { maxItems: 100, maxMs: 500 },
     });
     Search.configure({
-      engine: new MeilisearchEngine({ host: "http://x" }),
+      engine: new SqliteFTS5Engine({ memory: true }),
       queue: { name: "search", connection: "search-driver" },
     });
     // @ts-expect-error - maxItems is a number.
-    Search.configure({ engine: new MeilisearchEngine({ host: "http://x" }), batch: { maxItems: "many" } });
+    Search.configure({ engine: new SqliteFTS5Engine({ memory: true }), batch: { maxItems: "many" } });
 
     // ── Search.enqueueUpdate / flushPending exist ───────────────────────────
 
@@ -346,7 +335,7 @@ function _typeAssertions(): void {
     // ── Tenant scope config + Search.indexFor ───────────────────────────────
 
     Search.configure({
-      engine: new MeilisearchEngine({ host: "http://x" }),
+      engine: new SqliteFTS5Engine({ memory: true }),
       tenantScope: (base, tenantId) => tenantId ? `${base}_t_${tenantId}` : base,
     });
     expectType<string>(Search.indexFor("posts"));
@@ -354,7 +343,7 @@ function _typeAssertions(): void {
     expectType<string>(Search.indexFor("posts", null));
 
     // @ts-expect-error - tenantScope is a function
-    Search.configure({ engine: new MeilisearchEngine({ host: "http://x" }), tenantScope: "nope" });
+    Search.configure({ engine: new SqliteFTS5Engine({ memory: true }), tenantScope: "nope" });
 
     // ── Batch tenant resolution ─────────────────────────────────────────────
 
@@ -365,19 +354,19 @@ function _typeAssertions(): void {
     );
 
     Search.configure({
-      engine: new MeilisearchEngine({ host: "http://x" }),
+      engine: new SqliteFTS5Engine({ memory: true }),
       tenantScope: (b, tid) => tid ? `${b}_${tid}` : b,
       listTenants: () => ["a", "b"],
     });
     Search.configure({
-      engine: new MeilisearchEngine({ host: "http://x" }),
+      engine: new SqliteFTS5Engine({ memory: true }),
       listTenants: async () => ["a", "b"],
     });
 
     // ── Engine.indexExists is optional ──────────────────────────────────────
 
-    const meiliEng = new MeilisearchEngine({ host: "http://x" });
-    expectType<Promise<boolean>>(meiliEng.indexExists("posts"));
+    const sqliteEng = new SqliteFTS5Engine({ memory: true });
+    expectType<Promise<boolean>>(sqliteEng.indexExists("posts"));
     expectType<SearchCapabilities>(Search.capabilities());
     expectType<boolean>(Search.supports("indexSettings"));
     expectType<boolean>(Search.supports("nativeMultiSearch"));

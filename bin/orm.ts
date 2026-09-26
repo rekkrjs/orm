@@ -20,6 +20,7 @@ import { registerOrmCommands } from "../src/cli/index.js";
 import { relayStdoutToStderr } from "../src/cli/StdoutContract.js";
 import { getFlagValue, parsePositiveInteger, readFlag } from "../src/cli/flags.js";
 import { buildOrmConfigTemplate } from "../src/cli/configTemplate.js";
+import { loadSearchableModels } from "../src/search/commands/resolveSearchableModel.js";
 
 /** The commands whose stdout is a machine contract under `--json`. */
 const JSON_CONTRACT_COMMANDS = new Set<string>([
@@ -914,6 +915,10 @@ async function main() {
         process.exitCode = 1;
         return;
       }
+
+      // Search jobs carry only the index name; the engine finds its schema in
+      // the `fts` of the model registered under that name, so load the models.
+      if (config.search) await loadSearchableModels(config);
 
       const worker = new Worker(driver, {
         queue: queueName,

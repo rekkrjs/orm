@@ -68,7 +68,7 @@ describe("SqliteFTS5Engine.diagnostics()", () => {
 describe("Search.register auto-discovery of `fts` config", () => {
   beforeEach(() => Search.reset());
 
-  test("model.searchFtsConfig stores schema and engine picks it up via configureIndex", async () => {
+  test("model.searchFtsConfig stores schema and the engine reads it without configureIndex", async () => {
     const conn = setupTestDb();
     await Schema.create("widgets", (t) => {
       t.increments("id");
@@ -96,7 +96,6 @@ describe("Search.register auto-discovery of `fts` config", () => {
 
     expect((Widget as any).searchFtsConfig).toEqual({ columns: ["title", "body"], unindexed: ["status"] });
 
-    // Simulate what search:create-index does: pick up the schema, configure, create.
     const engine = new SqliteFTS5Engine({ connection: conn });
     Search.configure({ engine });
     Search.register(_Widget, {
@@ -109,10 +108,8 @@ describe("Search.register auto-discovery of `fts` config", () => {
       }),
     });
 
-    const ftsConfig = (Widget as any).searchFtsConfig;
-    expect(engine.hasConfig("widgets_fts")).toBe(false);
-    engine.configureIndex("widgets_fts", ftsConfig);
     expect(engine.hasConfig("widgets_fts")).toBe(true);
+    expect(engine.hasConfig("widgets_v2")).toBe(false);
     await engine.createIndex("widgets_fts");
 
     await Widget.create({ title: "Hello Rust", body: "ownership", status: "published" } as any);

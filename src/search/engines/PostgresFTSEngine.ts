@@ -15,6 +15,7 @@ import type {
 } from "../SearchEngine.js";
 import { finiteSearchNumber, nonNegativeSearchInteger, validSearchOperator } from "../sqlSafety.js";
 import { computeMatchesPosition } from "../matchPositions.js";
+import { loadModelFtsConfig, modelFtsConfig } from "../Searchable.js";
 
 export interface PostgresFTSIndexConfig {
   /** Columns indexed for full-text search. */
@@ -44,7 +45,7 @@ export interface PostgresFTSEngineOptions {
   defaultLanguage?: string;
   /** Automatically run triggers setup when creating indexes (default: true). */
   useTriggers?: boolean;
-  /** Pre-registered index configurations. */
+  /** Pre-registered index configurations. Indexes not listed here use the `fts` of the model whose `searchableAs()` matches. */
   indexes?: Record<string, PostgresFTSIndexConfig>;
 }
 
@@ -84,9 +85,6 @@ export class PostgresFTSEngine implements SearchEngine {
       minScore: true,
       searchOn: true,
       rawQuery: true,
-      typoTolerance: false,
-      vector: false,
-      hybrid: false,
     };
   }
 
@@ -107,9 +105,17 @@ export class PostgresFTSEngine implements SearchEngine {
     }
   }
 
+  private async loadConfig(name: string): Promise<void> {
+    if (!this.indexConfigs.has(name)) await loadModelFtsConfig(name);
+  }
+
+  private config(name: string): PostgresFTSIndexConfig | undefined {
+    return this.indexConfigs.get(name) ?? modelFtsConfig(name) as PostgresFTSIndexConfig | undefined;
+  }
+
   private requireConfig(name: string): PostgresFTSIndexConfig {
-    const cfg = this.indexConfigs.get(name);
-    if (!cfg) throw new Error(`PostgresFTSEngine: no schema configured for index "${name}".`);
+    const cfg = this.config(name);
+    if (!cfg) throw new Error(`PostgresFTSEngine: no schema configured for index "${name}". Declare \`fts\` on the model, or call configureIndex().`);
     return cfg;
   }
 
@@ -219,6 +225,7 @@ export class PostgresFTSEngine implements SearchEngine {
     }
 
     for (const [index, group] of byIndex) {
+      await this.loadConfig(index);
       const cfg = this.requireConfig(index);
       const cols = this.allColumns(cfg);
       const t = this.qualifyTable(index);
@@ -281,6 +288,7 @@ export class PostgresFTSEngine implements SearchEngine {
   }
 
   async search(query: SearchQuery): Promise<SearchHit[]> {
+    await this.loadConfig(query.index);
     this.assertPostgres();
     const { sql, bindings } = this.buildSelect(query, query.limit, query.offset);
     const rows = (await this.connection().query(sql, bindings)) as any[];
@@ -288,6 +296,7 @@ export class PostgresFTSEngine implements SearchEngine {
   }
 
   async paginate(query: SearchQuery, perPage: number, page: number): Promise<SearchPage> {
+    await this.loadConfig(query.index);
     this.assertPostgres();
     const offset = (Math.max(1, page) - 1) * perPage;
     const { sql, bindings } = this.buildSelect(query, perPage, offset);
@@ -314,6 +323,7 @@ export class PostgresFTSEngine implements SearchEngine {
   }
 
   async createIndex(name: string, options: Record<string, unknown> = {}): Promise<void> {
+    await this.loadConfig(name);
     this.assertPostgres();
     const cfg = this.requireConfig(name);
     const conn = this.connection();
@@ -346,7 +356,7 @@ export class PostgresFTSEngine implements SearchEngine {
   async deleteIndex(name: string): Promise<void> {
     this.assertPostgres();
     const conn = this.connection();
-    const cfg = this.indexConfigs.get(name);
+    const cfg = this.config(name);
     if (this.useTriggers && cfg?.contentTable) {
       await this.dropTriggers(name, cfg);
     }
@@ -390,6 +400,7 @@ export class PostgresFTSEngine implements SearchEngine {
   }
 
   async rebuild(name: string): Promise<void> {
+    await this.loadConfig(name);
     this.assertPostgres();
     const cfg = this.requireConfig(name);
     if (!cfg.contentTable) {
@@ -765,7 +776,8 @@ export class PostgresFTSEngine implements SearchEngine {
 
   private compileFilters(filters: SearchFilter[], bindings: any[], counter: { val: number }): string {
     if (filters.length === 0) return "";
-    return this.joinFilters(filters, bindings, counter);
+    // Parenthesized so an OR among the filters cannot escape the text match it is ANDed with.
+    return `(${this.joinFilters(filters, bindings, counter)})`;
   }
 
   private joinFilters(filters: SearchFilter[], bindings: any[], counter: { val: number }): string {

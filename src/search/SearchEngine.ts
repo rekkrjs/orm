@@ -50,17 +50,6 @@ export interface SearchSort {
   direction: "asc" | "desc";
 }
 
-export interface SearchGeoSort {
-  lat: number;
-  lng: number;
-  direction?: "asc" | "desc";
-}
-
-export interface SearchHybrid {
-  semanticRatio?: number;
-  embedder?: string;
-}
-
 export interface SearchHighlight {
   fields: string[];
   preTag?: string;
@@ -97,12 +86,6 @@ export interface SearchQuery {
   rawQuery?: boolean;
   /** Per-column bm25 weights, applied in the order columns appear in the index. */
   bm25Weights?: number[];
-  /** Vector search — embedding query vector. */
-  vector?: number[];
-  /** Hybrid search ratio + embedder name (Meilisearch). */
-  hybrid?: SearchHybrid;
-  /** Geo sort — emits `_geoPoint(lat,lng):dir` (Meilisearch). */
-  geoSort?: SearchGeoSort;
 }
 
 export interface SearchMultiResult {
@@ -115,13 +98,6 @@ export interface SearchMultiResult {
 export interface SearchHealth {
   status: string;
   details?: unknown;
-}
-
-export interface SearchTaskStatus {
-  uid: number;
-  status: "enqueued" | "processing" | "succeeded" | "failed" | "canceled" | string;
-  type?: string;
-  error?: { message: string; code?: string };
 }
 
 export type SearchMatchesPositionSupport = "native" | "approximate" | false;
@@ -139,9 +115,6 @@ export interface SearchCapabilities {
   minScore: boolean;
   searchOn: boolean;
   rawQuery: boolean;
-  typoTolerance: boolean;
-  vector: boolean;
-  hybrid: boolean;
 }
 
 export type SearchCapability = keyof SearchCapabilities;
@@ -160,8 +133,6 @@ export interface SearchEngine {
   multiSearch?(queries: SearchQuery[]): Promise<SearchMultiResult[]>;
   /** Returns true if the named index already exists in the engine. */
   indexExists?(name: string): Promise<boolean>;
-  /** Wait for an engine-side task to terminate (Meilisearch). */
-  waitForTask?(uid: number, options?: { timeoutMs?: number; pollMs?: number }): Promise<SearchTaskStatus>;
-  /** Atomically swap two indexes (Meilisearch). */
+  /** Atomically swap two indexes. Used by `search:reindex`. */
   swapIndexes?(a: string, b: string): Promise<void>;
 }

@@ -5,7 +5,6 @@ import { Connection } from "../connection/Connection.js";
 import type { ConnectionConfig } from "../types/index.js";
 import type { SearchCapabilities, SearchCapability, SearchEngine, SearchMultiResult, SearchableRecord } from "./SearchEngine.js";
 import type { SearchBuilder } from "./SearchBuilder.js";
-import { MeilisearchEngine } from "./engines/MeilisearchEngine.js";
 import { PostgresFTSEngine } from "./engines/PostgresFTSEngine.js";
 import { SqliteFTS5Engine } from "./engines/SqliteFTS5Engine.js";
 import { attachSearchObserver, detachSearchObservers } from "./SearchObserver.js";
@@ -25,15 +24,12 @@ export interface SearchBatchConfig {
 }
 
 export type SearchEngineName =
-  | "meilisearch"
-  | "meili"
   | "pg"
   | "postgres"
   | "postgres-fts"
   | "sqlite"
   | "sqlite-fts5";
 
-type MeilisearchEngineName = "meilisearch" | "meili";
 type PostgresSearchEngineName = "pg" | "postgres" | "postgres-fts";
 type SqliteSearchEngineName = "sqlite" | "sqlite-fts5";
 
@@ -68,13 +64,6 @@ interface BaseSearchConfig {
 }
 
 export type SearchConfig =
-  | (BaseSearchConfig & {
-    engine: MeilisearchEngineName;
-    /** Meilisearch host. Falls back to MEILISEARCH_HOST / MEILI_HOST. */
-    host?: string;
-    /** Meilisearch API key. Falls back to MEILISEARCH_API_KEY / MEILI_KEY / MEILI_MASTER_KEY. */
-    apiKey?: string;
-  })
   | (BaseSearchConfig & {
     engine: PostgresSearchEngineName | SqliteSearchEngineName;
     /** Dedicated DB connection for the built-in PostgreSQL/SQLite aliases. */
@@ -186,17 +175,10 @@ const defaultCapabilities: SearchCapabilities = {
   minScore: false,
   searchOn: false,
   rawQuery: false,
-  typoTolerance: false,
-  vector: false,
-  hybrid: false,
 };
 
 function engineCapabilities(engine: SearchEngine): SearchCapabilities {
   return engine.capabilities ? engine.capabilities() : { ...defaultCapabilities };
-}
-
-function env(name: string): string | undefined {
-  return typeof process !== "undefined" ? process.env?.[name] : undefined;
 }
 
 function resolveConnection(connection: Connection | ConnectionConfig | undefined): Connection | undefined {
@@ -207,45 +189,26 @@ function resolveConnection(connection: Connection | ConnectionConfig | undefined
 export function resolveSearchEngine(config: SearchConfig): SearchEngine {
   const { engine } = config;
   if (typeof engine !== "string") {
-    if (
-      ("connection" in config && config.connection) ||
-      ("host" in config && config.host) ||
-      ("apiKey" in config && config.apiKey)
-    ) {
-      throw new Error("Search.configure: `connection`, `host`, and `apiKey` are only supported with built-in engine aliases. Pass options to the custom engine constructor instead.");
+    if ("connection" in config && config.connection) {
+      throw new Error("Search.configure: `connection` is only supported with built-in engine aliases. Pass options to the custom engine constructor instead.");
     }
     return engine;
   }
 
   switch (engine) {
-    case "meilisearch":
-    case "meili":
-      if ("connection" in config && config.connection) {
-        throw new Error("Search.configure: `connection` is not supported for the Meilisearch engine alias.");
-      }
-      return new MeilisearchEngine({
-        host: config.host ?? env("MEILISEARCH_HOST") ?? env("MEILI_HOST") ?? "http://127.0.0.1:7700",
-        apiKey: config.apiKey ?? env("MEILISEARCH_API_KEY") ?? env("MEILI_KEY") ?? env("MEILI_MASTER_KEY"),
-      });
     case "pg":
     case "postgres":
     case "postgres-fts":
-      if (("host" in config && config.host) || ("apiKey" in config && config.apiKey)) {
-        throw new Error("Search.configure: `host` and `apiKey` are only supported for the Meilisearch engine alias.");
-      }
       return config.connection
         ? new PostgresFTSEngine({ connection: resolveConnection(config.connection) })
         : new PostgresFTSEngine({ shared: true });
     case "sqlite":
     case "sqlite-fts5":
-      if (("host" in config && config.host) || ("apiKey" in config && config.apiKey)) {
-        throw new Error("Search.configure: `host` and `apiKey` are only supported for the Meilisearch engine alias.");
-      }
       return config.connection
         ? new SqliteFTS5Engine({ connection: resolveConnection(config.connection) })
         : new SqliteFTS5Engine({ shared: true });
     default:
-      throw new Error(`Unknown search engine "${engine}". Expected one of: meilisearch, pg, sqlite.`);
+      throw new Error(`Unknown search engine "${engine}". Expected one of: pg, sqlite.`);
   }
 }
 

@@ -14,6 +14,7 @@ import type {
 } from "../SearchEngine.js";
 import { finiteSearchNumber, nonNegativeSearchInteger, validSearchOperator } from "../sqlSafety.js";
 import { computeMatchesPosition } from "../matchPositions.js";
+import { loadModelFtsConfig, modelFtsConfig } from "../Searchable.js";
 
 /** Type-safe helper for defining an FTS5 schema from a model's attribute interface. */
 export function defineFtsConfig<Attrs>(
@@ -63,8 +64,10 @@ export interface SqliteFTS5EngineOptions {
    * `contentTable` in the index config.
    */
   useTriggers?: boolean;
-  /** Per-index FTS5 schema. Set before `createIndex(name)` runs. */
+  /** Per-index FTS5 schema. Indexes not listed here use the `fts` of the model whose `searchableAs()` matches. */
   indexes?: Record<string, SqliteFTS5IndexConfig>;
+  /** Prefix for the FTS5 tables, so they never share a name with the source table (default: '_fts_'). */
+  prefix?: string;
   /** Run `PRAGMA journal_mode=WAL` on first connection use. */
   walMode?: boolean;
   /** Override journal mode (`WAL`, `MEMORY`, `DELETE`, etc.). Wins over `walMode`. */
@@ -77,6 +80,7 @@ export class SqliteFTS5Engine implements SearchEngine {
   private readonly explicitConnection?: Connection;
   private readonly shared: boolean;
   private readonly journalModeTarget?: string;
+  private readonly prefix: string;
   private journalApplied = false;
 
   constructor(options: SqliteFTS5EngineOptions = {}) {
@@ -91,6 +95,7 @@ export class SqliteFTS5Engine implements SearchEngine {
     }
     this.shared = options.shared === true;
     this.useTriggers = options.useTriggers === true;
+    this.prefix = options.prefix ?? "_fts_";
     const journalMode = options.journalMode ?? (options.walMode ? "WAL" : undefined);
     if (journalMode) {
       const normalized = journalMode.toUpperCase();
@@ -117,9 +122,6 @@ export class SqliteFTS5Engine implements SearchEngine {
       minScore: true,
       searchOn: true,
       rawQuery: true,
-      typoTolerance: false,
-      vector: false,
-      hybrid: false,
     };
   }
 
@@ -152,9 +154,17 @@ export class SqliteFTS5Engine implements SearchEngine {
     }
   }
 
+  private async loadConfig(name: string): Promise<void> {
+    if (!this.indexConfigs.has(name)) await loadModelFtsConfig(name);
+  }
+
+  private config(name: string): SqliteFTS5IndexConfig | undefined {
+    return this.indexConfigs.get(name) ?? modelFtsConfig(name) as SqliteFTS5IndexConfig | undefined;
+  }
+
   private requireConfig(name: string): SqliteFTS5IndexConfig {
-    const cfg = this.indexConfigs.get(name);
-    if (!cfg) throw new Error(`SqliteFTS5Engine: no schema configured for index "${name}". Call configureIndex() or pass options.indexes.`);
+    const cfg = this.config(name);
+    if (!cfg) throw new Error(`SqliteFTS5Engine: no schema configured for index "${name}". Declare \`fts\` on the model, or call configureIndex().`);
     return cfg;
   }
 
@@ -164,6 +174,10 @@ export class SqliteFTS5Engine implements SearchEngine {
 
   private quoteIdent(name: string): string {
     return `"${name.replace(/"/g, '""')}"`;
+  }
+
+  private table(name: string): string {
+    return this.quoteIdent(this.prefix + name);
   }
 
   async update(records: SearchableRecord[]): Promise<void> {
@@ -177,6 +191,7 @@ export class SqliteFTS5Engine implements SearchEngine {
       byIndex.set(r.index, bucket);
     }
     for (const [index, group] of byIndex) {
+      await this.loadConfig(index);
       const cfg = this.requireConfig(index);
       const cols = this.allColumns(cfg);
       const colList = ["rowid", ...cols].map((c) => this.quoteIdent(c)).join(", ");
@@ -185,7 +200,7 @@ export class SqliteFTS5Engine implements SearchEngine {
         const row = [r.id, ...cols.map((c) => (r.data as any)[c] ?? null)];
         // INSERT OR REPLACE on rowid upserts the document.
         await conn.run(
-          `INSERT OR REPLACE INTO ${this.quoteIdent(index)} (${colList}) VALUES ${placeholders}`,
+          `INSERT OR REPLACE INTO ${this.table(index)} (${colList}) VALUES ${placeholders}`,
           row,
         );
       }
@@ -205,13 +220,14 @@ export class SqliteFTS5Engine implements SearchEngine {
     for (const [index, ids] of byIndex) {
       const placeholders = ids.map(() => "?").join(", ");
       await conn.run(
-        `DELETE FROM ${this.quoteIdent(index)} WHERE rowid IN (${placeholders})`,
+        `DELETE FROM ${this.table(index)} WHERE rowid IN (${placeholders})`,
         ids,
       );
     }
   }
 
   async search(query: SearchQuery): Promise<SearchHit[]> {
+    await this.loadConfig(query.index);
     this.assertSqlite();
     const { sql, bindings } = this.buildSelect(query, query.limit, query.offset);
     const rows = (await this.connection().query(sql, bindings)) as any[];
@@ -219,6 +235,7 @@ export class SqliteFTS5Engine implements SearchEngine {
   }
 
   async paginate(query: SearchQuery, perPage: number, page: number): Promise<SearchPage> {
+    await this.loadConfig(query.index);
     this.assertSqlite();
     const offset = (Math.max(1, page) - 1) * perPage;
     const { sql, bindings } = this.buildSelect(query, perPage, offset);
@@ -239,10 +256,11 @@ export class SqliteFTS5Engine implements SearchEngine {
 
   async flush(index: string): Promise<void> {
     this.assertSqlite();
-    await this.connection().run(`DELETE FROM ${this.quoteIdent(index)}`);
+    await this.connection().run(`DELETE FROM ${this.table(index)}`);
   }
 
   async createIndex(name: string, options: Record<string, unknown> = {}): Promise<void> {
+    await this.loadConfig(name);
     this.assertSqlite();
     const cfg = this.requireConfig(name);
     const conn = this.connection();
@@ -260,7 +278,7 @@ export class SqliteFTS5Engine implements SearchEngine {
     opts.push(...contentClause);
 
     await conn.run(
-      `CREATE VIRTUAL TABLE IF NOT EXISTS ${this.quoteIdent(name)} USING fts5(${opts.join(", ")})`,
+      `CREATE VIRTUAL TABLE IF NOT EXISTS ${this.table(name)} USING fts5(${opts.join(", ")})`,
     );
 
     if (this.useTriggers) {
@@ -275,7 +293,7 @@ export class SqliteFTS5Engine implements SearchEngine {
     this.assertSqlite();
     const conn = this.connection();
     if (this.useTriggers) await this.dropTriggers(name);
-    await conn.run(`DROP TABLE IF EXISTS ${this.quoteIdent(name)}`);
+    await conn.run(`DROP TABLE IF EXISTS ${this.table(name)}`);
   }
 
   async indexExists(name: string): Promise<boolean> {
@@ -285,7 +303,7 @@ export class SqliteFTS5Engine implements SearchEngine {
     // SQL fragment so a regular source table sharing the name doesn't match.
     const rows = (await this.connection().query(
       `SELECT name FROM sqlite_master WHERE type='table' AND name = ? AND sql LIKE 'CREATE VIRTUAL TABLE%USING fts5%'`,
-      [name],
+      [this.prefix + name],
     )) as any[];
     return rows.length > 0;
   }
@@ -311,7 +329,7 @@ export class SqliteFTS5Engine implements SearchEngine {
   /** FTS5 'optimize' command — merges b-tree levels, reduces fragmentation. */
   async optimize(name: string): Promise<void> {
     this.assertSqlite();
-    const t = this.quoteIdent(name);
+    const t = this.table(name);
     await this.connection().run(`INSERT INTO ${t}(${t}) VALUES ('optimize')`);
   }
 
@@ -321,8 +339,9 @@ export class SqliteFTS5Engine implements SearchEngine {
    * mode); throws a clear error otherwise.
    */
   async rebuild(name: string): Promise<void> {
+    await this.loadConfig(name);
     this.assertSqlite();
-    const cfg = this.indexConfigs.get(name);
+    const cfg = this.config(name);
     if (!cfg) {
       throw new Error(
         `SqliteFTS5Engine.rebuild("${name}"): no schema registered. ` +
@@ -336,20 +355,20 @@ export class SqliteFTS5Engine implements SearchEngine {
         `fts config, drop+createIndex, then rebuild. Use search:reimport for non-external-content indexes.`,
       );
     }
-    const t = this.quoteIdent(name);
+    const t = this.table(name);
     await this.connection().run(`INSERT INTO ${t}(${t}) VALUES ('rebuild')`);
   }
 
   /** FTS5 'integrity-check' command — throws if the index is corrupt. */
   async integrityCheck(name: string): Promise<void> {
     this.assertSqlite();
-    const t = this.quoteIdent(name);
+    const t = this.table(name);
     await this.connection().run(`INSERT INTO ${t}(${t}) VALUES ('integrity-check')`);
   }
 
   /** Returns true if a config has been registered for the index. */
   hasConfig(name: string): boolean {
-    return this.indexConfigs.has(name);
+    return this.config(name) !== undefined;
   }
 
   /**
@@ -393,7 +412,7 @@ export class SqliteFTS5Engine implements SearchEngine {
     const counts: Record<string, number> = {};
     for (const name of this.indexConfigs.keys()) {
       try {
-        const rows = (await conn.query(`SELECT COUNT(*) AS c FROM ${this.quoteIdent(name)}`)) as any[];
+        const rows = (await conn.query(`SELECT COUNT(*) AS c FROM ${this.table(name)}`)) as any[];
         counts[name] = Number(rows[0]?.c ?? 0);
       } catch {
         counts[name] = -1;
@@ -414,10 +433,10 @@ export class SqliteFTS5Engine implements SearchEngine {
     const oldList = cols.map((c) => `old.${this.quoteIdent(c)}`).join(", ");
     const rowid = cfg.contentRowid ?? "id";
     const src = this.quoteIdent(cfg.contentTable);
-    const fts = this.quoteIdent(name);
-    const ai = this.quoteIdent(`${name}_ai`);
-    const ad = this.quoteIdent(`${name}_ad`);
-    const au = this.quoteIdent(`${name}_au`);
+    const fts = this.table(name);
+    const ai = this.table(`${name}_ai`);
+    const ad = this.table(`${name}_ad`);
+    const au = this.table(`${name}_au`);
 
     const where = cfg.triggerWhere ?? {};
     const whenIns = where.insert ? ` WHEN ${where.insert}` : "";
@@ -439,12 +458,12 @@ export class SqliteFTS5Engine implements SearchEngine {
   private async dropTriggers(name: string): Promise<void> {
     const conn = this.connection();
     for (const suffix of ["ai", "ad", "au"]) {
-      await conn.run(`DROP TRIGGER IF EXISTS ${this.quoteIdent(`${name}_${suffix}`)}`);
+      await conn.run(`DROP TRIGGER IF EXISTS ${this.table(`${name}_${suffix}`)}`);
     }
   }
 
   private bm25Expr(query: SearchQuery): string {
-    const t = this.quoteIdent(query.index);
+    const t = this.table(query.index);
     if (query.bm25Weights && query.bm25Weights.length > 0) {
       // Number("abc") is NaN and interpolates straight into the SQL text.
       const args = query.bm25Weights.map((w) => finiteSearchNumber(Number(w), "bm25 weight")).join(", ");
@@ -457,7 +476,7 @@ export class SqliteFTS5Engine implements SearchEngine {
     const cfg = this.requireConfig(query.index);
     const cols = this.allColumns(cfg);
     const ftsCols = cfg.columns;
-    const t = this.quoteIdent(query.index);
+    const t = this.table(query.index);
 
     // SELECT clause + its bindings (must come before WHERE in placeholder order).
     const selectFrags: string[] = ["rowid", ...cols.map((c) => this.quoteIdent(c))];
@@ -528,13 +547,13 @@ export class SqliteFTS5Engine implements SearchEngine {
     const where: string[] = [];
 
     if (query.query && query.query.trim().length > 0) {
-      where.push(`${this.quoteIdent(query.index)} MATCH ?`);
+      where.push(`${this.table(query.index)} MATCH ?`);
       bindings.push(this.compileMatch(query));
     }
     const filterSql = this.compileFilters(query.filters, bindings);
     if (filterSql) where.push(filterSql);
 
-    const sql = `SELECT COUNT(*) AS c FROM ${this.quoteIdent(query.index)}` +
+    const sql = `SELECT COUNT(*) AS c FROM ${this.table(query.index)}` +
       (where.length > 0 ? ` WHERE ${where.join(" AND ")}` : "");
     const rows = (await this.connection().query(sql, bindings)) as any[];
     const v = rows[0]?.c ?? rows[0]?.["COUNT(*)"] ?? 0;
@@ -547,7 +566,7 @@ export class SqliteFTS5Engine implements SearchEngine {
       const bindings: any[] = [];
       const where: string[] = [];
       if (query.query && query.query.trim().length > 0) {
-        where.push(`${this.quoteIdent(query.index)} MATCH ?`);
+        where.push(`${this.table(query.index)} MATCH ?`);
         bindings.push(this.compileMatch(query));
       }
       const filterSql = this.compileFilters(query.filters, bindings);
@@ -557,7 +576,7 @@ export class SqliteFTS5Engine implements SearchEngine {
 
     for (const field of query.facets ?? []) {
       const { where, bindings } = baseWhere();
-      const sql = `SELECT ${this.quoteIdent(field)} AS value, COUNT(*) AS c FROM ${this.quoteIdent(query.index)}` +
+      const sql = `SELECT ${this.quoteIdent(field)} AS value, COUNT(*) AS c FROM ${this.table(query.index)}` +
         (where.length > 0 ? ` WHERE ${where.join(" AND ")}` : "") +
         ` GROUP BY ${this.quoteIdent(field)}`;
       const rows = (await this.connection().query(sql, bindings)) as any[];
@@ -589,7 +608,7 @@ export class SqliteFTS5Engine implements SearchEngine {
       }
       const { where, bindings } = baseWhere();
       const caseExpr = `CASE ${caseFrags.join(" ")} ELSE NULL END`;
-      const sql = `SELECT ${caseExpr} AS bucket, COUNT(*) AS c FROM ${this.quoteIdent(query.index)}` +
+      const sql = `SELECT ${caseExpr} AS bucket, COUNT(*) AS c FROM ${this.table(query.index)}` +
         (where.length > 0 ? ` WHERE ${where.join(" AND ")}` : "") +
         ` GROUP BY bucket`;
       const rows = (await this.connection().query(sql, bindings)) as any[];
@@ -631,7 +650,8 @@ export class SqliteFTS5Engine implements SearchEngine {
 
   private compileFilters(filters: SearchFilter[], bindings: any[]): string {
     if (filters.length === 0) return "";
-    return this.joinFilters(filters, bindings);
+    // Parenthesized so an OR among the filters cannot escape the MATCH it is ANDed with.
+    return `(${this.joinFilters(filters, bindings)})`;
   }
 
   private joinFilters(filters: SearchFilter[], bindings: any[]): string {

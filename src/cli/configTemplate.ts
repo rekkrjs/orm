@@ -67,10 +67,7 @@ export function buildOrmConfigTemplate(opts: {
           "    tenantScope: (base, tenantId) => tenantId ? `${base}_t_${tenantId}` : base,",
         ]
         : []),
-      "    // For Meilisearch, switch engine and set host/apiKey:",
-      "    // engine: \"meilisearch\",",
-      "    // host: process.env.MEILISEARCH_HOST || \"http://127.0.0.1:7700\",",
-      "    // apiKey: process.env.MEILISEARCH_API_KEY,",
+      "    // On PostgreSQL, use engine: \"pg\".",
       "  },",
     );
   }

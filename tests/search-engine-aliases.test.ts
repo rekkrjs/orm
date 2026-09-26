@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, test } from "./harness.js";
 import { Connection } from "../src/index.js";
 import {
-  MeilisearchEngine,
   PostgresFTSEngine,
   Search,
   type SearchEngine,
@@ -38,11 +37,6 @@ describe("Search.configure engine aliases", () => {
     expect(Search.engine()).toBeInstanceOf(PostgresFTSEngine);
     expect(Search.capabilities().matchesPosition).toBe("approximate");
     expect(Search.supports("nativeMultiSearch")).toBe(false);
-
-    Search.configure({ engine: "meilisearch" });
-    expect(Search.engine()).toBeInstanceOf(MeilisearchEngine);
-    expect(Search.capabilities().matchesPosition).toBe("native");
-    expect(Search.supports("indexSettings")).toBe(true);
   });
 
   test("keeps custom engine instances unchanged", () => {
@@ -65,40 +59,6 @@ describe("Search.configure engine aliases", () => {
     expect(health?.status).toBe("available");
   });
 
-  test("passes host and apiKey to the meilisearch alias", async () => {
-    const calls: Array<{ url: string; authorization?: string }> = [];
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      calls.push({
-        url: String(input),
-        authorization: init?.headers && typeof init.headers === "object" && !Array.isArray(init.headers)
-          ? (init.headers as Record<string, string>).authorization
-          : undefined,
-      });
-      return new Response(JSON.stringify({ hits: [] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
-    }) as typeof fetch;
-
-    try {
-      Search.configure({
-        engine: "meilisearch",
-        host: "http://search.test",
-        apiKey: "secret",
-      });
-
-      await Search.engine().search({ index: "posts", query: "rust", filters: [], sorts: [] });
-
-      expect(calls[0]).toEqual({
-        url: "http://search.test/indexes/posts/search",
-        authorization: "Bearer secret",
-      });
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
-
   test("accepts a Connection instance for connection-backed engine aliases", async () => {
     const connection = new Connection({ url: "sqlite://:memory:" });
     try {
@@ -113,35 +73,21 @@ describe("Search.configure engine aliases", () => {
     }
   });
 
-  // The config type already rejects each of these combinations; the @ts-expect-error
-  // directives assert that, and the matchers assert the runtime guard behind it.
-  test("rejects incompatible alias options", () => {
-    expect(() => Search.configure({
-      engine: "meilisearch",
-      // @ts-expect-error connection is not a Meilisearch option.
-      connection: { url: "sqlite://:memory:" },
-    })).toThrow("not supported for the Meilisearch");
-
-    expect(() => Search.configure({
-      engine: "sqlite",
-      // @ts-expect-error host is a Meilisearch-only option.
-      host: "http://search.test",
-    })).toThrow("only supported for the Meilisearch");
-
-    expect(() => Search.configure({
-      engine: "pg",
-      // @ts-expect-error apiKey is a Meilisearch-only option.
-      apiKey: "secret",
-    })).toThrow("only supported for the Meilisearch");
-
+  // The config type already rejects this; the @ts-expect-error directive
+  // asserts that, and the matcher asserts the runtime guard behind it.
+  test("rejects a connection passed next to a custom engine instance", () => {
     expect(() => Search.configure({
       engine: new CustomEngine(),
-      // @ts-expect-error host is only supported with the built-in engine aliases.
-      host: "http://search.test",
+      // @ts-expect-error connection is only supported with the built-in engine aliases.
+      connection: { url: "sqlite://:memory:" },
     })).toThrow("only supported with built-in engine aliases");
   });
 
   test("rejects unknown engine names at runtime", () => {
-    expect(() => Search.configure({ engine: "elastic" as any })).toThrow("Unknown search engine");
+    expect(() => Search.configure({ engine: "elastic" as any })).toThrow('Unknown search engine "elastic". Expected one of: pg, sqlite.');
+    // The Meilisearch engine was removed; its old aliases must not resolve to anything.
+    expect(() => Search.configure({ engine: "meilisearch" as any })).toThrow('Unknown search engine "meilisearch"');
+    expect(() => Search.configure({ engine: "meili" as any })).toThrow('Unknown search engine "meili"');
+    expect(Search.config()).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeEach } from "./harness.js";
 import { Model, Schema } from "../src/index.js";
-import { Search, MeilisearchEngine } from "../src/search/index.js";
+import { Search } from "../src/search/index.js";
 import type {
   FacetDistribution,
   SearchEngine,
@@ -183,100 +183,5 @@ describe("SearchBuilder extended API", () => {
     expect(calls).toBe(2);
     expect(results).toHaveLength(2);
     expect(results[0].hits[0].data).toEqual({ from: "posts_ext" });
-  });
-});
-
-describe("MeilisearchEngine — rich hit fields + new options", () => {
-  const okJson = (body: unknown) => new Response(JSON.stringify(body), {
-    status: 200, headers: { "content-type": "application/json" },
-  });
-
-  test("buildSearchBody maps all new query fields", async () => {
-    const captured: any[] = [];
-    const fn = async (url: any, init?: any) => {
-      captured.push({ url: String(url), init });
-      return okJson({ hits: [], totalHits: 0, hitsPerPage: 10, page: 1 });
-    };
-    const engine = new MeilisearchEngine({ host: "http://meili", fetch: fn as any });
-    await engine.paginate({
-      index: "posts",
-      query: "rust",
-      filters: [],
-      sorts: [{ field: "rank", direction: "desc" }],
-      facets: ["status"],
-      minScore: 0.5,
-      attributesToSearchOn: ["title"],
-      highlight: { fields: ["title", "body"], preTag: "<b>", postTag: "</b>" },
-      crop: [{ field: "body", length: 40 }, { field: "title" }],
-      showRankingScore: true,
-    }, 10, 1);
-
-    const body = JSON.parse(String(captured[0].init.body));
-    expect(body).toMatchObject({
-      q: "rust",
-      sort: ["rank:desc"],
-      facets: ["status"],
-      rankingScoreThreshold: 0.5,
-      attributesToSearchOn: ["title"],
-      attributesToHighlight: ["title", "body"],
-      highlightPreTag: "<b>",
-      highlightPostTag: "</b>",
-      attributesToCrop: ["body:40", "title"],
-      showRankingScore: true,
-      hitsPerPage: 10,
-      page: 1,
-    });
-  });
-
-  test("toHits parses _formatted, _matchesPosition, _rankingScore", async () => {
-    const fn = async () => okJson({
-      hits: [{
-        id: 7,
-        title: "Hello world",
-        _formatted: { title: "<b>Hello</b> world" },
-        _matchesPosition: { title: [{ start: 0, length: 5 }] },
-        _rankingScore: 0.87,
-      }],
-    });
-    const engine = new MeilisearchEngine({ host: "http://meili", fetch: fn as any });
-    const hits = await engine.search({ index: "posts", query: "hello", filters: [], sorts: [] });
-    expect(hits).toHaveLength(1);
-    expect(hits[0].score).toBe(0.87);
-    expect(hits[0].formatted).toEqual({ title: "<b>Hello</b> world" });
-    expect(hits[0].matchesPosition).toEqual({ title: [{ start: 0, length: 5 }] });
-  });
-
-  test("multiSearch posts /multi-search and maps results", async () => {
-    const captured: any[] = [];
-    const fn = async (url: any, init?: any) => {
-      captured.push({ url: String(url), init });
-      return okJson({
-        results: [
-          { indexUid: "posts", hits: [{ id: 1, title: "p" }], totalHits: 1, facetDistribution: { status: { published: 1 } } },
-          { indexUid: "articles", hits: [{ id: 2, body: "a" }], totalHits: 1 },
-        ],
-      });
-    };
-    const engine = new MeilisearchEngine({ host: "http://meili", fetch: fn as any });
-    const results = await engine.multiSearch([
-      { index: "posts", query: "rust", filters: [], sorts: [] },
-      { index: "articles", query: "rust", filters: [], sorts: [] },
-    ]);
-    expect(captured[0].url).toBe("http://meili/multi-search");
-    expect(results).toHaveLength(2);
-    expect(results[0].index).toBe("posts");
-    expect(results[0].facetDistribution).toEqual({ status: { published: 1 } });
-    expect(results[1].hits[0].id).toBe(2);
-  });
-
-  test("paginate parses facetDistribution into SearchPage", async () => {
-    const fn = async () => okJson({
-      hits: [], totalHits: 12, hitsPerPage: 5, page: 2,
-      facetDistribution: { status: { published: 10, draft: 2 } },
-    });
-    const engine = new MeilisearchEngine({ host: "http://meili", fetch: fn as any });
-    const page = await engine.paginate({ index: "posts", query: "", filters: [], sorts: [], facets: ["status"] }, 5, 2);
-    expect(page.facetDistribution).toEqual({ status: { published: 10, draft: 2 } });
-    expect(page.total).toBe(12);
   });
 });

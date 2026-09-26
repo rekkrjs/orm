@@ -5,7 +5,7 @@ import { Model, Schema } from "../src/index.js";
 import { Search } from "../src/search/index.js";
 import type { SearchEngine, SearchableRecord } from "../src/search/index.js";
 import { importModel } from "../src/search/commands/importHelper.js";
-import { resolveSearchableModel } from "../src/search/commands/resolveSearchableModel.js";
+import { loadSearchableModels, resolveSearchableModel } from "../src/search/commands/resolveSearchableModel.js";
 import { setupTestDb } from "./helpers.js";
 
 class TrackingEngine implements SearchEngine {
@@ -90,6 +90,41 @@ describe("Search command helpers", () => {
       const config = { modelsPath: relative(process.cwd(), dir) } as any;
       expect(await resolveSearchableModel(config, "Student")).toBeDefined();
       expect(await resolveSearchableModel(config, "_Student")).toBeDefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("Searchable model discovery", () => {
+  // search:status, search:verify and search:sync-index-settings walk this list,
+  // so a class reachable under several export names must appear once.
+  test("lists each searchable class once, whatever names it is exported under", async () => {
+    const dir = join(process.cwd(), "tests", `temp_search_discovery_${Date.now()}`);
+    await mkdir(dir, { recursive: true });
+    const orm = [`import { Model } from "../../src/index.js";`, `import { Search } from "../../src/search/index.js";`];
+    await writeFile(join(dir, "Post.ts"), [
+      ...orm,
+      `export class PostRecord extends Model { static override table = "posts"; }`,
+      `export const Post = Search.register(PostRecord, { index: "posts_v2" });`,
+      `export default Post;`,
+    ].join("\n"), "utf-8");
+    await writeFile(join(dir, "Tag.ts"), [
+      ...orm,
+      `export class Tag extends Model {}`,
+      `Search.register(Tag, { index: "tags" });`,
+      `export class Plain extends Model {}`,
+    ].join("\n"), "utf-8");
+
+    try {
+      const config = { modelsPath: relative(process.cwd(), dir) } as any;
+      const models = await loadSearchableModels(config);
+      expect(models.map((model) => model.searchableAs()).sort()).toEqual(["posts_v2", "tags"]);
+
+      const post = await resolveSearchableModel(config, "Post");
+      expect(post?.searchableAs()).toBe("posts_v2");
+      expect(await resolveSearchableModel(config, "PostRecord")).toBe(post);
+      expect(await resolveSearchableModel(config, "Plain")).toBeUndefined();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

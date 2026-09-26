@@ -1,46 +1,7 @@
 import { describe, expect, test, beforeEach } from "./harness.js";
 import { Model, Schema, ConnectionManager, TenantContext } from "../src/index.js";
-import { Search, SqliteFTS5Engine, MeilisearchEngine } from "../src/search/index.js";
+import { Search, SqliteFTS5Engine } from "../src/search/index.js";
 import { setupTestDb } from "./helpers.js";
-
-// ─── Meilisearch.indexExists() ────────────────────────────────────────────────
-
-describe("MeilisearchEngine.indexExists()", () => {
-  function mockFetch(handler: (url: string, init?: any) => { status: number; body?: unknown }) {
-    return async (url: any, init?: any) => {
-      const out = handler(String(url), init);
-      const body = out.body === undefined ? "" : JSON.stringify(out.body);
-      return new Response(body, {
-        status: out.status,
-        headers: { "content-type": "application/json" },
-      });
-    };
-  }
-
-  test("returns true on 200", async () => {
-    const engine = new MeilisearchEngine({
-      host: "http://meili",
-      fetch: mockFetch(() => ({ status: 200, body: { uid: "posts" } })) as any,
-    });
-    expect(await engine.indexExists("posts")).toBe(true);
-  });
-
-  test("returns false on 404", async () => {
-    const engine = new MeilisearchEngine({
-      host: "http://meili",
-      fetch: mockFetch(() => ({ status: 404, body: { message: "not found" } })) as any,
-    });
-    expect(await engine.indexExists("ghost")).toBe(false);
-  });
-
-  test("rethrows on non-404 errors", async () => {
-    const engine = new MeilisearchEngine({
-      host: "http://meili",
-      fetch: mockFetch(() => ({ status: 500, body: { message: "boom" } })) as any,
-    });
-    await expect(engine.indexExists("x")).rejects.toThrow(/500/);
-  });
-});
 
 // ─── SqliteFTS5Engine.indexExists() ───────────────────────────────────────────
 
