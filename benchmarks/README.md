@@ -1,5 +1,104 @@
 # Benchmark history
 
+## Eager matching and PostgreSQL create costs
+
+```sh
+bun benchmarks/eager-match-cost.mjs
+node benchmarks/eager-match-cost.mjs
+bun benchmarks/postgres-insert-compile-cost.mjs
+node benchmarks/postgres-insert-compile-cost.mjs
+POSTGRES_TEST_URL='postgres://…/test_db' bun benchmarks/postgres-create-cost.mjs
+POSTGRES_TEST_URL='postgres://…/test_db' node benchmarks/postgres-create-cost.mjs
+```
+
+The matching probe compares grouping, parent assignment, and collection
+construction for 500 parents and 1,000 children without a database. The create
+probe inserts into a temporary PostgreSQL table and compares the full model
+path, a diagnostic path without the outer connection scope, the builder, and
+SQL written ahead of time. The SQL compilation probe needs no database. Each
+prints microseconds per operation; lower is better. Run each in three fresh
+processes and compare medians.
+
+## MySQL/Bun model JSON reads
+
+```sh
+bun run build
+MYSQL_TEST_URL='mysql://…/test_db' bun benchmarks/mysql-json-read.mjs
+# Compare another build with BENCH_ORM_SOURCE=../path/to/dist/src/index.js
+```
+
+This creates a unique table with 500 rows, boolean and JSON columns, then
+compares model `.json()` and `rawJson()` on `bun:sql`. It checks both outputs
+against the exact expected JSON before timing seven rounds of 100 reads. Schema
+creation and seeding use a separate connection from timed reads. Run at least
+three fresh processes per build, alternating builds; compare the median of
+their per-process median ops/s. The table is dropped after each process.
+
+## MySQL Date writes
+
+```sh
+MYSQL_TEST_URL='mysql://…/test_db' node benchmarks/mysql-date-write.mjs
+# Compare another build with BENCH_ORM_SOURCE=../path/to/dist/src/index.js
+```
+
+This creates a uniquely named table in the test database and times 700
+single-row `UPDATE` calls with a real `Date` binding after 20 warmups. It
+checks the row count and exact millisecond timestamp, then drops the table.
+Run at least three fresh Node processes per build; this isolates MySQL's UTC
+session write path from insert-ID retrieval and model hydration.
+
+## Database-free `Builder.json()` comparison
+
+```sh
+bun run build
+bun benchmarks/json-query-memory.mjs
+node benchmarks/json-query-memory.mjs
+# Compare another build with BENCH_ORM_SOURCE=../path/to/dist/src/index.js
+```
+
+This replaces `Connection.query` with fixed, fresh driver-shaped rows, so no
+database server participates. Three workloads serialize 500 rows and call
+`JSON.stringify`: `plain` uses the direct plan; `appended` hydrates models and
+reads a JSON cast in a getter; `appendedWithoutJsonCast` hydrates models without
+that cast. The script checks exact output before timing and reports the median
+of seven 100-call rounds. Compare at least three fresh processes per runtime.
+
+## Hydration and serialization in memory
+
+```sh
+bun run build
+bun benchmarks/hydration-memory.mjs
+node --expose-gc benchmarks/hydration-memory.mjs
+# Compare another build with BENCH_ORM_SOURCE=../path/to/dist/src/index.js
+```
+
+The script uses 500 fixed rows with boolean and JSON casts. It checks the exact
+JSON output, then measures `hydrate()`, `toJSON()` and `JSON.stringify()` in
+separate phases without a database or driver. Each result is the median of five
+rounds of 60 batches. Run each command in at least three fresh processes when
+comparing changes. `BENCH_ROWS` and `BENCH_MEMORY_ROWS` adjust the batch and
+memory sample sizes.
+
+The memory sample retains 10,000 models, then their JSON objects, and reports
+heap bytes per model after a forced GC. Node also reports heap growth before GC
+when no automatic collection occurred in that phase, plus observed GC events.
+Bun does not emit `gc` events through `node:perf_hooks`, and its pre-GC heap
+counter does not reliably update after each phase; those fields are `null`.
+Retained heap is useful for comparing revisions, but it is not the total number
+of transient bytes allocated by one operation. Compare only runs from the same
+runtime and machine.
+
+```sh
+bun benchmarks/model-serialization.mjs
+node benchmarks/model-serialization.mjs
+```
+
+This measures `toJSON()` alone on 500 fresh models, with plain casts, an
+appended accessor, a hidden field, or a visible field. It checks the exact JSON
+for all four cases, including in-place visibility changes, before timing. Run
+it in three fresh Bun and Node processes per build;
+`BENCH_ORM_SOURCE` selects another build.
+
 For the self-contained HTTP server, deterministic fixtures and two-version
 runner, see [the reproducible HTTP benchmark](http/README.md):
 `BENCH_HTTP_URL=... bun run bench:http v2.5.0 v3.1.1`.
