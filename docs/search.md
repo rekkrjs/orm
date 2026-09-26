@@ -4,6 +4,20 @@
 database, on PostgreSQL full-text search or SQLite FTS5. The index lives in the
 database you already run: there is no search service to install.
 
+**You may not need it.** Filtering needs none of this page: `where()`,
+`whereIn()` and the rest work on any model, with no configuration. Matching
+text inside a column does not need it either:
+
+```ts
+await Post.where("status", "published").whereIn("category", ["tech", "news"]).get();
+await Post.whereLike("title", "%rust%").get();
+await Post.whereFullText(["title", "body"], "rust ownership").get();
+```
+
+See [Query builder](./query-builder.md#pattern-matching). Set up search when you
+need results ranked by relevance, highlights, facets or stemming over
+large tables; the steps below are for that.
+
 ## Quick start
 
 Configure the engine that matches your database:
