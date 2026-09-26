@@ -97,7 +97,7 @@ type BaseModelInstanceKey =
   | "makeVisible" | "makeVisibleIf" | "append" | "setAppends" | "mergeAppends" | "hasAppended" | "withoutAppends" | "getAppends" | "save" | "update" | "updateQuietly"
   | "updateTimestamps" | "touch" | "increment" | "decrement" | "is" | "isNot" | "isInstanceOf"
   | "load" | "loadMissing" | "loadMorph" | "loadCount" | "loadSum" | "loadAvg" | "loadMin"
-  | "loadMax" | "delete" | "saveQuietly" | "deleteQuietly" | "restore"
+  | "loadMax" | "delete" | "saveQuietly" | "deleteQuietly" | "restore" | "restoreQuietly"
   | "forceDelete" | "forceDeleteQuietly" | "fresh" | "refresh" | "toJSON" | "json" | "toString" | "freshTimestamp"
   | "push" | "getKey" | "getKeyName" | "getAttributes" | "assertAttributeExists"
   | "setRelation" | "getRelation" | "relationLoaded" | "setRelations" | "unsetRelation" | "unsetRelations" | "hasMany" | "belongsTo" | "hasOne"

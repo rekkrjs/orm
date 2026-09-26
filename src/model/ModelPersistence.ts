@@ -794,15 +794,19 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
   }
 
   async restore(): Promise<boolean> {
-    return this.getConnection().use(() => this.restoreRecord());
+    return this.getConnection().use(() => this.restoreRecord(true));
   }
 
-  private async restoreRecord(): Promise<boolean> {
+  async restoreQuietly(): Promise<boolean> {
+    return this.getConnection().use(() => this.restoreRecord(false));
+  }
+
+  private async restoreRecord(events: boolean): Promise<boolean> {
     const constructor = this.getModelConstructor() as typeof ModelPersistence;
     if (!constructor.softDeletes) return false;
     const pk = this.getAttribute(constructor.primaryKey);
     if (!pk) return false;
-    await ObserverRegistry.dispatch("restoring", this as any);
+    if (events) await ObserverRegistry.dispatch("restoring", this as any);
 
     await this.writeDeletedAt(pk, false);
     const connection = this.getConnection();
@@ -810,7 +814,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     if (IdentityMap.current()) {
       IdentityMap.set(constructor.getQualifiedTable(connection), pk, this as any, connection);
     }
-    await ObserverRegistry.dispatch("restored", this as any);
+    if (events) await ObserverRegistry.dispatch("restored", this as any);
     return true;
   }
 

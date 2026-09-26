@@ -394,6 +394,55 @@ describe("restore() on an instance", () => {
     expect(await SoftPost.find(post.getAttribute("id"))).toBeNull();
     expect(await SoftPost.onlyTrashed().count()).toBe(1);
   });
+
+  test("restoreQuietly() restores the row without firing any observer", async () => {
+    await setupSoftPost();
+    const doomed = await SoftPost.create({ title: "Doomed" });
+    const sibling = await SoftPost.create({ title: "Sibling" });
+    await doomed.deleteQuietly();
+    await sibling.deleteQuietly();
+    const seen: string[] = [];
+    const record = (event: string) => () => { seen.push(event); };
+    ObserverRegistry.register(SoftPost, {
+      restoring: record("restoring"), restored: record("restored"),
+      saving: record("saving"), updating: record("updating"),
+      updated: record("updated"), saved: record("saved"),
+    });
+
+    expect(await doomed.restoreQuietly()).toBe(true);
+
+    expect(seen).toEqual([]);
+    expect(doomed.trashed()).toBe(false);
+    expect((await SoftPost.findOrFail(doomed.getAttribute("id"))).getAttribute("title")).toBe("Doomed");
+    expect((await SoftPost.withTrashed().findOrFail(sibling.getAttribute("id"))).trashed()).toBe(true);
+    expect(await SoftPost.onlyTrashed().count()).toBe(1);
+  });
+
+  // Unlike Eloquent, restore() is not a save(): like the soft delete, it writes
+  // deleted_at and updated_at only, so it neither persists other pending
+  // changes nor fires the save events.
+  test("restore() leaves other pending changes unsaved and fires no save events", async () => {
+    await setupSoftPost();
+    const post = await SoftPost.create({ title: "Original" });
+    await post.deleteQuietly();
+    const seen: string[] = [];
+    const record = (event: string) => () => { seen.push(event); };
+    ObserverRegistry.register(SoftPost, {
+      restoring: record("restoring"), restored: record("restored"),
+      saving: record("saving"), updating: record("updating"),
+      updated: record("updated"), saved: record("saved"),
+    });
+
+    post.setAttribute("title", "Pending");
+    expect(await post.restore()).toBe(true);
+
+    expect(seen).toEqual(["restoring", "restored"]);
+    expect(post.isDirty("title")).toBe(true);
+    expect(post.isDirty("deleted_at")).toBe(false);
+    const stored = await SoftPost.findOrFail(post.getAttribute("id"));
+    expect(stored.getAttribute("title")).toBe("Original");
+    expect(stored.getAttribute("deleted_at")).toBeNull();
+  });
 });
 
 // ─── soft delete / restore move updated_at ───────────────────────────────────

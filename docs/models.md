@@ -719,6 +719,7 @@ await user.saveQuietly();
 await user.updateQuietly({ name: "Imported name" });
 await user.deleteQuietly();
 await user.forceDeleteQuietly();
+await user.restoreQuietly();
 await User.createMany(records, { events: false });
 await User.saveMany(models, { events: false });
 model.save({ events: false });
@@ -1101,7 +1102,8 @@ class User extends Model {
 }
 
 await user.delete();         // sets deleted_at — row stays in DB
-await user.restore();        // clears deleted_at
+await user.restore();        // clears deleted_at; fires restoring / restored
+await user.restoreQuietly(); // same, without observers
 await user.forceDelete();    // permanently removes the row; fires deleting / deleted
 await user.forceDeleteQuietly(); // same, without observers
 

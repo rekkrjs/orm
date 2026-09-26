@@ -136,7 +136,7 @@ until another `save()` (including a nested save from the observer) persists them
 
 On `delete()`: `deleting` → DELETE → `deleted`. For soft deletes, the row is updated rather than removed; `deleting` and `deleted` still fire. `forceDelete()` fires them too, around the permanent DELETE.
 
-On `restore()` (soft deletes only): `restoring` → UPDATE → `restored`.
+On `restore()` (soft deletes only): `restoring` → UPDATE → `restored`. Like the soft delete, the UPDATE writes only `deleted_at` and `updated_at`: unlike Eloquent's, `restore()` is not a `save()`, so it does not fire `saving`, `updating`, `updated` or `saved`, and other pending changes stay unsaved.
 
 ## Patterns
 
@@ -196,6 +196,7 @@ Sometimes you need to write without firing events — bulk imports, data migrati
 await user.saveQuietly();
 await user.deleteQuietly();
 await user.forceDeleteQuietly();
+await user.restoreQuietly();
 
 // Per call: explicit option
 await model.save({ events: false });

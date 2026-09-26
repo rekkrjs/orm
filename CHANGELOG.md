@@ -184,7 +184,9 @@
 - `restore()` on a model instance fires the `restoring` and `restored`
   observers, as [Observers](./docs/observers.md) already promised. It fired
   neither, so a `restored` observer never ran. A `restoring` observer that
-  throws now leaves the row trashed.
+  throws now leaves the row trashed. `restoreQuietly()` restores without
+  observers. Unlike Eloquent's, `restore()` is not a `save()`: it writes only
+  `deleted_at` and `updated_at` and fires no save events.
 - A soft delete and `restore()` set `updated_at` along with `deleted_at`, as
   Eloquent does. That covers `delete()`, `deleteQuietly()` and `restore()` on
   a model, and `delete()` and `restore()` on a query, which follow the rule
