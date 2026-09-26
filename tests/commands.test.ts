@@ -11,6 +11,9 @@ import {
 } from "../src/commands/Command.js";
 import { CommandRunner } from "../src/commands/CommandRunner.js";
 import { setPromptService, type PromptService } from "../src/commands/Prompt.js";
+import { registerOrmCommands } from "../src/cli/index.js";
+import { Connection } from "../src/connection/Connection.js";
+import type { OrmConfig } from "../src/config/OrmConfig.js";
 
 // ─── SignatureParser ───────────────────────────────────────────────────────────
 
@@ -130,6 +133,35 @@ describe("Command registry", () => {
     registerCommand(V1);
     registerCommand(V2);
     expect(resolveCommand("cmd")).toBe(V2);
+  });
+});
+
+describe("built-in command registration", () => {
+  it("registers every core, queue and search command only when its feature is configured", async () => {
+    const connection = new Connection({ url: "sqlite://:memory:" });
+    const core = [
+      "db:seed", "make:command", "make:migration", "make:model", "make:policy",
+      "migrate", "migrate:fresh", "migrate:refresh", "migrate:reset", "migrate:rollback", "migrate:status",
+      "queue:install", "schema:dump", "schema:squash", "types:generate",
+    ];
+    const search = [
+      "make:searchable", "search:create-index", "search:delete-index", "search:flush",
+      "search:fts:optimize", "search:fts:rebuild", "search:import", "search:list-indexes",
+      "search:reimport", "search:reindex", "search:status", "search:sync-index-settings", "search:verify",
+    ];
+    const names = () => listCommands().map((entry) => parseSignatureName(entry.signature)).sort();
+    try {
+      clearCommands();
+      registerOrmCommands({} as OrmConfig, connection);
+      expect(names()).toEqual([...core].sort());
+
+      clearCommands();
+      registerOrmCommands({ queue: {}, search: {} } as OrmConfig, connection);
+      expect(names()).toEqual([...core, "make:job", ...search].sort());
+    } finally {
+      clearCommands();
+      await connection.close();
+    }
   });
 });
 
