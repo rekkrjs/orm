@@ -140,6 +140,9 @@
 
 ### Fixed behaviour
 
+- Clearing a `date`, `datetime` or `timestamp` value at the Unix epoch now
+  persists `null` on MySQL and PostgreSQL. Their drivers return a `Date`; the
+  dirty check previously converted `null` to the epoch and skipped the UPDATE.
 - Instance `increment()` and `decrement()` now fire `updating` before the SQL
   write and `updated` afterward, without `saving` or `saved`. An `updating`
   observer can abort by throwing. `incrementQuietly()` and

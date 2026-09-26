@@ -133,38 +133,51 @@ class ContractStamped extends PermissiveModel {
 class ContractCast extends PermissiveModel {
   declare id: number;
   declare flag: boolean;
+  declare flag_alias: boolean;
   declare count: number;
+  declare count_alias: number;
+  declare numeric: number;
   declare price: string;
   declare ratio: number;
   declare measure: number;
   declare label: string;
   declare meta: { b: number; a: number[]; s: string; n: null };
+  declare details: { source: string };
   declare tags: string[];
   declare secret: string;
   declare born_on: Date | string; // Written as the day, read as a Date.
-  declare seen_at: Date;
+  declare seen_at: Date | null;
+  declare stamped_at: Date;
   static override table = "contract_casts";
   static override timestamps = false;
   static override casts = {
-    flag: "boolean", count: "integer", price: "decimal:2", ratio: "float", measure: "double", label: "string",
-    meta: "json", tags: "array", secret: "base64", born_on: "date", seen_at: "datetime",
+    flag: "boolean", flag_alias: "bool", count: "integer", count_alias: "int", numeric: "number",
+    price: "decimal:2", ratio: "float", measure: "double", label: "string",
+    meta: "json", details: "object", tags: "array", secret: "base64",
+    born_on: "date", seen_at: "datetime", stamped_at: "timestamp",
   };
 }
 
 /** One value per built-in cast, plus two uncast columns whose driver types differ. */
 const CAST_INPUT = {
-  flag: true, count: 42, price: "1234.50", ratio: 3.14159, measure: 1234567.891,
+  flag: true, flag_alias: false, count: 42, count_alias: -7, numeric: 1.25,
+  price: "1234.50", ratio: 3.14159, measure: 1234567.891,
   label: "ñandúÄÖüß€", // Ten characters: the column's limit.
-  meta: { b: 1, a: [1, 2], s: "ñ€😀", n: null }, tags: ["x", "y"], secret: "héllo ✓",
+  meta: { b: 1, a: [1, 2], s: "ñ€😀", n: null }, details: { source: "revisión" },
+  tags: ["x", "y"], secret: "héllo ✓",
   born_on: "2024-01-15", seen_at: new Date(Date.UTC(2024, 0, 15, 12, 0, 0, 123)),
+  stamped_at: new Date(Date.UTC(2024, 0, 16, 3, 4, 5, 678)),
   owner_id: 5, payload: new Uint8Array([0, 1, 127, 128, 255]),
 };
 
 /** What each cast promises in JSON (docs/models.md, "Built-in casts"). */
 const CAST_JSON = {
-  flag: true, count: 42, price: "1234.50", ratio: 3.14159, measure: 1234567.891, label: "ñandúÄÖüß€",
-  meta: { b: 1, a: [1, 2], s: "ñ€😀", n: null }, tags: ["x", "y"], secret: "héllo ✓",
+  flag: true, flag_alias: false, count: 42, count_alias: -7, numeric: 1.25,
+  price: "1234.50", ratio: 3.14159, measure: 1234567.891, label: "ñandúÄÖüß€",
+  meta: { b: 1, a: [1, 2], s: "ñ€😀", n: null }, details: { source: "revisión" },
+  tags: ["x", "y"], secret: "héllo ✓",
   born_on: "2024-01-15", seen_at: "2024-01-15T12:00:00.123Z",
+  stamped_at: "2024-01-16T03:04:05.678Z",
   owner_id: 5, payload: { type: "Buffer", data: [0, 1, 127, 128, 255] },
 };
 
@@ -948,16 +961,21 @@ export default class CreateContractMigrated extends Migration {
       await Schema.create("contract_casts", (table) => {
         table.increments("id");
         table.boolean("flag");
+        table.boolean("flag_alias");
         table.integer("count");
+        table.integer("count_alias");
+        table.double("numeric");
         table.decimal("price", 10, 2);
         table.float("ratio");
         table.double("measure");
         table.string("label", 10);
         table.json("meta");
+        table.json("details");
         table.jsonb("tags");
         table.text("secret");
         table.date("born_on");
-        table.dateTime("seen_at", 3);
+        table.dateTime("seen_at", 3).nullable();
+        table.timestamp("stamped_at", 3);
         table.bigInteger("owner_id");
         table.binary("payload");
       }, connection);
@@ -970,9 +988,12 @@ export default class CreateContractMigrated extends Migration {
       // An uncast BIGINT arrives from PostgreSQL as text, as its drivers hand it over.
       const stored = { id: created.id, ...CAST_JSON, owner_id: driver === "postgres" ? "5" : 5 };
       expect(found.getDirty()).toEqual({});
-      expect([found.flag, found.count, found.price, found.ratio, found.measure, found.label, found.meta, found.tags, found.secret])
-        .toEqual([true, 42, "1234.50", 3.14159, 1234567.891, "ñandúÄÖüß€", CAST_INPUT.meta, ["x", "y"], "héllo ✓"]);
-      expect([found.born_on, found.seen_at]).toEqual([new Date(Date.UTC(2024, 0, 15)), CAST_INPUT.seen_at]);
+      expect([found.flag, found.flag_alias, found.count, found.count_alias, found.numeric,
+        found.price, found.ratio, found.measure, found.label, found.meta, found.details, found.tags, found.secret])
+        .toEqual([true, false, 42, -7, 1.25, "1234.50", 3.14159, 1234567.891,
+          "ñandúÄÖüß€", CAST_INPUT.meta, CAST_INPUT.details, ["x", "y"], "héllo ✓"]);
+      expect([found.born_on, found.seen_at, found.stamped_at])
+        .toEqual([new Date(Date.UTC(2024, 0, 15)), CAST_INPUT.seen_at, CAST_INPUT.stamped_at]);
       // Reading a json cast caches a mutable object; reading alone is no change.
       expect(found.getDirty()).toEqual({});
       expect(asJson(found.toJSON())).toEqual(stored);
@@ -1003,6 +1024,15 @@ export default class CreateContractMigrated extends Migration {
       }
       const saved = await ContractCast.findOrFail(created.id);
       expect(asJson(saved.toJSON())).toEqual({ ...stored, flag: false, meta: { ...CAST_JSON.meta, b: 2 }, tags: ["x", "y", "z"] });
+
+      // Native Date rows must not mistake null for the Unix epoch.
+      const epoch = await ContractCast.create({ ...CAST_INPUT, seen_at: new Date(0) });
+      const loadedEpoch = await ContractCast.findOrFail(epoch.id);
+      expect(loadedEpoch.seen_at).toEqual(new Date(0));
+      loadedEpoch.seen_at = null;
+      expect(loadedEpoch.getDirty()).toEqual({ seen_at: null });
+      await loadedEpoch.save();
+      expect((await ContractCast.findOrFail(epoch.id)).seen_at).toBeNull();
     });
 
     run("binds a plain object as JSON, and an array as JSON or, on PostgreSQL, as an array", async () => {

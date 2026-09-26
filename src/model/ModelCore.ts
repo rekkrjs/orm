@@ -104,6 +104,7 @@ const isNumeric = (value: unknown): boolean => typeof value === "number" || type
  */
 function sameAttributeValue(before: unknown, after: unknown): boolean {
   if (before === after) return true;
+  if (before == null || after == null) return false;
   if (typeof before !== "object" && typeof after !== "object") {
     return typeof before === "string" ? isNumeric(after) && before === String(after)
       : typeof after === "string" && isNumeric(before) && after === String(before);
