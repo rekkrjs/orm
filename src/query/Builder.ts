@@ -13,6 +13,7 @@ import { findRelationMethod, HasMany, Model as BaseModel } from "../model/Model.
 import { ObserverRegistry } from "../model/Observer.js";
 import { ModelNotFoundError } from "../model/ModelNotFoundError.js";
 import { IdentityMap } from "../model/IdentityMap.js";
+import { timestampsEnabled, withInsertTimestamps } from "../model/TimestampScope.js";
 import { assertSupportedStringCast, canReturnRawJsonRows, createRawJsonPlan, serializeRawJsonRow, serializeRowDates } from "../model/ModelJsonRow.js";
 import {
   assertBackedEnumValue,
@@ -3081,9 +3082,11 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     const booleanColumns: string[] = driver === "postgres" ? model?.booleanColumns?.() ?? [] : [];
     if (dateColumns.length === 0 && booleanColumns.length === 0) return data;
 
+    // A joined update names its own columns as `table.column`.
+    const keysOf = (column: string) => [column, `${this.tableName}.${column}`];
     const render = (record: Record<string, any>): Record<string, any> => {
       let copy: Record<string, any> | undefined;
-      for (const column of dateColumns) {
+      for (const column of dateColumns.flatMap(keysOf)) {
         const value = record?.[column];
         if (value === null || value === undefined) continue;
         if (typeof value !== "string" && !(value instanceof Date)) continue;
@@ -3239,6 +3242,11 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   }
 
   async upsert(data: ModelAttributeInput<T> | ModelAttributeInput<T>[], uniqueBy: ModelColumn<T> | ModelColumn<T>[], updateColumns?: ModelColumn<T>[]): Promise<WriteResult | undefined> {
+    // As in Eloquent, a model upsert stamps both columns on the rows it
+    // inserts and updated_at on the rows it updates; created_at stays put.
+    const model = this.model as any;
+    const timestamps = model && timestampsEnabled(model) ? model.getTimestampColumns() as { createdAt: string; updatedAt: string } : null;
+    if (model) data = withInsertTimestamps(model, Array.isArray(data) ? data : [data]);
     const records = this.definedRecords(data);
     if (records.length === 0) return;
 
@@ -3253,7 +3261,9 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     });
 
     const uniqueCols = Array.isArray(uniqueBy) ? uniqueBy : [uniqueBy];
-    const updateCols = updateColumns ?? columns.filter((c) => !uniqueCols.includes(c));
+    const updateCols = updateColumns
+      ? (timestamps && !updateColumns.includes(timestamps.updatedAt as any) ? [...updateColumns, timestamps.updatedAt] : updateColumns)
+      : columns.filter((c) => !uniqueCols.includes(c) && c !== timestamps?.createdAt);
 
     const sql = this.grammar.compileUpsert(
       this.wrapTable(this.tableName),
@@ -3282,8 +3292,8 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   }
 
   async update(data: ModelAttributeInput<T>): Promise<WriteResult | undefined> {
-    data = this.definedRecords(data)[0]!;
-    if (Object.keys(data).length === 0) return;
+    if (Object.values(data).every((value) => value === undefined)) return;
+    data = this.definedRecords(this.withUpdatedAt(data))[0]!;
     const limited = this.limitValue !== undefined;
     if (limited && !this.model) {
       throw new Error("limit() on update() requires a model-backed query");
@@ -3333,7 +3343,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     const limitedIds = limited ? affectedIds : null;
     const query = limitedIds === null ? this : this.queryForAffectedIds(limitedIds);
     const deletedAt = new model().freshTimestamp();
-    const data = this.definedRecords({ [model.deletedAtColumn]: deletedAt } as any)[0]!;
+    const data = this.definedRecords(this.withUpdatedAt({ [model.deletedAtColumn]: deletedAt } as any, deletedAt))[0]!;
     const result = await query.performUpdate(data);
     this.invalidateAffectedIdentityMap(affectedIds);
 
@@ -3428,7 +3438,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       throw new Error("Increment amount must be a finite number.");
     }
     this.validateModelBackedEnumIncrement(column, amount);
-    extra = this.definedRecords(extra)[0]!;
+    extra = this.definedRecords(this.withUpdatedAt(extra))[0]!;
     const limited = this.limitValue !== undefined;
     if (limited && !this.model) {
       throw new Error("limit() on increment() requires a model-backed query");
@@ -3465,7 +3475,25 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     if (!model?.softDeletes) {
       throw new Error("restore() is only available for soft deleting models");
     }
-    return this.withTrashed().update({ [model.deletedAtColumn]: null } as any);
+    // Only trashed rows: restoring a live row would move its updated_at for nothing.
+    return this.withTrashed()
+      .whereNotNull(model.getQualifiedDeletedAtColumn())
+      .update({ [model.deletedAtColumn]: null } as any);
+  }
+
+  /**
+   * As in Eloquent, a model-backed update sets updated_at unless the caller
+   * passed one, so the column tells when the row last changed whichever way it
+   * was written. `UPDATE a JOIN b` names the table: both may have the column.
+   */
+  private withUpdatedAt(data: ModelAttributeInput<T>, now?: string): ModelAttributeInput<T> {
+    const model = this.model as any;
+    if (!model || !timestampsEnabled(model)) return data;
+    const column: string = model.getTimestampColumns().updatedAt;
+    const key = this.updateJoins.length > 0 ? `${this.tableName}.${column}` : column;
+    const given = data as Record<string, unknown>;
+    if (given[column] !== undefined || given[key] !== undefined) return data;
+    return { ...data, [key]: now ?? new model().freshTimestamp() };
   }
 
   async exists(): Promise<boolean> {

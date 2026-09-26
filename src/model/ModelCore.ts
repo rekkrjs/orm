@@ -1022,11 +1022,12 @@ export class ModelCore<T extends Record<string, any> = any> {
     if (!timestampsEnabled(constructor)) return;
     const { createdAt, updatedAt } = constructor.getTimestampColumns();
     const now = this.freshTimestamp();
-    (this.$attributes as any)[updatedAt] = now;
-    delete this.$castCache[updatedAt];
-    if (!this.$exists) {
-      (this.$attributes as any)[createdAt] = now;
-      delete this.$castCache[createdAt];
+    const dirty = this.getDirty() as Record<string, unknown>;
+    for (const column of this.$exists ? [updatedAt] : [createdAt, updatedAt]) {
+      if (dirty[column] !== undefined) continue;
+      (this.$attributes as any)[column] = now;
+      delete this.$castCache[column];
+      (this.$dirtyKeys ??= new Set()).add(column);
     }
   }
 }

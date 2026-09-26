@@ -102,6 +102,221 @@ function timestampMatrix(
       expect(record.getAttribute("count")).toBe(5);
     });
 
+    // Eloquent's updateTimestamps() only stamps a column the caller left clean,
+    // and ORM's bulk inserts already keep a value they are given.
+    const handCreated = new Date("2024-02-29T23:59:58.123Z");
+    const handUpdated = new Date("2024-03-01T00:00:01.456Z");
+    const iso = (record: InstanceType<typeof SnakeTimestampModel>, column: string) =>
+      (record.getAttribute(column) as Date).toISOString();
+    const expectStampedBetween = (record: InstanceType<typeof SnakeTimestampModel>, column: string, before: number) => {
+      const stamped = (record.getAttribute(column) as Date).getTime();
+      expect(stamped).toBeGreaterThanOrEqual(before);
+      expect(stamped).toBeLessThanOrEqual(Date.now());
+    };
+
+    test("create() and a new-model save keep timestamps set by hand", async () => {
+      await model.create({
+        slug: `${label}-hand-create`, name: "hand", count: 0,
+        [createdAt]: handCreated, [updatedAt]: handUpdated,
+      });
+      const created = await find(`${label}-hand-create`);
+      expect(iso(created, createdAt)).toBe(handCreated.toISOString());
+      expect(iso(created, updatedAt)).toBe(handUpdated.toISOString());
+
+      const before = Date.now();
+      const saved = new model({ slug: `${label}-hand-save`, name: "hand", count: 0 });
+      saved.setAttribute(createdAt, handCreated);
+      await saved.save();
+      const reread = await find(`${label}-hand-save`);
+      expect(iso(reread, createdAt)).toBe(handCreated.toISOString());
+      expectStampedBetween(reread, updatedAt, before);
+    });
+
+    test("an update keeps an updated-at set by hand and stamps one left alone", async () => {
+      const record = await model.create({ slug: `${label}-hand-update`, name: "before", count: 4 });
+      const originalCreatedAt = iso(record, createdAt);
+
+      record.setAttribute("name", "by hand");
+      record.setAttribute(updatedAt, handUpdated);
+      await record.save();
+      let reread = await find(`${label}-hand-update`);
+      expect(reread.getAttribute("name")).toBe("by hand");
+      expect(iso(reread, updatedAt)).toBe(handUpdated.toISOString());
+      expect(iso(reread, createdAt)).toBe(originalCreatedAt);
+
+      const before = Date.now();
+      record.setAttribute("name", "stamped");
+      await record.save();
+      reread = await find(`${label}-hand-update`);
+      expectStampedBetween(reread, updatedAt, before);
+      expect(iso(reread, createdAt)).toBe(originalCreatedAt);
+    });
+
+    test("saveMany() without events and increment() keep an updated-at set by hand", async () => {
+      const record = await model.create({ slug: `${label}-hand-bulk`, name: "before", count: 4 });
+
+      record.setAttribute("name", "by hand");
+      record.setAttribute(updatedAt, handUpdated);
+      await model.saveMany([record], { events: false });
+      expect(iso(await find(`${label}-hand-bulk`), updatedAt)).toBe(handUpdated.toISOString());
+
+      const later = new Date("2024-03-02T12:00:00.789Z");
+      await record.increment("count", 1, { [updatedAt]: later });
+      const reread = await find(`${label}-hand-bulk`);
+      expect(reread.getAttribute("count")).toBe(5);
+      expect(iso(reread, updatedAt)).toBe(later.toISOString());
+
+      const before = Date.now();
+      await record.increment("count");
+      expectStampedBetween(await find(`${label}-hand-bulk`), updatedAt, before);
+    });
+
+    test("updateTimestamps() leaves a column set by hand alone", () => {
+      const fresh = new model({ slug: `${label}-stamp`, name: "stamp", count: 0 });
+      fresh.setAttribute(createdAt, handCreated);
+      const before = Date.now();
+      fresh.updateTimestamps();
+      expect(iso(fresh, createdAt)).toBe(handCreated.toISOString());
+      expectStampedBetween(fresh, updatedAt, before);
+    });
+
+    // Eloquent's updateTimestamps() sets the columns like any attribute, so the
+    // next save() writes them.
+    test("updateTimestamps() followed by save() writes the new updated-at", async () => {
+      const slug = `${label}-stamp-save`;
+      const record = await model.create({
+        slug, name: "stamp", count: 0, [createdAt]: handCreated, [updatedAt]: handUpdated,
+      });
+
+      const before = Date.now();
+      record.updateTimestamps();
+      expect(record.getDirty()).toEqual({ [updatedAt]: expect.anything() });
+
+      const statements: string[] = [];
+      const stop = DB.listen((event) => { statements.push(event.sql); });
+      try {
+        await record.save();
+      } finally {
+        stop();
+      }
+      expect(statements).toHaveLength(1);
+      expect(statements[0]).toMatch(/^update /i);
+      expect(record.isDirty()).toBe(false);
+
+      const reread = await find(slug);
+      expectStampedBetween(reread, updatedAt, before);
+      expect(iso(reread, updatedAt)).toBe(iso(record, updatedAt));
+      expect(iso(reread, createdAt)).toBe(handCreated.toISOString());
+      expect(reread.getAttribute("name")).toBe("stamp");
+    });
+
+    test("a query update() and increment() set updated-at unless given one or inside withoutTimestamps()", async () => {
+      const target = await model.create({ slug: `${label}-bulk-target`, name: "t", count: 0, [createdAt]: handCreated, [updatedAt]: handUpdated });
+      await model.create({ slug: `${label}-bulk-sibling`, name: "s", count: 0, [createdAt]: handCreated, [updatedAt]: handUpdated });
+      const onTarget = () => model.where("slug", `${label}-bulk-target`);
+
+      let before = Date.now();
+      await onTarget().update({ name: "bulk" });
+      expectStampedBetween(await find(`${label}-bulk-target`), updatedAt, before);
+
+      await onTarget().update({ [updatedAt]: handUpdated });
+      expect(iso(await find(`${label}-bulk-target`), updatedAt)).toBe(handUpdated.toISOString());
+      before = Date.now();
+      await onTarget().increment("count", 2);
+      expectStampedBetween(await find(`${label}-bulk-target`), updatedAt, before);
+
+      await onTarget().update({ [updatedAt]: handUpdated });
+      await model.withoutTimestamps(async () => {
+        await onTarget().update({ name: "quiet" });
+        await onTarget().decrement("count");
+      });
+      const reread = await find(`${label}-bulk-target`);
+      expect(iso(reread, updatedAt)).toBe(handUpdated.toISOString());
+      expect([reread.getAttribute("name"), reread.getAttribute("count")]).toEqual(["quiet", 1]);
+      expect(iso(reread, createdAt)).toBe(handCreated.toISOString());
+      expect(target.getAttribute("id")).toBe(reread.getAttribute("id"));
+
+      const sibling = await find(`${label}-bulk-sibling`);
+      expect(iso(sibling, updatedAt)).toBe(handUpdated.toISOString());
+      expect(sibling.getAttribute("name")).toBe("s");
+    });
+
+    // Eloquent's upsert() stamps both columns on insert and adds updated-at to
+    // the columns it updates, whether called on the model or on a query.
+    test("upsert() on the model or a query moves updated-at, also with explicit update columns", async () => {
+      const seed = (slug: string) => model.query().insert({ slug, name: "old", count: 0, [createdAt]: handCreated, [updatedAt]: handUpdated });
+      const writes: [string, (slug: string) => Promise<unknown>][] = [
+        ["model-cols", (slug) => model.upsert({ slug, name: "new", count: 0 }, "slug", ["name"])],
+        ["query-cols", (slug) => model.query().upsert({ slug, name: "new", count: 0 }, "slug", ["name"])],
+        ["query-all", (slug) => model.query().upsert({ slug, name: "new", count: 0 }, "slug")],
+      ];
+      for (const [name, write] of writes) {
+        const slug = `${label}-upsert-${name}`;
+        await seed(slug);
+        const before = Date.now();
+        await write(slug);
+        const reread = await find(slug);
+        expect(reread.getAttribute("name")).toBe("new");
+        expectStampedBetween(reread, updatedAt, before);
+        expect(iso(reread, createdAt)).toBe(handCreated.toISOString());
+      }
+
+      const before = Date.now();
+      await model.query().upsert({ slug: `${label}-upsert-query-new`, name: "new", count: 0 }, "slug", ["name"]);
+      const inserted = await find(`${label}-upsert-query-new`);
+      expectStampedBetween(inserted, createdAt, before);
+      expectStampedBetween(inserted, updatedAt, before);
+
+      const kept = `${label}-upsert-kept`;
+      await seed(kept);
+      const later = new Date("2024-03-02T12:00:00.789Z");
+      await model.query().upsert({ slug: kept, name: "new", count: 0, [updatedAt]: later }, "slug", ["name"]);
+      expect(iso(await find(kept), updatedAt)).toBe(later.toISOString());
+
+      const quiet = `${label}-upsert-quiet`;
+      await seed(quiet);
+      await model.withoutTimestamps(() => model.upsert({ slug: quiet, name: "new", count: 0 }, "slug", ["name"]));
+      const unstamped = await find(quiet);
+      expect(unstamped.getAttribute("name")).toBe("new");
+      expect(iso(unstamped, updatedAt)).toBe(handUpdated.toISOString());
+    });
+
+    // Like Model.insert(), and like every model insert in Lucid; the query
+    // builder's insert*() stays the raw path, as in Eloquent.
+    test("Model.insertGetId() and insertOrIgnore() set timestamps; a query insert*() does not", async () => {
+      const before = Date.now();
+      const id = await model.insertGetId({ slug: `${label}-get-id`, name: "n", count: 0 });
+      const byId = await find(`${label}-get-id`);
+      expect(Number(byId.getAttribute("id"))).toBe(Number(id));
+      expectStampedBetween(byId, createdAt, before);
+      expectStampedBetween(byId, updatedAt, before);
+
+      await model.insertOrIgnore([
+        { slug: `${label}-ignore-a`, name: "n", count: 0 },
+        { slug: `${label}-ignore-b`, name: "n", count: 0, [createdAt]: handCreated, [updatedAt]: handUpdated },
+      ]);
+      const a = await find(`${label}-ignore-a`);
+      expectStampedBetween(a, createdAt, before);
+      expectStampedBetween(a, updatedAt, before);
+      const b = await find(`${label}-ignore-b`);
+      expect(iso(b, createdAt)).toBe(handCreated.toISOString());
+      expect(iso(b, updatedAt)).toBe(handUpdated.toISOString());
+
+      await model.insertOrIgnore({ slug: `${label}-ignore-a`, name: "ignored", count: 9 });
+      const unchanged = await find(`${label}-ignore-a`);
+      expect([unchanged.getAttribute("name"), unchanged.getAttribute("count")]).toEqual(["n", 0]);
+      expect(iso(unchanged, updatedAt)).toBe(iso(a, updatedAt));
+
+      await model.query().insert({ slug: `${label}-raw-insert`, name: "n", count: 0 });
+      await model.query().insertGetId({ slug: `${label}-raw-get-id`, name: "n", count: 0 });
+      await model.query().insertOrIgnore({ slug: `${label}-raw-ignore`, name: "n", count: 0 });
+      await model.withoutTimestamps(() => model.insertGetId({ slug: `${label}-quiet-get-id`, name: "n", count: 0 }));
+      for (const slug of ["raw-insert", "raw-get-id", "raw-ignore", "quiet-get-id"]) {
+        const raw = await find(`${label}-${slug}`);
+        expect([raw.getAttribute(createdAt), raw.getAttribute(updatedAt)]).toEqual([null, null]);
+      }
+    });
+
     test("upsert() initializes on insert and preserves created-at on update", async () => {
       const slug = `${label}-upsert`;
       await model.upsert({ slug, name: "inserted", count: 1 }, "slug");

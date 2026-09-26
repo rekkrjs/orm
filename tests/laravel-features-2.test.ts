@@ -1,4 +1,4 @@
-import { expect, test, describe, beforeAll, mock } from "./harness.js";
+import { expect, test, describe, beforeAll, afterEach, mock } from "./harness.js";
 import { Model, Schema, ObserverRegistry } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
@@ -256,6 +256,247 @@ describe("deleteQuietly()", () => {
     expect(fired).toBe(false);
     expect(post.getAttribute("deleted_at")).not.toBeNull();
     ObserverRegistry.unregister(SoftPost);
+  });
+});
+
+// ─── forceDelete / forceDeleteQuietly ────────────────────────────────────────
+
+describe("forceDelete() on an instance", () => {
+  afterEach(() => {
+    ObserverRegistry.unregister(Article);
+    ObserverRegistry.unregister(SoftPost);
+  });
+
+  // Eloquent's forceDelete() goes through delete(), so `deleting` and `deleted` fire.
+  test("fires deleting before the DELETE and deleted after it", async () => {
+    await setupArticles();
+    const seen: string[] = [];
+    ObserverRegistry.register(Article, {
+      async deleting() { seen.push(`deleting:${await Article.count()}`); },
+      async deleted() { seen.push(`deleted:${await Article.count()}`); },
+    });
+
+    const doomed = await Article.create({ title: "Doomed" });
+    const kept = await Article.create({ title: "Kept" });
+
+    expect(await doomed.forceDelete()).toBe(true);
+
+    expect(seen).toEqual(["deleting:2", "deleted:1"]);
+    expect(doomed.$exists).toBe(false);
+    expect(await Article.find(doomed.id)).toBeNull();
+    expect((await Article.findOrFail(kept.id)).title).toBe("Kept");
+  });
+
+  test("fires them when permanently deleting a trashed soft-delete row", async () => {
+    await setupSoftPost();
+    const doomed = await SoftPost.create({ title: "Doomed" });
+    const kept = await SoftPost.create({ title: "Kept" });
+    await doomed.deleteQuietly();
+
+    const seen: string[] = [];
+    ObserverRegistry.register(SoftPost, {
+      async deleting() { seen.push(`deleting:${await SoftPost.withTrashed().count()}`); },
+      async deleted() { seen.push(`deleted:${await SoftPost.withTrashed().count()}`); },
+    });
+
+    const trashed = await SoftPost.withTrashed().findOrFail(doomed.getAttribute("id"));
+    expect(await trashed.forceDelete()).toBe(true);
+
+    expect(seen).toEqual(["deleting:2", "deleted:1"]);
+    expect(await SoftPost.withTrashed().find(doomed.getAttribute("id"))).toBeNull();
+    const survivor = await SoftPost.withTrashed().findOrFail(kept.getAttribute("id"));
+    expect(survivor.getAttribute("deleted_at")).toBeNull();
+  });
+
+  test("a deleting observer that throws leaves the row in place", async () => {
+    await setupSoftPost();
+    let deleted = 0;
+    ObserverRegistry.register(SoftPost, {
+      deleting() { throw new Error("kept by observer"); },
+      deleted() { deleted++; },
+    });
+
+    const post = await SoftPost.create({ title: "Guarded" });
+
+    await expect(post.forceDelete()).rejects.toThrow("kept by observer");
+
+    expect(deleted).toBe(0);
+    expect(post.$exists).toBe(true);
+    expect(await SoftPost.withTrashed().count()).toBe(1);
+    expect((await SoftPost.findOrFail(post.getAttribute("id"))).getAttribute("deleted_at")).toBeNull();
+  });
+
+  test("forceDeleteQuietly() deletes permanently without firing observers", async () => {
+    await setupSoftPost();
+    const seen: string[] = [];
+    ObserverRegistry.register(SoftPost, {
+      deleting() { seen.push("deleting"); },
+      deleted() { seen.push("deleted"); },
+    });
+
+    const doomed = await SoftPost.create({ title: "Doomed" });
+    const kept = await SoftPost.create({ title: "Kept" });
+
+    expect(await doomed.forceDeleteQuietly()).toBe(true);
+
+    expect(seen).toEqual([]);
+    expect(doomed.$exists).toBe(false);
+    expect(await SoftPost.withTrashed().count()).toBe(1);
+    expect((await SoftPost.findOrFail(kept.getAttribute("id"))).getAttribute("title")).toBe("Kept");
+  });
+});
+
+// ─── restore ─────────────────────────────────────────────────────────────────
+
+describe("restore() on an instance", () => {
+  afterEach(() => ObserverRegistry.unregister(SoftPost));
+
+  test("fires restoring before the UPDATE and restored after it", async () => {
+    await setupSoftPost();
+    const doomed = await SoftPost.create({ title: "Doomed" });
+    const sibling = await SoftPost.create({ title: "Sibling" });
+    await doomed.deleteQuietly();
+    await sibling.deleteQuietly();
+
+    const seen: string[] = [];
+    ObserverRegistry.register(SoftPost, {
+      async restoring(model) {
+        seen.push(`restoring:${await SoftPost.onlyTrashed().count()}:${model.trashed()}`);
+      },
+      async restored(model) {
+        seen.push(`restored:${await SoftPost.onlyTrashed().count()}:${model.trashed()}`);
+      },
+    });
+
+    const trashed = await SoftPost.withTrashed().findOrFail(doomed.getAttribute("id"));
+    expect(await trashed.restore()).toBe(true);
+
+    expect(seen).toEqual(["restoring:2:true", "restored:1:false"]);
+    expect((await SoftPost.findOrFail(doomed.getAttribute("id"))).getAttribute("deleted_at")).toBeNull();
+    const untouched = await SoftPost.withTrashed().findOrFail(sibling.getAttribute("id"));
+    expect(untouched.trashed()).toBe(true);
+  });
+
+  test("a restoring observer that throws leaves the row trashed", async () => {
+    await setupSoftPost();
+    const post = await SoftPost.create({ title: "Guarded" });
+    await post.deleteQuietly();
+    let restored = 0;
+    ObserverRegistry.register(SoftPost, {
+      restoring() { throw new Error("kept by observer"); },
+      restored() { restored++; },
+    });
+
+    await expect(post.restore()).rejects.toThrow("kept by observer");
+
+    expect(restored).toBe(0);
+    expect(post.trashed()).toBe(true);
+    expect(await SoftPost.find(post.getAttribute("id"))).toBeNull();
+    expect(await SoftPost.onlyTrashed().count()).toBe(1);
+  });
+});
+
+// ─── soft delete / restore move updated_at ───────────────────────────────────
+
+class SoftNoTimestamps extends PermissiveModel {
+  static table = "lf2_soft_no_timestamps";
+  static softDeletes = true;
+  static timestamps = false;
+}
+
+// Eloquent's soft delete and restore both write updated_at, so an incremental
+// sync that reads `updated_at > checkpoint` sees rows that left or came back.
+describe("soft delete and restore() move updated_at", () => {
+  const old = new Date("2024-01-01T00:00:00.000Z");
+  const checkpoint = new Date("2025-01-01T00:00:00.000Z");
+  const time = (model: SoftPost, column: string) => (model.getAttribute(column) as Date).getTime();
+  const seed = async (title: string) => SoftPost.create({ title, created_at: old, updated_at: old });
+  const changedSince = async () =>
+    (await SoftPost.withTrashed().where("updated_at", ">", checkpoint).orderBy("id").pluck("id")).map(Number);
+
+  const expectMoved = async (model: SoftPost, before: number) => {
+    const reread = await SoftPost.withTrashed().findOrFail(model.getAttribute("id"));
+    expect(time(reread, "updated_at")).toBeGreaterThanOrEqual(before);
+    expect(time(reread, "updated_at")).toBeLessThanOrEqual(Date.now());
+    expect(time(model, "updated_at")).toBe(time(reread, "updated_at"));
+    expect(time(reread, "created_at")).toBe(old.getTime());
+    expect(model.isDirty()).toBe(false);
+    return reread;
+  };
+
+  test("delete(), deleteQuietly() and restore() on an instance", async () => {
+    await setupSoftPost();
+    const deleted = await seed("deleted");
+    const quiet = await seed("quiet");
+    const sibling = await seed("sibling");
+
+    let before = Date.now();
+    await deleted.delete();
+    const reread = await expectMoved(deleted, before);
+    expect(time(reread, "deleted_at")).toBe(time(reread, "updated_at"));
+
+    before = Date.now();
+    await quiet.deleteQuietly();
+    await expectMoved(quiet, before);
+    expect(await changedSince()).toEqual([deleted.getAttribute("id"), quiet.getAttribute("id")].map(Number));
+
+    await SoftPost.withTrashed().where("id", "!=", sibling.getAttribute("id")).update({ updated_at: old });
+    const trashed = await SoftPost.withTrashed().findOrFail(deleted.getAttribute("id"));
+    before = Date.now();
+    await trashed.restore();
+    expect((await expectMoved(trashed, before)).getAttribute("deleted_at")).toBeNull();
+    expect(await changedSince()).toEqual([Number(deleted.getAttribute("id"))]);
+
+    const untouched = await SoftPost.findOrFail(sibling.getAttribute("id"));
+    expect(time(untouched, "updated_at")).toBe(old.getTime());
+  });
+
+  test("delete() and restore() on a query touch only the rows they change", async () => {
+    await setupSoftPost();
+    const target = await seed("target");
+    const sibling = await seed("sibling");
+
+    await SoftPost.where("id", target.getAttribute("id")).delete();
+    expect(await changedSince()).toEqual([Number(target.getAttribute("id"))]);
+    const trashed = await SoftPost.withTrashed().findOrFail(target.getAttribute("id"));
+    expect(time(trashed, "updated_at")).toBe(time(trashed, "deleted_at"));
+
+    await SoftPost.withTrashed().update({ updated_at: old });
+    await SoftPost.onlyTrashed().restore();
+    expect(await changedSince()).toEqual([Number(target.getAttribute("id"))]);
+    expect(time(await SoftPost.findOrFail(sibling.getAttribute("id")), "updated_at")).toBe(old.getTime());
+  });
+
+  test("withoutTimestamps() leaves updated_at alone", async () => {
+    await setupSoftPost();
+    const post = await seed("quiet");
+    await SoftPost.withoutTimestamps(async () => {
+      await post.delete();
+      await SoftPost.where("id", post.getAttribute("id")).delete();
+      await post.restore();
+    });
+    const reread = await SoftPost.findOrFail(post.getAttribute("id"));
+    expect(time(reread, "updated_at")).toBe(old.getTime());
+    expect(reread.getAttribute("deleted_at")).toBeNull();
+  });
+
+  test("a model without timestamps soft deletes and restores without an updated_at column", async () => {
+    setupTestDb();
+    await Schema.create("lf2_soft_no_timestamps", (t) => {
+      t.increments("id");
+      t.string("title");
+      t.timestamp("deleted_at").nullable();
+    });
+    const post = await SoftNoTimestamps.create({ title: "plain" });
+
+    await post.delete();
+    await SoftNoTimestamps.where("id", post.getAttribute("id")).delete();
+    expect(await SoftNoTimestamps.onlyTrashed().count()).toBe(1);
+    await post.restore();
+    await SoftNoTimestamps.onlyTrashed().restore();
+
+    const reread = await SoftNoTimestamps.findOrFail(post.getAttribute("id"));
+    expect(reread.getAttributes()).toEqual({ id: post.getAttribute("id"), title: "plain", deleted_at: null });
   });
 });
 

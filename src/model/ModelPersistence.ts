@@ -1,4 +1,4 @@
-import { timestampScopes, timestampsEnabled } from "./TimestampScope.js";
+import { timestampScopes, timestampsEnabled, withInsertTimestamps } from "./TimestampScope.js";
 import { Builder } from "../query/Builder.js";
 import { ObserverRegistry } from "./Observer.js";
 import { IdentityMap } from "./IdentityMap.js";
@@ -292,14 +292,14 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     attributes: ModelAttributeInput<InstanceType<M>>,
     idColumn: ModelColumn<InstanceType<M>> = "id"
   ): Promise<number | string | bigint | null> {
-    return (this as any).query().insertGetId(attributes, idColumn);
+    return (this as any).query().insertGetId(withInsertTimestamps(this, [attributes])[0], idColumn);
   }
 
   static async insertOrIgnore<M extends ModelConstructor>(
     this: M,
     records: ModelAttributeInput<InstanceType<M>> | ModelAttributeInput<InstanceType<M>>[]
   ): Promise<WriteResult | undefined> {
-    return (this as any).query().insertOrIgnore(records);
+    return (this as any).query().insertOrIgnore(withInsertTimestamps(this, Array.isArray(records) ? records : [records]));
   }
 
   static async upsert<M extends ModelConstructor>(
@@ -309,24 +309,12 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     updateColumns?: ModelColumn<InstanceType<M>>[],
     options: Omit<BulkModelOptions, "events"> = {}
   ): Promise<WriteResult | undefined> {
-    const timestampColumns = timestampsEnabled(this)
-      ? (this as any).getTimestampColumns() as TimestampColumns
-      : null;
-    const prepared = await (this as any).prepareBulkRecords(
-      Array.isArray(records) ? records : [records],
-      timestampColumns,
-    );
+    // Timestamps are the builder's: it stamps model upserts however they are called.
+    const prepared = await (this as any).prepareBulkRecords(Array.isArray(records) ? records : [records], null);
     const chunkSize = options.chunkSize || prepared.length || 1;
-    let columns = updateColumns;
-    if (!columns && timestampColumns) {
-      const uniqueColumns = new Set(Array.isArray(uniqueBy) ? uniqueBy : [uniqueBy]);
-      columns = Object.keys(prepared[0] || {}).filter(
-        (column) => column !== timestampColumns.createdAt && !uniqueColumns.has(column as any)
-      ) as any;
-    }
     let result: any;
     for (let i = 0; i < prepared.length; i += chunkSize) {
-      result = await (this as any).query().upsert(prepared.slice(i, i + chunkSize) as any, uniqueBy as any, columns as any);
+      result = await (this as any).query().upsert(prepared.slice(i, i + chunkSize) as any, uniqueBy as any, updateColumns as any);
     }
     return result;
   }
@@ -434,7 +422,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       for (const model of existingModels) {
         let dirty = model.getDirty();
         Object.assign(model.$attributes, dirty);
-        if (Object.keys(dirty).length > 0 && timestampColumns) {
+        if (Object.keys(dirty).length > 0 && timestampColumns && (dirty as any)[timestampColumns.updatedAt] === undefined) {
           const now = model.freshTimestamp();
           (model.$attributes as any)[timestampColumns.updatedAt] = now;
           delete model.$castCache[timestampColumns.updatedAt];
@@ -561,10 +549,12 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
         Object.assign(this.$attributes, dirty);
         if (timestampsEnabled(constructor)) {
           const { updatedAt } = constructor.getTimestampColumns();
-          const now = this.freshTimestamp();
-          (this.$attributes as any)[updatedAt] = now;
-          delete this.$castCache[updatedAt];
-          (dirty as any)[updatedAt] = now;
+          if ((dirty as any)[updatedAt] === undefined) {
+            const now = this.freshTimestamp();
+            (this.$attributes as any)[updatedAt] = now;
+            delete this.$castCache[updatedAt];
+            (dirty as any)[updatedAt] = now;
+          }
         }
         if (Object.keys(dirty).length > 0) {
           const persistedAttributes = { ...this.$attributes } as Partial<T>;
@@ -590,18 +580,19 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       if (events) await ObserverRegistry.dispatch("saving", this as any);
       this.validateBackedEnumAttributes();
 
-      if (timestampsEnabled(constructor)) {
-        const { createdAt, updatedAt } = constructor.getTimestampColumns();
-        const now = this.freshTimestamp();
-        (this.$attributes as any)[createdAt] = now;
-        (this.$attributes as any)[updatedAt] = now;
-        delete this.$castCache[createdAt];
-        delete this.$castCache[updatedAt];
-      }
-
       // Mutable casts live in the cast cache until they are read as dirty. An
       // insert writes every attribute, so materialize those edits first.
       Object.assign(this.$attributes, this.getDirty());
+
+      if (timestampsEnabled(constructor)) {
+        const { createdAt, updatedAt } = constructor.getTimestampColumns();
+        const now = this.freshTimestamp();
+        for (const column of [createdAt, updatedAt]) {
+          if ((this.$attributes as any)[column] !== undefined) continue;
+          (this.$attributes as any)[column] = now;
+          delete this.$castCache[column];
+        }
+      }
 
       const primaryKey = constructor.primaryKey;
       const primaryKeyValue = this.getAttribute(primaryKey);
@@ -725,7 +716,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
 
     if (timestampsEnabled(constructor)) {
       const { updatedAt } = constructor.getTimestampColumns();
-      extra = { ...extra, [updatedAt]: this.freshTimestamp() };
+      if (extra[updatedAt] === undefined) extra = { ...extra, [updatedAt]: this.freshTimestamp() };
     }
 
     this.validateBackedEnumAttribute(column, amount);
@@ -761,14 +752,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     await ObserverRegistry.dispatch("deleting", this as any);
 
     if (constructor.softDeletes) {
-      const deletedAt = this.freshTimestamp();
-      const connection = this.getConnection();
-      await new Builder(connection, constructor.getQualifiedTable(connection))
-        .where(constructor.primaryKey, pk)
-        .update(this.attributesForDriver(connection, { [constructor.deletedAtColumn]: deletedAt }) as any);
-      (this.$attributes as any)[constructor.deletedAtColumn] = deletedAt;
-      delete this.$castCache[constructor.deletedAtColumn];
-      this.syncPersistedOriginal([constructor.deletedAtColumn]);
+      await this.writeDeletedAt(pk, true);
     } else {
       const connection = this.getConnection();
       await new Builder(connection, constructor.getQualifiedTable(connection))
@@ -793,14 +777,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     if (!pk) return false;
 
     if (constructor.softDeletes) {
-      const deletedAt = this.freshTimestamp();
-      const connection = this.getConnection();
-      await new Builder(connection, constructor.getQualifiedTable(connection))
-        .where(constructor.primaryKey, pk)
-        .update(this.attributesForDriver(connection, { [constructor.deletedAtColumn]: deletedAt }) as any);
-      (this.$attributes as any)[constructor.deletedAtColumn] = deletedAt;
-      delete this.$castCache[constructor.deletedAtColumn];
-      this.syncPersistedOriginal([constructor.deletedAtColumn]);
+      await this.writeDeletedAt(pk, true);
     } else {
       const connection = this.getConnection();
       await new Builder(connection, constructor.getQualifiedTable(connection))
@@ -825,29 +802,51 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     if (!constructor.softDeletes) return false;
     const pk = this.getAttribute(constructor.primaryKey);
     if (!pk) return false;
+    await ObserverRegistry.dispatch("restoring", this as any);
 
+    await this.writeDeletedAt(pk, false);
     const connection = this.getConnection();
-    await new Builder(connection, constructor.getQualifiedTable(connection))
-      .where(constructor.primaryKey, pk)
-      .update({ [constructor.deletedAtColumn]: null } as any);
-    (this.$attributes as any)[constructor.deletedAtColumn] = null;
-    delete this.$castCache[constructor.deletedAtColumn];
-    this.syncPersistedOriginal([constructor.deletedAtColumn]);
     this.$exists = true;
     if (IdentityMap.current()) {
       IdentityMap.set(constructor.getQualifiedTable(connection), pk, this as any, connection);
     }
+    await ObserverRegistry.dispatch("restored", this as any);
     return true;
   }
 
-  async forceDelete(): Promise<boolean> {
-    return this.getConnection().use(() => this.forceDeleteRecord());
+  /**
+   * Set or clear deleted_at on this row. As in Eloquent, updated_at moves with
+   * it, so a sync that reads rows by updated_at sees deletes and restores.
+   */
+  private async writeDeletedAt(pk: unknown, trashed: boolean): Promise<void> {
+    const constructor = this.getModelConstructor() as typeof ModelPersistence;
+    const now = this.freshTimestamp();
+    const changes: Record<string, unknown> = { [constructor.deletedAtColumn]: trashed ? now : null };
+    if (timestampsEnabled(constructor)) changes[constructor.getTimestampColumns().updatedAt] = now;
+    const connection = this.getConnection();
+    await new Builder(connection, constructor.getQualifiedTable(connection))
+      .where(constructor.primaryKey, pk)
+      .update(this.attributesForDriver(connection, changes as Partial<T>) as any);
+    for (const [key, value] of Object.entries(changes)) {
+      (this.$attributes as any)[key] = value;
+      delete this.$castCache[key];
+    }
+    this.syncPersistedOriginal(Object.keys(changes));
   }
 
-  private async forceDeleteRecord(): Promise<boolean> {
+  async forceDelete(): Promise<boolean> {
+    return this.getConnection().use(() => this.forceDeleteRecord(true));
+  }
+
+  async forceDeleteQuietly(): Promise<boolean> {
+    return this.getConnection().use(() => this.forceDeleteRecord(false));
+  }
+
+  private async forceDeleteRecord(events: boolean): Promise<boolean> {
     const constructor = this.getModelConstructor() as typeof ModelPersistence;
     const pk = this.getAttribute(constructor.primaryKey);
     if (!pk) return false;
+    if (events) await ObserverRegistry.dispatch("deleting", this as any);
     const connection = this.getConnection();
     await new Builder(connection, constructor.getQualifiedTable(connection))
       .where(constructor.primaryKey, pk)
@@ -860,6 +859,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       IdentityMap.delete(constructor.getQualifiedTable(connection), pk, connection);
     }
 
+    if (events) await ObserverRegistry.dispatch("deleted", this as any);
     return true;
   }
 

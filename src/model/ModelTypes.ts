@@ -95,6 +95,7 @@ type BaseModelInstanceKey =
   | "deleteQuietly"
   | "restore"
   | "forceDelete"
+  | "forceDeleteQuietly"
   | "fresh"
   | "refresh"
   | "toJSON"

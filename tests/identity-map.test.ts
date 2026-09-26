@@ -257,7 +257,7 @@ describe("Identity Map", () => {
     let observed: User | undefined;
 
     try {
-      await tenant.run("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)");
+      await tenant.run("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, created_at TEXT, updated_at TEXT)");
       await tenant.run(`INSERT INTO users (id, name) VALUES (${landlord.id}, 'Tenant row')`);
       ObserverRegistry.register(User, {
         updated(model) { observed = model; },

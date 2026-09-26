@@ -52,6 +52,22 @@ class ContractDefault extends PermissiveModel {
   static timestamps = false;
 }
 
+class ContractBulkStamped extends PermissiveModel {
+  declare id: number;
+  static table = "contract_bulk_stamped";
+  static softDeletes = true;
+}
+
+class ContractInsertStamped extends PermissiveModel {
+  declare id: number;
+  static table = "contract_insert_stamped";
+}
+
+class ContractBulkOwner extends PermissiveModel {
+  declare id: number;
+  static table = "contract_bulk_owners";
+}
+
 class ContractUniqueRecord extends PermissiveModel {
   static table = "contract_unique_records";
   static timestamps = false;
@@ -580,6 +596,117 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
       expect((await ContractDefault.find(omitted.id))!.value).toBe("database");
       expect((await ContractDefault.find(explicitNull.id))!.value).toBeNull();
       expect(await ContractDefault.where("value", "database").count()).toBe(2);
+    });
+
+    // Eloquent's query update(), increment() and decrement() set updated_at
+    // unless given one; soft delete and restore() go through update().
+    run("sets updated_at on query writes and keeps one passed in", async () => {
+      const connection = context.connection;
+      await Schema.create("contract_bulk_owners", (table) => {
+        table.increments("id");
+        table.string("name");
+        table.timestamps();
+      }, connection);
+      await Schema.create("contract_bulk_stamped", (table) => {
+        table.increments("id");
+        table.integer("owner_id");
+        table.string("name");
+        table.integer("count").default(0);
+        table.timestamps();
+        table.softDeletes();
+      }, connection);
+
+      const old = new Date("2024-01-01T00:00:00.000Z");
+      const passed = new Date("2024-06-01T12:00:00.500Z");
+      const owner = await ContractBulkOwner.create({ name: "ñandú", created_at: old, updated_at: old });
+      const other = await ContractBulkOwner.create({ name: "other", created_at: old, updated_at: old });
+      const target = await ContractBulkStamped.create({ owner_id: owner.id, name: "target", created_at: old, updated_at: old });
+      const sibling = await ContractBulkStamped.create({ owner_id: other.id, name: "sibling", created_at: old, updated_at: old });
+      const read = async (id: number) => (await ContractBulkStamped.withTrashed().findOrFail(id)) as any;
+      const stamp = async (id: number) => ((await read(id)).updated_at as Date).getTime();
+      const onTarget = () => ContractBulkStamped.withTrashed().where("id", target.id);
+      const expectStamped = async (write: () => Promise<unknown>) => {
+        await onTarget().update({ updated_at: old });
+        expect(await stamp(target.id)).toBe(old.getTime());
+        const before = Date.now();
+        await write();
+        const stamped = await stamp(target.id);
+        expect(stamped).toBeGreaterThanOrEqual(before);
+        expect(stamped).toBeLessThanOrEqual(Date.now());
+      };
+
+      await expectStamped(() => onTarget().update({ name: "updated" }));
+      await expectStamped(() => onTarget().increment("count", 3));
+      await expectStamped(() => onTarget().decrement("count"));
+      await expectStamped(() => ContractBulkStamped.where("id", target.id).delete());
+      expect((await read(target.id)).deleted_at.getTime()).toBe(await stamp(target.id));
+      await expectStamped(() => ContractBulkStamped.onlyTrashed().restore());
+      if (driver === "mysql") {
+        // UPDATE a JOIN b: both tables have updated_at, so it must be qualified.
+        await expectStamped(() => ContractBulkStamped.query()
+          .updateFrom("contract_bulk_owners", "contract_bulk_owners.id", "=", "contract_bulk_stamped.owner_id")
+          .where("contract_bulk_owners.name", "ñandú")
+          .update({ "contract_bulk_stamped.name": "joined" }));
+      }
+
+      await onTarget().update({ name: "passed", updated_at: passed });
+      expect(await stamp(target.id)).toBe(passed.getTime());
+      await onTarget().increment("count", 1, { updated_at: old });
+      expect(await stamp(target.id)).toBe(old.getTime());
+
+      const final = await read(target.id);
+      expect(final.name).toBe("passed");
+      expect(final.count).toBe(3);
+      expect(final.deleted_at).toBeNull();
+      expect(final.created_at.getTime()).toBe(old.getTime());
+      const untouched = await read(sibling.id);
+      expect([untouched.name, untouched.count, untouched.deleted_at]).toEqual(["sibling", 0, null]);
+      expect(untouched.updated_at.getTime()).toBe(old.getTime());
+      for (const id of [owner.id, other.id]) {
+        const row = (await ContractBulkOwner.findOrFail(id)) as any;
+        expect(row.updated_at.getTime()).toBe(old.getTime());
+      }
+    });
+
+    run("sets timestamps on model inserts and upserts and keeps ones passed in", async () => {
+      const connection = context.connection;
+      await Schema.create("contract_insert_stamped", (table) => {
+        table.increments("id");
+        table.string("slug").unique();
+        table.string("name");
+        table.timestamps();
+      }, connection);
+
+      const old = new Date("2024-01-01T00:00:00.000Z");
+      const read = async (slug: string) => (await ContractInsertStamped.where("slug", slug).firstOrFail()) as any;
+      const expectNow = (value: Date, before: number) => {
+        expect(value.getTime()).toBeGreaterThanOrEqual(before);
+        expect(value.getTime()).toBeLessThanOrEqual(Date.now());
+      };
+
+      const before = Date.now();
+      await ContractInsertStamped.insertGetId({ slug: "get-id", name: "ñandú" });
+      await ContractInsertStamped.insertOrIgnore([{ slug: "ignore", name: "n" }, { slug: "kept", name: "n", created_at: old, updated_at: old }]);
+      await ContractInsertStamped.query().upsert({ slug: "upsert", name: "n" }, "slug", ["name"]);
+      for (const slug of ["get-id", "ignore", "upsert"]) {
+        const row = await read(slug);
+        expectNow(row.created_at, before);
+        expectNow(row.updated_at, before);
+      }
+      const kept = await read("kept");
+      expect([kept.created_at.getTime(), kept.updated_at.getTime()]).toEqual([old.getTime(), old.getTime()]);
+
+      await ContractInsertStamped.query().upsert({ slug: "kept", name: "updated" }, "slug", ["name"]);
+      const updated = await read("kept");
+      expect(updated.name).toBe("updated");
+      expect(updated.created_at.getTime()).toBe(old.getTime());
+      expectNow(updated.updated_at, before);
+
+      await ContractInsertStamped.query().insert({ slug: "raw", name: "n" });
+      const raw = await read("raw");
+      expect([raw.created_at, raw.updated_at]).toEqual([null, null]);
+      expect(await ContractInsertStamped.count()).toBe(5);
+      expect((await read("get-id")).name).toBe("ñandú");
     });
 
     run("keeps direct query JSON equal to hydrated JSON across driver values", async () => {

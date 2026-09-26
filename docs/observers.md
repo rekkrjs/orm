@@ -16,8 +16,8 @@ For IntelliSense to narrow correctly, type the hook parameter as `Model` or a un
 
 ```ts
 import { Model, Observer } from "@rekkr/orm";
-import User from "./models/User";
-import Order from "./models/Order";
+import { User } from "./models/User";
+import { Order } from "./models/Order";
 
 class AuditObserver extends Observer<Model> {
   created(model: Model) {
@@ -50,7 +50,7 @@ For larger observers, extend `Observer<Model>` and call `YourObserver.observe(Mo
 
 ```ts
 import { Observer } from "@rekkr/orm";
-import Admission from "./models/Admission";
+import { Admission } from "./models/Admission";
 import { AdmissionStatusEnum } from "./enums";
 
 export class AdmissionObserver extends Observer<Admission> {
@@ -76,7 +76,7 @@ For small inline observers, `ObserverRegistry.register(ModelClass, observer)` at
 
 ```ts
 import { ObserverRegistry } from "@rekkr/orm";
-import User from "./models/User";
+import { User } from "./models/User";
 import { sendWelcomeEmail, recordSignup } from "./services/users";
 
 ObserverRegistry.register(User, {
@@ -134,7 +134,7 @@ Changes made by `saving` or `updating` are included in that UPDATE. Changes
 made by `updated` or `saved` happen after SQL completes, so they remain dirty
 until another `save()` (including a nested save from the observer) persists them.
 
-On `delete()`: `deleting` → DELETE → `deleted`. For soft deletes, the row is updated rather than removed; `deleting` and `deleted` still fire.
+On `delete()`: `deleting` → DELETE → `deleted`. For soft deletes, the row is updated rather than removed; `deleting` and `deleted` still fire. `forceDelete()` fires them too, around the permanent DELETE.
 
 On `restore()` (soft deletes only): `restoring` → UPDATE → `restored`.
 
@@ -195,6 +195,7 @@ Sometimes you need to write without firing events — bulk imports, data migrati
 // One-shot: instance method
 await user.saveQuietly();
 await user.deleteQuietly();
+await user.forceDeleteQuietly();
 
 // Per call: explicit option
 await model.save({ events: false });
@@ -223,7 +224,7 @@ In test setup, register the observers you want to exercise and unregister them i
 ```ts
 import { beforeEach, afterEach } from "bun:test";
 import { ObserverRegistry } from "@rekkr/orm";
-import User from "../src/models/User";
+import { User } from "../src/models/User";
 import { UserObserver } from "../src/observers/UserObserver";
 
 beforeEach(() => {

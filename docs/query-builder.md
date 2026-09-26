@@ -7,8 +7,8 @@ MySQL, and PostgreSQL, with ORM translating to the appropriate dialect.
 
 ```ts
 import { DB } from "@rekkr/orm";
-import User from "./models/User";
-import Post from "./models/Post";
+import { User } from "./models/User";
+import { Post } from "./models/Post";
 ```
 
 ## Quick reference
@@ -486,7 +486,7 @@ await User.union(admin).where("active", true).get();
 Use recursive tree helpers for adjacency-list data such as folders, categories, threaded comments, and org charts.
 
 ```ts
-class Folder extends Model.define<FolderAttrs>("folders") {
+class Folder extends Model {
   items() {
     return this.hasMany(Folder, "parent_id");
   }
@@ -763,7 +763,7 @@ roots; // Collection<Folder>
 Threaded comments:
 
 ```ts
-class Comment extends Model.define<CommentAttrs>("comments") {
+class Comment extends Model {
   replies() {
     return this.hasMany(Comment, "parent_id");
   }
@@ -1209,7 +1209,7 @@ await user.decrement("stock", 10);
 await User.where("active", false).decrement("score", 2);
 ```
 
-Builder writes do not run per-instance lifecycle hooks, timestamps, or mass-assignment filtering. The static `insertGetId()` and `insertOrIgnore()` methods above are direct Builder forwarding and have the same low-level semantics. `insert()` bypasses observers; when a model has registered observers, `update()` dispatches `updated`/`saved` and `delete()` dispatches `deleted` for the affected IDs. If before-hooks, fillable filtering, timestamps, or fully hydrated event models matter, work through model instances (`User.create()`, `new User()`, `user.save()`, `user.delete()`) instead.
+Builder writes do not run per-instance lifecycle hooks or mass-assignment filtering. On a model with timestamps, `update()`, `increment()` and `decrement()` set `updated_at` to the current time, as Eloquent's do, unless you pass a value for it; `withoutTimestamps()` and a builder with no model (`new Builder(connection, table)`) leave it alone. Soft `delete()` and `restore()` go through the same rule. `upsert()` on a model query sets `created_at` and `updated_at` on the rows it inserts and `updated_at` on the rows it updates, adding it to explicit update columns, as Eloquent's does. The query `insert()`, `insertGetId()` and `insertOrIgnore()` are the raw path and set no timestamps; the static `User.insert()`, `User.insertGetId()` and `User.insertOrIgnore()` set them. `insert()` bypasses observers; when a model has registered observers, `update()` dispatches `updated`/`saved` and `delete()` dispatches `deleted` for the affected IDs. If before-hooks, fillable filtering, `created_at`, or fully hydrated event models matter, work through model instances (`User.create()`, `new User()`, `user.save()`, `user.delete()`) instead.
 
 On model-backed builders, limited updates and increments first select the
 matching primary keys, so `limit()` constrains the rows actually modified.
@@ -1232,7 +1232,8 @@ await User.where("name", "Alice").explain(); // run EXPLAIN
 
 - **N+1 queries.** If you find yourself looping over a collection and accessing relations, add a `.with()` higher up. Turn on `Model.preventLazyLoading = true` in development to catch these automatically.
 - **`offset` on huge tables.** Past a few thousand rows, `LIMIT/OFFSET` pagination scans linearly. Use `chunkById`, `lazyById`, or `cursorPaginate`.
-- **Builder writes are not instance writes.** They skip per-instance before-hooks and timestamps; use model instances when those lifecycle details matter.
+- **Builder writes are not instance writes.** They skip per-instance before-hooks; use model instances when those lifecycle details matter.
+- **A bulk update moves `updated_at`.** A backfill or data migration over many rows marks them all as changed. Run it inside `Model.withoutTimestamps()` when that must not happen.
 - **`distinct()` and `with()` together.** Eager-load joins can introduce duplicate parent rows. Add `distinct()` or use the relation aggregate variants (`withCount`, `withExists`) when you only need scalars.
 - **Locking outside a transaction is a no-op.** `lockForUpdate` releases at
   commit, so wrap model queries in `DB.transaction(...)` or explicitly run them
