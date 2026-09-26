@@ -44,6 +44,28 @@ async function pushModel(model: any, options: SaveOptions, seen: Set<unknown>): 
   }
 }
 
+/**
+ * Write records in chunks. As knex's batchInsert does, more than one chunk runs
+ * in one transaction (a savepoint inside an open one), so a batch is all or
+ * nothing whether or not it had to be split.
+ */
+async function writeInChunks<R>(
+  connection: Connection,
+  records: readonly R[],
+  chunkSize: number,
+  write: (chunk: R[], connection: Connection) => Promise<unknown>,
+  transactional = records.length > chunkSize,
+): Promise<any> {
+  const run = async (active: Connection) => {
+    let result: unknown;
+    for (let i = 0; i < records.length; i += chunkSize) {
+      result = await write(records.slice(i, i + chunkSize), active);
+    }
+    return result;
+  };
+  return transactional ? connection.transaction(run) : run(connection);
+}
+
 export function validateBulkInsertChunkSize(chunkSize?: number): number {
   if (chunkSize !== undefined && (!Number.isInteger(chunkSize) || chunkSize <= 0)) {
     throw new RangeError("Bulk insert chunkSize must be a positive integer.");
@@ -112,14 +134,10 @@ export async function bulkInsertModelRecords<M extends ModelConstructor>(
     return models;
   }
 
-  const prepared = await (model as any).prepareBulkRecords(records, undefined, options.trusted, options.connection);
+  const prepared: Record<string, unknown>[] = await (model as any).prepareBulkRecords(records, undefined, options.trusted, options.connection);
   const connection = options.connection ?? (model as any).getConnection();
-  const builder = new Builder(connection, (model as any).getQualifiedTable(connection)).setModel(model);
-  let result: any;
-  for (let i = 0; i < prepared.length; i += chunkSize) {
-    result = await builder.insert(prepared.slice(i, i + chunkSize));
-  }
-  return result;
+  return writeInChunks(connection, prepared, chunkSize, (chunk, active) =>
+    new Builder(active, (model as any).getQualifiedTable(active)).setModel(model).insert(chunk));
 }
 
 export class ModelPersistence<T extends Record<string, any> = any> extends ModelCore<T> {
@@ -311,12 +329,10 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
   ): Promise<WriteResult | undefined> {
     // Timestamps are the builder's: it stamps model upserts however they are called.
     const prepared = await (this as any).prepareBulkRecords(Array.isArray(records) ? records : [records], null);
-    const chunkSize = options.chunkSize || prepared.length || 1;
-    let result: any;
-    for (let i = 0; i < prepared.length; i += chunkSize) {
-      result = await (this as any).query().upsert(prepared.slice(i, i + chunkSize) as any, uniqueBy as any, updateColumns as any);
-    }
-    return result;
+    const chunkSize = validateBulkInsertChunkSize(options.chunkSize);
+    // query() resolves the transaction writeInChunks opens, if any.
+    return writeInChunks((this as any).getConnection(), prepared, chunkSize, (chunk) =>
+      (this as any).query().upsert(chunk as any, uniqueBy as any, updateColumns as any));
   }
 
   static async updateOrInsert<M extends ModelConstructor>(
@@ -352,7 +368,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     models: InstanceType<M>[],
     options: BulkModelOptions = {}
   ): Promise<InstanceType<M>[]> {
-    const chunkSize = options.chunkSize || models.length || 1;
+    const chunkSize = validateBulkInsertChunkSize(options.chunkSize);
     const events = options.events !== false;
     if (events) {
       for (const model of models) {
@@ -369,8 +385,7 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
       ? (this as any).getTimestampColumns() as TimestampColumns
       : null;
 
-    for (let i = 0; i < models.length; i += chunkSize) {
-      const chunk = models.slice(i, i + chunkSize);
+    const saveChunk = async (chunk: InstanceType<M>[]): Promise<void> => {
       const newModels = chunk.filter((model) => !model.$exists);
       const existingModels = chunk.filter((model) => model.$exists);
 
@@ -432,6 +447,28 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
         await (this as any).query().where(this.primaryKey, model.getAttribute(this.primaryKey)).update(dirty as any);
         model.markAttributesPersisted();
       }
+    };
+
+    // Auto-increment keys insert row by row, so any batch of two or more is
+    // several statements: run it in one transaction and, if it fails, put every
+    // model back the way it was, since none of its rows were kept.
+    const before = models.map((model) => ({
+      attributes: { ...model.$attributes },
+      original: { ...model.$original },
+      dirtyKeys: new Set(model.$dirtyKeys ?? []),
+      exists: model.$exists,
+    }));
+    try {
+      await writeInChunks((this as any).getConnection(), models, chunkSize, (chunk) => saveChunk(chunk), models.length > 1);
+    } catch (error) {
+      models.forEach((model, index) => {
+        const state = before[index]!;
+        model.$attributes = state.attributes;
+        model.$original = state.original;
+        model.$dirtyKeys = state.dirtyKeys;
+        model.$exists = state.exists;
+      });
+      throw error;
     }
 
     if (IdentityMap.current()) {

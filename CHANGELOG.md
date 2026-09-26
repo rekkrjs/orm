@@ -90,6 +90,21 @@
   does; they wrote NULL. A value the call passes is kept. The query
   `insert()`, `insertGetId()` and `insertOrIgnore()` stay the raw path, without
   timestamps. See [Models](./docs/models.md#insert--insertorignore--upsert).
+- `User.upsert()` and `saveMany()` (with `createMany()`) write in chunks of 100
+  rows unless `chunkSize` says otherwise, as `User.insert()` already did. They
+  sent the whole batch in one statement, which failed past each database's
+  parameter limit: 65,535 on PostgreSQL, MySQL and Bun's SQLite, 32,766 on
+  `node:sqlite`. A batch of 8,000 rows of 9 columns failed on all three. A
+  `chunkSize` that is not a positive integer throws, as it does for
+  `insert()`; `0` meant the whole batch.
+- A model bulk write that takes more than one statement runs in a transaction,
+  or a savepoint inside one already open, as knex's `batchInsert` does:
+  `User.insert()` and `User.upsert()` when the batch spans several chunks, and
+  `saveMany()` / `createMany()` with `{ events: false }` for two or more
+  models, since an auto-increment key inserts them one by one. A failing
+  chunk left the earlier ones written. When `saveMany()` fails, its models go
+  back to the state they had before the call, so none claims a row that was
+  rolled back.
 - The `orm` bin is `bin/orm.mjs`, which runs the CLI on the runtime that
   launched it: Node.js under npm, pnpm and yarn; Bun under `bunx`, `bun run`,
   and when invoked directly with Bun installed.

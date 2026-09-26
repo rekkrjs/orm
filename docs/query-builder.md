@@ -1178,6 +1178,15 @@ Write payloads omit properties whose value is `undefined`, allowing database
 defaults to run. An explicit `null` is still bound as SQL `NULL`. Bulk records
 must have the same columns after undefined values have been omitted.
 
+A query `insert()`, `insertOrIgnore()` or `upsert()` sends all its rows in one
+statement, so it is atomic but bounded by the database's parameter limit:
+65,535 bound values on PostgreSQL, MySQL and Bun's SQLite, 32,766 on Node.js's
+`node:sqlite`. For thousands of rows use `User.insert(rows, { chunkSize })` or
+`User.upsert(rows, uniqueBy, updateColumns, { chunkSize })`, which write in
+chunks of 100 rows by default, all in one transaction (see
+[Models](./models.md#insert--insertorignore--upsert)), or slice the array
+yourself.
+
 ```ts
 // Raw insert — no model events fire
 await User.query().insert({ name: "Alice", email: "alice@example.com" });

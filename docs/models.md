@@ -805,9 +805,26 @@ on the rows it updates even when `updateColumns` does not list it; `created_at`
 is never overwritten. A value you pass is kept. `User.query().insert()`,
 `insertGetId()` and `insertOrIgnore()` are the raw path and set no timestamps.
 
+`User.insert()`, `User.upsert()`, and `createMany()` / `saveMany()` with
+`{ events: false }` write in chunks of 100 rows unless `chunkSize` is explicit.
+Each chunk is one statement, and a statement can bind only so many values:
+65,535 on PostgreSQL, MySQL and Bun's SQLite, 32,766 on Node.js's
+`node:sqlite`. Keep `chunkSize` × columns below that.
+
+A batch is all or nothing. When it takes more than one statement, as knex's
+`batchInsert` does, it runs in a transaction, or in a savepoint when a
+transaction is already open, so a chunk that fails takes the earlier ones with
+it and leaves the caller's other writes alone. `saveMany()` inserts new models
+in bulk only when the model generates its keys (UUIDs); with an auto-increment
+key it inserts them one at a time to read each id back, so any batch of two or
+more runs in a transaction. If it fails, every model goes back to the state it
+had before the call. With events on, `createMany()` and `saveMany()` call
+`save()` on each model, one statement at a time and without a transaction of
+their own, as Eloquent's do; wrap them in `DB.transaction()` when that matters.
+
 ### `createMany` / `saveMany`
 
-`createMany()` and `saveMany()` fire model events by default. `Model.insert()` also fires them when observers are registered; pass `{ events: false }` to force the unconditional bulk path. That bulk path uses chunks of 100 unless `chunkSize` is explicit.
+`createMany()` and `saveMany()` fire model events by default, saving one model at a time. `Model.insert()` also fires them when observers are registered; pass `{ events: false }` to force the unconditional bulk path.
 
 ```ts
 const users = await User.createMany([

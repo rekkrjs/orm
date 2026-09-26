@@ -1,5 +1,5 @@
 import { expect, test, describe, beforeAll } from "./harness.js";
-import { Connection, Model, Schema, Factory, ObserverRegistry, Sequence, backedEnum } from "../src/index.js";
+import { Connection, DB, Model, Schema, Factory, ObserverRegistry, Sequence, backedEnum } from "../src/index.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 class FUser extends PermissiveModel {
@@ -443,9 +443,13 @@ describe("Factory (class-based, Laravel parity)", () => {
     const inserts: string[] = [];
     (connection as any).run = async (sql: string, ...args: any[]) => {
       calls.push(sql);
-      if (sql.startsWith('INSERT INTO "guarded_factory_users"')) inserts.push(sql);
       return await (originalRun as any).call(connection, sql, ...args);
     };
+    // A batch of several chunks runs on its transaction's connection, which
+    // the spy above does not see; DB.listen reports every statement.
+    const stopListening = DB.listen((event) => {
+      if (event.sql.startsWith('INSERT INTO "guarded_factory_users"')) inserts.push(event.sql);
+    });
 
     try {
       const before = await GuardedFactoryUser.query().count();
@@ -469,7 +473,9 @@ describe("Factory (class-based, Laravel parity)", () => {
           .rejects.toThrow("positive integer");
       }
       expect(calls).toHaveLength(0);
+      expect(inserts).toHaveLength(0);
     } finally {
+      stopListening();
       (connection as any).run = originalRun;
     }
   });

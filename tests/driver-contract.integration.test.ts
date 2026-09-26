@@ -69,6 +69,30 @@ class ContractBulkOwner extends PermissiveModel {
   static table = "contract_bulk_owners";
 }
 
+class ContractBulkLimit extends PermissiveModel {
+  static table = "contract_bulk_limits";
+  static timestamps = false;
+}
+
+// saveMany() inserts in bulk only when the model generates its keys; with an
+// auto-increment key it inserts row by row to read each id back.
+class ContractBulkLimitUuid extends PermissiveModel {
+  static table = "contract_bulk_limits_uuid";
+  static timestamps = false;
+  static override keyType = "uuid" as const;
+}
+
+class ContractBulkAtomic extends PermissiveModel {
+  static table = "contract_bulk_atomic";
+  static timestamps = false;
+}
+
+class ContractBulkAtomicUuid extends PermissiveModel {
+  static table = "contract_bulk_atomic_uuid";
+  static timestamps = false;
+  static override keyType = "uuid" as const;
+}
+
 class ContractUniqueRecord extends PermissiveModel {
   static table = "contract_unique_records";
   static timestamps = false;
@@ -398,6 +422,121 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
         await Promise.allSettled(tests);
         await second.close();
       }
+    });
+
+    // 8,000 rows of 9 columns bind 72,000 parameters: past SQLite's standard
+    // 32,766 (node:sqlite; Bun's build allows more) and the 65,535 of
+    // PostgreSQL and MySQL. Model bulk writes default to chunks of 100 rows.
+    run("model upsert() and saveMany() split large batches into chunks of 100 rows", async () => {
+      const connection = context.connection;
+      await Schema.create("contract_bulk_limits", (table) => {
+        table.increments("id");
+        table.string("code").unique();
+        for (let i = 0; i < 8; i++) table.integer(`c${i}`);
+      }, connection);
+      await Schema.create("contract_bulk_limits_uuid", (table) => {
+        table.uuid("id").primary();
+        for (let i = 0; i < 8; i++) table.integer(`c${i}`);
+      }, connection);
+      const columns = (n: number) => ({ c0: n, c1: n, c2: n, c3: n, c4: n, c5: n, c6: n, c7: n });
+      const row = (code: string, n: number) => ({ code, ...columns(n) });
+      const inserts: string[] = [];
+      const stop = DB.listen((event) => { if (/^\s*insert/i.test(event.sql)) inserts.push(event.sql); });
+      try {
+        await ContractBulkLimit.upsert(Array.from({ length: 8_000 }, (_, n) => row(`u${n}`, n)), "code");
+        expect(inserts).toHaveLength(80);
+        await ContractBulkLimit.upsert(Array.from({ length: 250 }, (_, n) => row(`u${n}`, -n)), "code", ["c0"]);
+        expect(inserts).toHaveLength(83);
+        await ContractBulkLimitUuid.saveMany(
+          Array.from({ length: 8_000 }, (_, n) => new ContractBulkLimitUuid(columns(n))),
+          { events: false },
+        );
+        expect(inserts).toHaveLength(163);
+        await ContractBulkLimit.upsert([row("u7999", 1), row("u0", 2)], "code", ["c1"], { chunkSize: 1 });
+        expect(inserts).toHaveLength(165);
+      } finally {
+        stop();
+      }
+      expect(await ContractBulkLimit.query().count()).toBe(8_000);
+      expect(await ContractBulkLimit.where("c0", "<", 0).count()).toBe(249);
+      const pick = async (code: string) => {
+        const found = (await ContractBulkLimit.where("code", code).firstOrFail()) as any;
+        return [found.c0, found.c1, found.c2];
+      };
+      expect(await pick("u249")).toEqual([-249, 249, 249]);
+      expect(await pick("u250")).toEqual([250, 250, 250]);
+      expect(await pick("u7999")).toEqual([7999, 1, 7999]);
+      expect(await pick("u0")).toEqual([0, 2, 0]);
+      expect(await ContractBulkLimitUuid.query().count()).toBe(8_000);
+      expect(await ContractBulkLimitUuid.query().distinct().count("id")).toBe(8_000);
+      expect(await ContractBulkLimitUuid.where("c0", 7999).where("c7", 7999).count()).toBe(1);
+    });
+
+    // As knex's batchInsert does, a batch split into several statements runs
+    // in one transaction, or a savepoint inside one already open: a chunk that
+    // fails takes the earlier chunks with it and nothing else.
+    run("a model bulk write split into chunks is all or nothing", async () => {
+      const connection = context.connection;
+      await Schema.create("contract_bulk_atomic", (table) => {
+        table.increments("id");
+        table.string("code").unique();
+        table.integer("n");
+      }, connection);
+      await Schema.create("contract_bulk_atomic_uuid", (table) => {
+        table.uuid("id").primary();
+        table.string("code");
+        table.integer("n");
+      }, connection);
+      // Row 150 falls in the second chunk and breaks the NOT NULL on n.
+      const rows = (prefix: string) => Array.from({ length: 250 }, (_, i) => ({ code: `${prefix}${i}`, n: i === 150 ? null : i }));
+      await ContractBulkAtomic.insert([{ code: "kept", n: -1 }]);
+
+      await expect(ContractBulkAtomic.insert(rows("i"), { events: false })).rejects.toThrow();
+      await expect(ContractBulkAtomic.upsert(rows("u"), "code")).rejects.toThrow();
+      const uuidModels = rows("s").map((row) => new ContractBulkAtomicUuid(row));
+      await expect(ContractBulkAtomicUuid.saveMany(uuidModels, { events: false })).rejects.toThrow();
+      // An auto-increment key inserts row by row: three models, three statements.
+      const serialModels = [{ code: "a1", n: 1 }, { code: "a2", n: 2 }, { code: "a3", n: null }]
+        .map((row) => new ContractBulkAtomic(row));
+      await expect(ContractBulkAtomic.saveMany(serialModels, { events: false })).rejects.toThrow();
+      expect(await ContractBulkAtomic.query().pluck("code")).toEqual(["kept"]);
+      expect(await ContractBulkAtomicUuid.query().count()).toBe(0);
+
+      // No model claims a row the rollback removed, so fixing the bad one and
+      // saving again inserts them all instead of updating rows that are gone.
+      for (const model of [...uuidModels, ...serialModels]) {
+        expect(model.$exists).toBe(false);
+        expect(model.getAttribute("id")).toBeUndefined();
+      }
+      uuidModels[150]!.setAttribute("n", 150);
+      serialModels[2]!.setAttribute("n", 3);
+      await ContractBulkAtomicUuid.saveMany(uuidModels, { events: false });
+      await ContractBulkAtomic.saveMany(serialModels, { events: false });
+      expect(await ContractBulkAtomicUuid.query().count()).toBe(250);
+      expect(await ContractBulkAtomicUuid.where("code", "s150").value("n")).toBe(150);
+      expect(await ContractBulkAtomic.query().orderBy("n").pluck("code")).toEqual(["kept", "a1", "a2", "a3"]);
+      await ContractBulkAtomic.whereIn("code", ["a1", "a2", "a3"]).delete();
+
+      // Inside a transaction the batch rolls back to its savepoint: the
+      // caller's own writes before and after it survive the commit.
+      await DB.transaction(async () => {
+        await ContractBulkAtomic.insert([{ code: "before", n: -2 }]);
+        await expect(ContractBulkAtomic.upsert(rows("t"), "code")).rejects.toThrow();
+        await ContractBulkAtomic.insert([{ code: "after", n: -3 }]);
+      });
+      expect(await ContractBulkAtomic.query().orderBy("n", "desc").pluck("code")).toEqual(["kept", "before", "after"]);
+
+      // A caller's rollback also undoes a batch that succeeded.
+      await expect(DB.transaction(async () => {
+        await ContractBulkAtomic.upsert(rows("r").map((row) => ({ ...row, n: 7 })), "code");
+        expect(await ContractBulkAtomic.query().count()).toBe(253);
+        throw new Error("caller rolls back");
+      })).rejects.toThrow("caller rolls back");
+      expect(await ContractBulkAtomic.query().count()).toBe(3);
+
+      // A batch that fits in one chunk is one statement, atomic on its own.
+      await ContractBulkAtomic.upsert(rows("c").slice(0, 100), "code");
+      expect(await ContractBulkAtomic.query().count()).toBe(103);
     });
 
     run("supports schema changes, CRUD, relations, dates, JSON, upserts, and transactions", async () => {
