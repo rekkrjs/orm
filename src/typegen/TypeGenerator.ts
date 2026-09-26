@@ -319,7 +319,7 @@ export class TypeGenerator {
       bindings = [schema];
     }
 
-    const rows = await this.connection.query(sql, bindings);
+    const rows = await this.connection.queryPrimary(sql, bindings);
 
     if (driver === "sqlite") {
       return rows.map((r: any) => r.name);
@@ -357,7 +357,7 @@ export class TypeGenerator {
   }
 
   private async getCurrentDatabase(): Promise<string> {
-    const rows = await this.connection.query("SELECT DATABASE() as db");
+    const rows = await this.connection.queryPrimary<{ db: string }>("SELECT DATABASE() as db");
     return rows[0]?.db || "";
   }
 
@@ -365,7 +365,7 @@ export class TypeGenerator {
     const driver = this.connection.getDriverName();
 
     if (driver === "sqlite") {
-      const rows = await this.connection.query(`PRAGMA table_info(${table})`);
+      const rows = await this.connection.queryPrimary(`PRAGMA table_info(${table})`);
       return rows.map((r: any) => ({
         name: r.name,
         type: r.type,
@@ -375,7 +375,7 @@ export class TypeGenerator {
     }
 
     if (driver === "mysql") {
-      const rows = await this.connection.query(`SHOW COLUMNS FROM ${table}`);
+      const rows = await this.connection.queryPrimary(`SHOW COLUMNS FROM ${table}`);
       return rows.map((r: any) => ({
         name: r.Field,
         type: r.Type,
@@ -386,7 +386,7 @@ export class TypeGenerator {
 
     // postgres
     const schema = this.connection.getSchema() || "public";
-    const rows = await this.connection.query(
+    const rows = await this.connection.queryPrimary(
       `SELECT column_name, data_type, is_nullable, column_default FROM information_schema.columns WHERE table_name = $1 AND table_schema = $2 ORDER BY ordinal_position`,
       [table, schema]
     );

@@ -81,7 +81,7 @@ Omit the generic for a `Collection<Record<string, any>>` result.
 
 ### Named connections
 
-When you operate against multiple databases (primary + analytics, read replica, archive), register them and route queries explicitly:
+When you operate against separate databases (analytics, archive), register them and route queries explicitly:
 
 ```ts
 import { Connection, ConnectionManager } from "@rekkr/orm";
@@ -92,6 +92,8 @@ await DB.connection("analytics").table("events").where("type", "view").count();
 ```
 
 `DB.connection(name)` throws if the name is not registered — fail fast instead of silently falling through to the default.
+
+For automatic primary/replica routing on the default connection, configure [`connection.read` and `connection.write`](./configuration.md#read-replicas). Wrap a request in `DB.scope()` when using `sticky` read-after-write affinity.
 
 ### Multi-tenant scope
 

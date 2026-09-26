@@ -191,7 +191,7 @@ export class DatabaseQueueDriver implements QueueDriver {
     const t = grammar.wrap(this.table);
     const p = (n: number) => grammar.placeholder(n);
     const reserve = () => this.connection.transaction(async conn => {
-      const rows = await conn.query(`SELECT * FROM ${t}
+      const rows = await conn.queryPrimary(`SELECT * FROM ${t}
         WHERE queue = ${p(1)} AND (reserved_at IS NULL OR reserved_at <= ${p(2)}) AND available_at <= ${p(3)}
         ORDER BY id ASC LIMIT 1 ${driver === "sqlite" ? "" : "FOR UPDATE SKIP LOCKED"}`,
         [queue, now - retryAfterSeconds, now]) as RawJobRow[];
@@ -214,7 +214,7 @@ export class DatabaseQueueDriver implements QueueDriver {
     const g = this.connection.getGrammar();
     const t = g.wrap(this.table);
     const fail = () => this.connection.transaction(async conn => {
-      const rows = await conn.query(`SELECT * FROM ${t} WHERE id = ${g.placeholder(1)} AND reservation_token = ${g.placeholder(2)} ${driver === "sqlite" ? "" : "FOR UPDATE"}`, [id, token]) as RawJobRow[];
+      const rows = await conn.queryPrimary(`SELECT * FROM ${t} WHERE id = ${g.placeholder(1)} AND reservation_token = ${g.placeholder(2)} ${driver === "sqlite" ? "" : "FOR UPDATE"}`, [id, token]) as RawJobRow[];
       const row = rows[0];
       if (!row) return false;
       await conn.run(`INSERT INTO ${g.wrap(this.failedTable)} (queue, job_class, payload, exception, failed_at) VALUES (${this.placeholders(5)})`,
@@ -237,7 +237,7 @@ export class DatabaseQueueDriver implements QueueDriver {
     // Select under lock also distinguishes a valid same-second MySQL heartbeat
     // from its zero changed-row count.
     const beat = () => this.connection.transaction(async conn => {
-      const rows = await conn.query(`SELECT id FROM ${g.wrap(this.table)} WHERE id = ${g.placeholder(1)} AND reservation_token = ${g.placeholder(2)} ${this.connection.getDriverName() === "sqlite" ? "" : "FOR UPDATE"}`, [id, token]);
+      const rows = await conn.queryPrimary(`SELECT id FROM ${g.wrap(this.table)} WHERE id = ${g.placeholder(1)} AND reservation_token = ${g.placeholder(2)} ${this.connection.getDriverName() === "sqlite" ? "" : "FOR UPDATE"}`, [id, token]);
       if (!rows.length) return false;
       await conn.run(`UPDATE ${g.wrap(this.table)} SET reserved_at = ${g.placeholder(1)} WHERE id = ${g.placeholder(2)} AND reservation_token = ${g.placeholder(3)}`, [Math.floor(Date.now() / 1000), id, token]);
       return true;
@@ -250,9 +250,9 @@ export class DatabaseQueueDriver implements QueueDriver {
     const t = driver === "mysql" ? `\`${this.table}\`` : this.table;
     const rows = (queue
       ? driver === "postgres"
-        ? await this.connection.query(`SELECT COUNT(*) as cnt FROM ${t} WHERE queue = $1`, [queue])
-        : await this.connection.query(`SELECT COUNT(*) as cnt FROM ${t} WHERE queue = ?`, [queue])
-      : await this.connection.query(`SELECT COUNT(*) as cnt FROM ${t}`)) as { cnt: number }[];
+        ? await this.connection.queryPrimary(`SELECT COUNT(*) as cnt FROM ${t} WHERE queue = $1`, [queue])
+        : await this.connection.queryPrimary(`SELECT COUNT(*) as cnt FROM ${t} WHERE queue = ?`, [queue])
+      : await this.connection.queryPrimary(`SELECT COUNT(*) as cnt FROM ${t}`)) as { cnt: number }[];
     return Number(rows[0]?.cnt ?? 0);
   }
 }

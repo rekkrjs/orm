@@ -27,6 +27,20 @@ interface PretendContext {
 const resourceScopes = new AsyncLocalStorage<ReadonlySet<Connection>>();
 
 const pretendContext = new AsyncLocalStorage<PretendContext>();
+const readWriteScope = new AsyncLocalStorage<Set<Connection>>();
+
+function replicaSelect(sql: string): boolean {
+  const trimmed = sql.trim();
+  if (!/^(?:SELECT|WITH)\b/i.test(trimmed)) return false;
+  const statement = trimmed.replace(/;\s*$/, "");
+  return !statement.includes(";") &&
+    !/\b(?:FOR\s+(?:UPDATE|SHARE)|LOCK\s+IN\s+SHARE\s+MODE|INTO)\b/i.test(statement) &&
+    (!/^WITH\b/i.test(statement) || !/\b(?:INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP)\b/i.test(statement));
+}
+
+function mutatesData(sql: string): boolean {
+  return /^\s*(?:INSERT|UPDATE|DELETE|REPLACE|UPSERT|MERGE|TRUNCATE|CREATE|ALTER|DROP)\b/i.test(sql);
+}
 
 /**
  * What a driver hands back for a write: an array of whatever
@@ -138,6 +152,9 @@ export class Connection {
   private abandonedTimer?: ReturnType<typeof setTimeout>;
   private sqliteDefaultsApplied = false;
   private sqliteDefaultsPromise?: Promise<void>;
+  private readReplicas?: Connection[];
+  private replicaIndex = 0;
+  private sticky = false;
   private mysqlUtcChecked = false;
   /** When set (ms), a manual beginTransaction() with no commit/rollback within this window is auto-rolled-back and its pooled connection released. Opt-in. */
   static abandonedTransactionTimeoutMs?: number;
@@ -199,6 +216,19 @@ export class Connection {
   isBusy(): boolean { return this.resourceConnection().activeLeases > 0; }
   isRetired(): boolean { return this.resourceConnection().retired; }
   static hasActiveScope(): boolean { return !!resourceScopes.getStore()?.size; }
+  /** Keep read-after-write affinity inside one request/job and its nested calls. */
+  static scope<T>(callback: () => T | Promise<T>): Promise<T> {
+    return Promise.resolve(readWriteScope.run(readWriteScope.getStore() ?? new Set<Connection>(), callback));
+  }
+
+  setReadReplicas(replicas: Connection[], sticky = false): void {
+    if (this.resourceConnection() !== this || replicas.length === 0 || replicas.some(replica => replica.getDriverName() !== this.driverName)) {
+      throw new Error("Read replicas must be nonempty and use the same driver as the write connection.");
+    }
+    this.readReplicas = [...replicas];
+    this.sticky = sticky;
+    this.replicaIndex = 0;
+  }
   static async finishDraining<T>(connections: Iterable<Connection>, callback: () => Promise<T>): Promise<T> {
     return resourceScopes.run(new Set(connections), callback);
   }
@@ -562,19 +592,43 @@ export class Connection {
 
   async query<TRow = any>(sqlString: string, bindings?: any[]): Promise<TRow[]> {
     const connection = resolveConnection(this);
-    return await connection.use(() => connection.execute(sqlString, bindings));
+    const primary = connection.resourceConnection();
+    const replicas = primary.readReplicas;
+    const target = connection === primary && !connection.isInTransaction() && replicas?.length && replicaSelect(sqlString) &&
+      !(primary.sticky && readWriteScope.getStore()?.has(primary))
+      ? replicas[primary.replicaIndex++ % replicas.length]!
+      : connection;
+    const result = await target.use(() => target.execute(sqlString, bindings));
+    if (target === connection && !replicaSelect(sqlString)) primary.markWrite();
+    return result;
   }
 
   async run(sqlString: string, bindings?: any[]): Promise<WriteResult> {
     const connection = resolveConnection(this);
-    return await connection.use(() => connection.execute(sqlString, bindings));
+    const result = await connection.use(() => connection.execute(sqlString, bindings));
+    connection.resourceConnection().markWrite();
+    return result;
+  }
+
+  /** Execute an operational read on the primary (schema, locks, queue state). */
+  async queryPrimary<TRow = Record<string, unknown>>(sqlString: string, bindings?: unknown[]): Promise<TRow[]> {
+    const connection = resolveConnection(this);
+    const result = await connection.use(() => connection.execute(sqlString, bindings));
+    if (mutatesData(sqlString)) connection.resourceConnection().markWrite();
+    return result;
+  }
+
+  private markWrite(): void {
+    if (this.sticky && !this.isPretending()) readWriteScope.getStore()?.add(this);
   }
 
   /** MySQL's result metadata rounds large AUTO_INCREMENT ids; read the exact id on the same session. */
   async runAndGetMysqlInsertId(sqlString: string, bindings?: any[]): Promise<number | string | bigint | null> {
     const effective = resolveConnection(this);
     if (effective !== this) return effective.runAndGetMysqlInsertId(sqlString, bindings);
-    return this.use(() => this.mysqlInsertId(sqlString, bindings));
+    const result = await this.use(() => this.mysqlInsertId(sqlString, bindings));
+    this.resourceConnection().markWrite();
+    return result;
   }
 
   private async mysqlInsertId(sqlString: string, bindings?: any[]): Promise<any> {

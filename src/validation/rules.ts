@@ -1525,7 +1525,7 @@ export class UniqueRule implements RuleContract {
       }
     }
     sql += " LIMIT 1";
-    const rows = await conn.query(sql, bindings);
+    const rows = await conn.queryPrimary(sql, bindings);
     return rows.length === 0;
   }
   message(c: ValidationContext) {
@@ -1601,7 +1601,7 @@ export class ExistsRule implements RuleContract {
       }
     }
     sql += " LIMIT 1";
-    const rows = await conn.query(sql, bindings);
+    const rows = await conn.queryPrimary(sql, bindings);
     return rows.length > 0;
   }
   message(c: ValidationContext) {

@@ -242,7 +242,7 @@ describe("unique().ignoreField", () => {
         getGrammar: () => ({ placeholder: (i: number) => `$${i}` }),
         qualifyTable: (t: string) => t,
         quoteIdentifier: (i: string) => `"${i}"`,
-        query: async (sql: string) => { issued.push(sql); return []; },
+        queryPrimary: async (sql: string) => { issued.push(sql); return []; },
       },
     };
 
@@ -266,7 +266,7 @@ describe("unique().ignoreField", () => {
         getGrammar: () => ({ placeholder: (i: number) => `$${i}` }),
         qualifyTable: (t: string) => t,
         quoteIdentifier: (i: string) => `"${i}"`,
-        query: async (sql: string) => { issued.push(sql); return []; },
+        queryPrimary: async (sql: string) => { issued.push(sql); return []; },
       },
     };
 

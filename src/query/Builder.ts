@@ -3202,7 +3202,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       // and returns nothing usable instead of failing. Fall back to the rowid,
       // which is what this returned before RETURNING was used here.
       if (driver === "sqlite") {
-        const rowid = await this.connection.query("SELECT last_insert_rowid() AS orm_rowid");
+        const rowid = await this.connection.queryPrimary<{ orm_rowid: number | string | bigint }>("SELECT last_insert_rowid() AS orm_rowid");
         return rowid[0]?.orm_rowid ?? null;
       }
       return null;

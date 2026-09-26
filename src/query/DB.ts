@@ -11,6 +11,9 @@ function reportListenerError(error: unknown): void {
 }
 
 export const DB = {
+  scope<T>(callback: () => T | Promise<T>): Promise<T> {
+    return Connection.scope(callback);
+  },
   table<T extends Record<string, any> = Record<string, any>>(name: string): Builder<T> {
     return new Builder<T>(resolveConnection(), name);
   },

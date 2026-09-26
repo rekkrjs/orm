@@ -195,7 +195,7 @@ export class Migrator {
     const admin = new Connection(adminConfig);
     try {
       if (driver === "postgres") {
-        const exists = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [database]);
+        const exists = await admin.queryPrimary("SELECT 1 FROM pg_database WHERE datname = $1", [database]);
         if (exists.length === 0) {
           await admin.run(`CREATE DATABASE ${admin.quoteIdentifier(database)}`);
         }
@@ -636,26 +636,26 @@ export class Migrator {
   private async getSchemaDumpSql(): Promise<string> {
     const driver = this.connection.getDriverName();
     if (driver === "sqlite") {
-      const rows = await this.connection.query(
+      const rows = await this.connection.queryPrimary(
         "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND type IN ('table', 'index', 'trigger', 'view') AND name NOT LIKE 'sqlite_%' ORDER BY type = 'table' DESC, name"
       );
       return rows.map((row: any) => `${String(row.sql).trim()};`).join("\n\n") + "\n";
     }
 
     if (driver === "mysql") {
-      const tables = await this.connection.query("SHOW TABLES");
+      const tables = await this.connection.queryPrimary("SHOW TABLES");
       const key = Object.keys(tables[0] ?? {})[0];
       const statements: string[] = [];
       for (const row of tables as any[]) {
         const table = row[key];
-        const createRows = await this.connection.query(`SHOW CREATE TABLE ${this.connection.getGrammar().wrap(table)}`);
+        const createRows = await this.connection.queryPrimary(`SHOW CREATE TABLE ${this.connection.getGrammar().wrap(table)}`);
         statements.push(`${createRows[0]["Create Table"]};`);
       }
       return statements.join("\n\n") + "\n";
     }
 
     const schema = this.connection.getSchema() || "public";
-    const tables = await this.connection.query(
+    const tables = await this.connection.queryPrimary(
       "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_type = 'BASE TABLE' ORDER BY table_name",
       [schema]
     );
@@ -663,14 +663,14 @@ export class Migrator {
 
     for (const tableRow of tables as any[]) {
       const table = tableRow.table_name;
-      const columns = await this.connection.query(
+      const columns = await this.connection.queryPrimary(
         `SELECT column_name, data_type, is_nullable, column_default, character_maximum_length, numeric_precision, numeric_scale
          FROM information_schema.columns
          WHERE table_schema = $1 AND table_name = $2
          ORDER BY ordinal_position`,
         [schema, table]
       );
-      const primaryKeys = await this.connection.query(
+      const primaryKeys = await this.connection.queryPrimary(
         `SELECT kcu.column_name
          FROM information_schema.table_constraints tc
          JOIN information_schema.key_column_usage kcu
@@ -715,7 +715,7 @@ export class Migrator {
     if (driver === "sqlite") {
       await this.connection.run("PRAGMA foreign_keys = OFF");
       try {
-        const rows = await this.connection.query(
+        const rows = await this.connection.queryPrimary(
           "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
         );
         for (const row of rows as any[]) {
@@ -729,7 +729,7 @@ export class Migrator {
     }
 
     if (driver === "mysql") {
-      const tables = await this.connection.query("SHOW TABLES");
+      const tables = await this.connection.queryPrimary("SHOW TABLES");
       const key = Object.keys(tables[0] ?? {})[0];
       await this.connection.run("SET FOREIGN_KEY_CHECKS = 0");
       try {
@@ -743,7 +743,7 @@ export class Migrator {
     }
 
     const schema = this.connection.getSchema() || "public";
-    const tables = await this.connection.query(
+    const tables = await this.connection.queryPrimary(
       "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_type = 'BASE TABLE'",
       [schema]
     );

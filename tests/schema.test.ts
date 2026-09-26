@@ -757,8 +757,8 @@ describe("Schema Builder", () => {
     });
 
     const calls: { sql: string; bindings: any[] }[] = [];
-    const originalQuery = connection.query.bind(connection);
-    connection.query = async (sql: string, bindings?: any[]) => {
+    const originalQuery = connection.queryPrimary.bind(connection);
+    connection.queryPrimary = async (sql: string, bindings?: any[]) => {
       calls.push({ sql, bindings: bindings || [] });
       return originalQuery(sql, bindings);
     };

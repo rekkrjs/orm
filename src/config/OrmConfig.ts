@@ -23,7 +23,7 @@ export interface ModelsPath {
 }
 
 export interface OrmConfig {
-  connection: ConnectionConfig;
+  connection: ConnectionConfig | { read: string[]; write: string; sticky?: boolean };
   migrationsPath?: string | string[];
   seedersPath?: string | string[];
   migrations?: {
@@ -117,8 +117,20 @@ function prepare(config: OrmConfig) {
   const owned: Connection[] = [];
   const cleanup: typeof cleanupOwned = [];
   try {
-    const connection = new Connection(config.connection);
+    const readWrite = "write" in config.connection ? config.connection : undefined;
+    if (readWrite && (!Array.isArray(readWrite.read) || readWrite.read.length === 0 || readWrite.read.some(url => typeof url !== "string" || !url))) {
+      throw new Error("Read/write connection requires at least one replica URL in read.");
+    }
+    const connection = new Connection(readWrite ? { url: readWrite.write } : config.connection as ConnectionConfig);
     owned.push(connection);
+    if (readWrite) {
+      const replicas = readWrite.read.map(url => {
+        const replica = new Connection({ url });
+        owned.push(replica);
+        return replica;
+      });
+      connection.setReadReplicas(replicas, readWrite.sticky);
+    }
     let queue: QueueDriver | undefined;
     if (config.queue) {
       if (config.queue.driver === "redis") {

@@ -387,7 +387,7 @@ export default class CreateEventTestTable extends Migration {
   test("postgres schema dump parameterizes schema metadata queries", async () => {
     const postgres = new Connection({ url: "postgres://user:pass@localhost:5432/db", schema: "public'; DROP SCHEMA public; --" });
     const calls: { sql: string; bindings: any[] }[] = [];
-    postgres.query = async (sql: string, bindings?: any[]) => {
+    postgres.queryPrimary = async (sql: string, bindings?: any[]) => {
       calls.push({ sql, bindings: bindings || [] });
       return [];
     };

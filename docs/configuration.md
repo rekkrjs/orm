@@ -79,7 +79,30 @@ export default config;
 
 ## `connection`
 
-Required. Two equivalent shapes are supported.
+Required. A single database accepts either a URL or driver settings. For read replicas, use read/write URLs.
+
+### Read replicas
+
+```ts
+connection: {
+  write: process.env.DATABASE_WRITE_URL!,
+  read: [process.env.DATABASE_READ_1_URL!, process.env.DATABASE_READ_2_URL!],
+  sticky: true,
+}
+```
+
+Application `SELECT` queries rotate across the read URLs. Writes, locking reads, schema and migration operations, and every query inside a transaction use `write`. The URLs must use the same database driver and refer to databases with the same schema. Replication lag is possible when `sticky` is off.
+
+For read-after-write consistency, wrap each request or job in `DB.scope()`. With `sticky: true`, a successful write keeps subsequent reads in that scope on `write`. Nested calls share the scope; concurrent scopes do not. Outside `DB.scope()`, reads continue to use replicas after a write because the ORM cannot infer a request boundary.
+
+```ts
+await DB.scope(async () => {
+  await User.create({ name: "Ada" });
+  const user = await User.where("name", "Ada").first(); // reads from write
+});
+```
+
+`DB.raw()` and `Connection.query()` route a single plain `SELECT` or read-only `WITH` query to a replica. Other SQL, including locking queries and multiple statements, runs on the primary. `Connection.queryPrimary()` always uses the primary for operational reads that must see the latest state.
 
 ### URL form
 

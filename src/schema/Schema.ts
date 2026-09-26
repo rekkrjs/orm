@@ -291,7 +291,7 @@ export class Schema {
       sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2";
       bindings = [schema, table];
     }
-    const result = await connection.query(sql, bindings);
+    const result = await connection.queryPrimary(sql, bindings);
     return result.length > 0;
   }
 
@@ -304,7 +304,7 @@ export class Schema {
     let bindings: any[] = [];
     if (driver === "sqlite") {
       sql = `PRAGMA table_info(${grammar.wrap(table)})`;
-      const result = await connection.query(sql);
+      const result = await connection.queryPrimary(sql);
       return result.some((row: any) => row.name === column);
     } else if (driver === "mysql") {
       sql = "SELECT column_name FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?";
@@ -313,7 +313,7 @@ export class Schema {
       sql = "SELECT column_name FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 AND column_name = $3";
       bindings = [schema, table, column];
     }
-    const result = await connection.query(sql, bindings);
+    const result = await connection.queryPrimary(sql, bindings);
     return result.length > 0;
   }
 
@@ -326,11 +326,11 @@ export class Schema {
     const tableName = qualified.table;
 
     if (driver === "sqlite") {
-      const indexes = await connection.query(`PRAGMA index_list(${grammar.wrap(table)})`);
+      const indexes = await connection.queryPrimary(`PRAGMA index_list(${grammar.wrap(table)})`);
       const results: SchemaIndex[] = [];
       for (const index of indexes as any[]) {
         const name = String(index.name);
-        const columns = await connection.query(`PRAGMA index_info(${grammar.wrap(name)})`);
+        const columns = await connection.queryPrimary(`PRAGMA index_info(${grammar.wrap(name)})`);
         results.push({
           name,
           columns: columns.map((row: any) => String(row.name)),
@@ -343,7 +343,7 @@ export class Schema {
     }
 
     if (driver === "mysql") {
-      const rows = await connection.query(
+      const rows = await connection.queryPrimary(
         `SELECT index_name AS \`index_name\`, column_name AS \`column_name\`, non_unique AS \`non_unique\`, index_type AS \`index_type\`
          FROM information_schema.statistics
          WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ?
@@ -362,7 +362,7 @@ export class Schema {
       );
     }
 
-    const rows = await connection.query(
+    const rows = await connection.queryPrimary(
       `SELECT
          i.relname AS index_name,
          a.attname AS column_name,
@@ -416,7 +416,7 @@ export class Schema {
     const tableName = qualified.table;
 
     if (driver === "sqlite") {
-      const rows = await connection.query(`PRAGMA foreign_key_list(${grammar.wrap(table)})`);
+      const rows = await connection.queryPrimary(`PRAGMA foreign_key_list(${grammar.wrap(table)})`);
       const grouped = new Map<string, SchemaForeignKey>();
       for (const row of rows as any[]) {
         const key = String(row.id);
@@ -436,7 +436,7 @@ export class Schema {
     }
 
     if (driver === "mysql") {
-      const rows = await connection.query(
+      const rows = await connection.queryPrimary(
         `SELECT
            k.constraint_name AS \`constraint_name\`,
            k.column_name AS \`column_name\`,
@@ -458,7 +458,7 @@ export class Schema {
       return this.groupForeignKeyRows(rows as any[], "constraint_name", "column_name", "referenced_table_name", "referenced_column_name", "delete_rule", "update_rule");
     }
 
-    const rows = await connection.query(
+    const rows = await connection.queryPrimary(
       `SELECT
          tc.constraint_name,
          kcu.column_name,
@@ -554,7 +554,7 @@ export class Schema {
     const grammar = this.getGrammar(conn);
 
     if (driver === "sqlite") {
-      const rows = await conn.query(`PRAGMA table_info(${grammar.wrap(table)})`);
+      const rows = await conn.queryPrimary(`PRAGMA table_info(${grammar.wrap(table)})`);
       return (rows as any[]).map((row) => {
         const size = numericSize(row.type);
         return {
@@ -571,7 +571,7 @@ export class Schema {
     }
 
     if (driver === "mysql") {
-      const rows = await conn.query(
+      const rows = await conn.queryPrimary(
         "SELECT column_name AS Field, column_type AS Type, column_key AS `Key`, extra AS Extra, is_nullable AS Nullable, column_default AS `Default`, character_maximum_length AS CharacterLength, numeric_precision AS `Precision`, numeric_scale AS `Scale`, datetime_precision AS `DateTimePrecision` FROM information_schema.columns WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ? ORDER BY ordinal_position",
         [qualified.schema ?? null, qualified.table]
       );
@@ -589,7 +589,7 @@ export class Schema {
       }));
     }
 
-    const rows = await conn.query(
+    const rows = await conn.queryPrimary(
       `SELECT c.column_name, c.data_type, c.is_nullable, c.column_default, c.character_maximum_length,
        c.numeric_precision, c.numeric_scale, c.datetime_precision,
        COALESCE(bool_or(tc.constraint_type = 'PRIMARY KEY'), false) AS primary_key
@@ -645,7 +645,7 @@ export class Schema {
     const tableName = qualified.table;
     const grammar = this.getGrammar(connection);
     if (driver === "sqlite") {
-      const rows = await connection.query(`PRAGMA table_info(${grammar.wrap(table)})`);
+      const rows = await connection.queryPrimary<{ name: string; type: string; pk: number; dflt_value?: unknown }>(`PRAGMA table_info(${grammar.wrap(table)})`);
       const row = rows.find((item: any) => item.name === column);
       return row
         ? ({
@@ -661,7 +661,7 @@ export class Schema {
     }
 
     if (driver === "mysql") {
-      const rows = await connection.query(
+      const rows = await connection.queryPrimary(
         "SELECT column_name AS Field, column_type AS Type, column_key AS `Key`, extra AS Extra, column_default AS `Default`, character_maximum_length AS CharacterLength, numeric_precision AS `Precision`, numeric_scale AS `Scale`, datetime_precision AS `DateTimePrecision` FROM information_schema.columns WHERE table_schema = COALESCE(?, DATABASE()) AND table_name = ? AND column_name = ?",
         [qualified.schema ?? null, tableName, column]
       );
@@ -682,7 +682,7 @@ export class Schema {
         : null;
     }
 
-    const rows = await connection.query(
+    const rows = await connection.queryPrimary(
       `SELECT c.column_name, c.data_type, c.column_default, c.character_maximum_length,
        c.numeric_precision, c.numeric_scale, c.datetime_precision,
        COALESCE(tc.constraint_type = 'PRIMARY KEY', false) AS primary_key

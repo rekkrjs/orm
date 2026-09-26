@@ -120,12 +120,12 @@ async function acquirePostgresLock(
 
   try {
     while (true) {
-      const rows = await TenantContext.asLandlord(() => session.query(`SELECT pg_try_advisory_lock(${key}) AS locked`));
+      const rows = await TenantContext.asLandlord(() => session.queryPrimary(`SELECT pg_try_advisory_lock(${key}) AS locked`));
       if (isTruthyResult(rows?.[0]?.locked)) {
         return {
           release: async () => {
             try {
-              await TenantContext.asLandlord(() => session.query(`SELECT pg_advisory_unlock(${key})`));
+              await TenantContext.asLandlord(() => session.queryPrimary(`SELECT pg_advisory_unlock(${key})`));
             } finally {
               await session.close();
             }
@@ -156,14 +156,14 @@ async function acquireMySqlLock(
   try {
     // GET_LOCK's own timeout is in whole seconds, so it would turn a 1ms wait
     // into a 1s one. Poll with an immediate-return lock attempt instead.
-    while (!isTruthyResult((await TenantContext.asLandlord(() => session.query("SELECT GET_LOCK(?, 0) AS locked", [lockName])))?.[0]?.locked)) {
+    while (!isTruthyResult((await TenantContext.asLandlord(() => session.queryPrimary("SELECT GET_LOCK(?, 0) AS locked", [lockName])))?.[0]?.locked)) {
       if (Date.now() - started >= timeoutMs) throw timeoutError(name, timeoutMs);
       await sleep(RETRY_INTERVAL_MS);
     }
     return {
       release: async () => {
         try {
-          await TenantContext.asLandlord(() => session.query("SELECT RELEASE_LOCK(?)", [lockName]));
+          await TenantContext.asLandlord(() => session.queryPrimary("SELECT RELEASE_LOCK(?)", [lockName]));
         } finally {
           await session.close();
         }

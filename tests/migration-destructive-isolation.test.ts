@@ -40,6 +40,7 @@ for (const operation of ["refresh", "reset", "fresh"] as const) {
     await mkdir(directory, { recursive: true });
     const migrator = new Migrator(connection, directory, {}, { output() {}, lockTimeoutMs: 1 });
     const query = connection.query.bind(connection);
+    const queryPrimary = connection.queryPrimary.bind(connection);
     let probes = 0;
     try {
       for (const index of [1, 2]) {
@@ -52,8 +53,8 @@ export default class extends Migration {
 `);
         await migrator.run();
       }
-      connection.query = async function (sql: string, bindings?: any[]) {
-        const result = await query(sql, bindings);
+      const probe = async (sql: string, bindings: any[] | undefined, execute: typeof query) => {
+        const result = await execute(sql, bindings);
         // Probe the actual phase boundaries: batch selection after a rollback,
         // and migrations-table discovery after fresh has dropped the tables.
         if (!TransactionContext.current() && (sql.includes("MAX(batch)") || sql.includes("sqlite_master"))) {
@@ -67,8 +68,11 @@ export default class extends Migration {
         }
         return result;
       };
+      connection.query = (sql, bindings) => probe(sql, bindings, query);
+      connection.queryPrimary = (sql, bindings) => probe(sql, bindings, queryPrimary);
       await migrator[operation]();
       connection.query = query;
+      connection.queryPrimary = queryPrimary;
       expect(probes).toBeGreaterThanOrEqual(operation === "fresh" ? 2 : 3);
       expect(await Schema.hasTable("batch_1", connection)).toBe(operation !== "reset");
       expect(await Schema.hasTable("batch_2", connection)).toBe(operation !== "reset");
@@ -77,6 +81,7 @@ export default class extends Migration {
       await next.release();
     } finally {
       connection.query = query;
+      connection.queryPrimary = queryPrimary;
       await teardownTestDb(connection);
       await rm(directory, { recursive: true, force: true });
     }
