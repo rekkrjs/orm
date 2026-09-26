@@ -157,38 +157,48 @@ bunx orm types:generate --tenant acme
 
 ## What gets emitted
 
-For each table, ORM generates an `Attributes` interface plus (optionally) a `declare module` block that merges those attributes into your real model class:
+For each table, ORM generates an `Attributes` interface plus a `declare module` block that merges those attributes into your real model class. You never write or edit this file; `types:generate` rewrites it:
 
 ```ts
-// src/models/types/users.d.ts
-import { User } from "../User";
-
+// src/models/types/users.d.ts (generated)
 export interface UsersAttributes {
   id: number;
   name: string;
-  email: string | null;
-  created_at: Date;
+  email?: string | null;
+  created_at?: Date | null;
+  updated_at?: Date | null;
 }
 
 declare module "../User" {
-  interface User extends UsersAttributes {}
+  interface User extends UsersAttributes {
+    getAttribute<K extends keyof UsersAttributes>(key: K): UsersAttributes[K];
+    getAttribute(key: string): any;
+    setAttribute<K extends keyof UsersAttributes>(key: K, value: UsersAttributes[K]): void;
+    fill(attributes: Partial<UsersAttributes> & Record<string, any>): this;
+  }
 }
 ```
+
+A nullable column is optional (`?`) and admits `null`. The interface is exported
+so your code can name it, for example in `AccessorMap<UsersAttributes, User>`.
 
 Your model stays hand-written:
 
 ```ts
 // src/models/User.ts
 import { Model } from "@rekkr/orm";
+import { Post } from "./Post";
 
 export class User extends Model {
-  static table = "users";
-
   posts() {
     return this.hasMany(Post);
   }
 }
 ```
+
+Export the class by name, as above. The `declare module` block merges into the
+module's named `User` export; with `export default class User` nothing merges and
+the attributes stay untyped.
 
 With both files in place:
 
@@ -221,16 +231,28 @@ types cannot be inferred automatically.
 
 ### Stubs mode
 
-If you'd rather ORM generate the base classes themselves (instead of augmenting hand-written ones), set `typeStubs: true`. The generator then emits:
+If you'd rather ORM generate the base classes themselves (instead of augmenting hand-written ones), set `typeStubs: true`. The generator then emits one file per table with the interface and a base class with a typed getter and setter per column:
 
 ```ts
-// src/generated/model-types/User.ts
-export class User extends Model<UsersAttributes> {
-  static table = "users";
+// src/generated/model-types/users.ts (generated)
+import { Model } from "@rekkr/orm";
+
+export interface UsersAttributes { /* ... */ }
+
+export class UsersBase extends Model<UsersAttributes> {
+  static override table = "users";
+
+  get name(): string {
+    return this.getAttribute("name");
+  }
+  set name(value: string) {
+    this.setAttribute("name", value);
+  }
+  // ...one pair per column
 }
 ```
 
-You extend these stubs in your own files. This is closer to the Prisma-style "generated client" pattern. Stubs are exposed for projects that prefer that style; the augmentation approach above is the default because it keeps your model source files canonical.
+You extend these stubs in your own files (`export class User extends UsersBase {}`). This is closer to the Prisma-style "generated client" pattern. Stubs are exposed for projects that prefer that style; the augmentation approach above is the default because it keeps your model source files canonical.
 
 ## Programmatic generation
 
@@ -238,17 +260,15 @@ You extend these stubs in your own files. This is closer to the Prisma-style "ge
 import { TypeGenerator, Connection } from "@rekkr/orm";
 
 const connection = new Connection({ url: "sqlite://app.db" });
-const generator = new TypeGenerator({
-  connection,
-  outDir: "./src/generated/model-types",
+const generator = new TypeGenerator(connection, {
+  outDir: "./src/models/types",
   modelDirectory: "./src/models",
   modelImportPrefix: "$models",
   singularModels: true,
   declarations: true,
-  stubs: false,
 });
 
-await generator.run();
+const tables = await generator.generate(); // the tables it wrote declarations for
 ```
 
 The `configureOrm()` facade and the `orm types:generate` CLI both wrap this.

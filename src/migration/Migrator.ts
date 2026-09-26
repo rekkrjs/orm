@@ -557,6 +557,7 @@ export class Migrator {
       ...this.typeGeneratorOptions,
       outDir,
       allowedTables,
+      warn: (message) => this.warn(message),
     });
     await generator.generate();
     const label = modelDirectories.map((dir) => join(dir, this.typeGeneratorOptions.declarationDirName || "types")).join(", ");

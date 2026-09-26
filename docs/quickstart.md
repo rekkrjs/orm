@@ -89,24 +89,17 @@ bunx orm migrate
 
 You should see `Migrated: ...create_users_table.ts` and similar for posts. See [Migrations](./migrations.md) for rollback, refresh, and multi-tenant migrations.
 
-## 4. Define typed models
+## 4. Define models
 
-`Model.define<Attributes>(table)` gives full IntelliSense — attribute access, typed `where()` columns, typed `with()` relations — with no code generation:
+A model is a class; its table, key, and timestamps follow from conventions
+(`User` → `users`):
 
 ```ts
 // src/models/User.ts
 import { Model } from "@rekkr/orm";
-import Post from "./Post";
+import { Post } from "./Post";
 
-interface UserAttributes {
-  id: number;
-  name: string;
-  email: string;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export default class User extends Model.define<UserAttributes>("users") {
+export class User extends Model {
   static override fillable = ["name", "email"];
 
   posts() {
@@ -118,18 +111,9 @@ export default class User extends Model.define<UserAttributes>("users") {
 ```ts
 // src/models/Post.ts
 import { Model } from "@rekkr/orm";
-import User from "./User";
+import { User } from "./User";
 
-interface PostAttributes {
-  id: number;
-  user_id: number;
-  title: string;
-  body: string | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export default class Post extends Model.define<PostAttributes>("posts") {
+export class Post extends Model {
   static override fillable = ["user_id", "title", "body"];
 
   author() {
@@ -138,7 +122,21 @@ export default class Post extends Model.define<PostAttributes>("posts") {
 }
 ```
 
-Plain `extends Model` also works if you have generated declarations or don't need attribute typing — see [Models](./models.md) for the trade-offs.
+Now generate the attribute types from the tables you just migrated:
+
+```bash
+bunx orm types:generate
+```
+
+It writes `src/models/types/users.d.ts` and `posts.d.ts`, which merge each
+table's columns into its class: `user.name` is a `string`, `post.body` may be
+`null`, and `where()` and `create()` autocomplete the columns. Export
+models by name, as above: the generated declarations merge into a named export,
+not into `export default class`. Pass `--types` to `orm migrate` to regenerate
+them after each migration. See [Type Generation](./type-generation.md).
+
+Without type generation, `Model.define<T>()` takes the attribute types from an
+interface you write instead; see [Models](./models.md#without-type-generation-modeldefinet).
 
 ## 5. Write a seeder (optional)
 
@@ -147,8 +145,8 @@ Create the seeder file under the configured `seedersPath`:
 ```ts
 // database/seeders/DatabaseSeeder.ts
 import { Seeder } from "@rekkr/orm";
-import User from "../../src/models/User";
-import Post from "../../src/models/Post";
+import { User } from "../../src/models/User";
+import { Post } from "../../src/models/Post";
 
 export default class DatabaseSeeder extends Seeder {
   async run() {
@@ -199,7 +197,7 @@ See [Library Usage](./library-usage.md) for the full facade reference.
 ### Read
 
 ```ts
-import User from "./models/User";
+import { User } from "./models/User";
 
 const all = await User.all();                       // every row, as Collection<User>
 const alice = await User.find(1);                   // by primary key, or null
@@ -276,4 +274,4 @@ When no `orm.config.ts` is present the REPL starts against an in-memory SQLite d
 - [Relationships](./relationships.md) — `hasMany`, `belongsToMany`, polymorphic, eager loading.
 - [Query Builder](./query-builder.md) — every chainable method and the `DB` facade.
 - [Migrations](./migrations.md) — rollback, batches, multi-tenant.
-- [TypeScript](./typescript.md) — how the typing flows from `Model.define<T>()` through queries.
+- [TypeScript](./typescript.md) — how attribute types flow from the model through queries.

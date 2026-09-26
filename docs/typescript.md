@@ -1,17 +1,43 @@
 # TypeScript
 
-ORM is built TypeScript-first. With `Model.define<T>()`, every attribute, column name, relation, and scope is typed end-to-end — no code generator required, no `// @ts-ignore` needed for ordinary usage.
+ORM is built TypeScript-first. Attribute types reach a model in one of two ways,
+declarations generated from the database or an interface passed to
+`Model.define<T>()`, and from there every attribute, relation, and query result is
+typed end to end, with no `// @ts-ignore` needed for ordinary usage.
 
-This document walks through the typing flow: how `Model.define<T>()` produces a fully-typed base class, how the query builder narrows on every chained call, and where you sometimes need a hand-written annotation (accessors, scopes, custom casts).
+This document walks through the typing flow: where attribute types come from, how
+the query builder narrows on every chained call, and where you sometimes need a
+hand-written annotation (accessors, scopes, custom casts).
 
-## `Model.define<T>(table)` — typed base class
+## Where attribute types come from
 
-Pass an attribute interface and the table name. The returned class has:
+### Generated declarations (recommended)
 
-- **Property access** — `user.name`, `user.email`. Reads through accessors / casts.
-- **Column autocomplete** — `User.where("email", ...)`, `User.orderBy("created_at")`.
-- **Relation autocomplete** — `User.with("posts")`, `User.with("posts.comments")`.
-- **Typed eager-load narrowing** — after `.with("posts")`, the relation is `Collection<Post>`, not a relation method.
+Write the model as a plain class and let the database supply the columns:
+
+```ts
+// src/models/User.ts
+import { Model } from "@rekkr/orm";
+import { Post } from "./Post";
+
+export class User extends Model {
+  static override fillable = ["name", "email", "active"];
+
+  posts() {
+    return this.hasMany(Post);
+  }
+}
+```
+
+`bunx orm types:generate` writes `src/models/types/users.d.ts`, which merges the
+table's columns into `User`. Export the class by name: a declaration merges into a
+named export, not into `export default class`. See
+[Type Generation](./type-generation.md).
+
+### `Model.define<T>(table)`
+
+Without generated declarations, pass an attribute interface and the table name.
+The returned base class carries the interface:
 
 ```ts
 import { Model } from "@rekkr/orm";
@@ -25,32 +51,50 @@ interface UserAttributes {
   updated_at: Date;
 }
 
-class User extends Model.define<UserAttributes>("users") {
+export class User extends Model.define<UserAttributes>("users") {
   static override fillable = ["name", "email", "active"];
 
   posts() {
     return this.hasMany(Post);
   }
-  profile() {
-    return this.hasOne(Profile);
-  }
 }
+```
 
+The cost is keeping the interface in step with the table by hand.
+
+If the class name doesn't pluralize naturally to your table name (`curricula`,
+`media`, `criteria`), pass the singular name as the second argument so
+foreign-key inference still works:
+
+```ts
+class Curriculum extends Model.define<CurriculumAttributes>("curricula") {}
+
+// When assigning to a variable instead of subclassing:
+const CurriculumModel = Model.define<CurriculumAttributes>("curricula", "Curriculum");
+```
+
+## What a typed model gets
+
+Either way, the class has:
+
+- **Property access**: `user.name`, `user.email`. Reads through accessors and casts.
+- **Column autocomplete**: `User.where("email", ...)`, `User.orderBy("created_at")`.
+- **Relation autocomplete**: `User.with("posts")`, `User.with("posts.comments")`.
+- **Typed eager-load narrowing**: after `.with("posts")`, the relation is `Collection<Post>`, not a relation method.
+- **Typed payloads**: `User.create({ name: 42 })` is a type error when `name` is a string.
+
+```ts
 // Attribute access
 const user = await User.find(1);
 user!.name;       // string
 user!.email;      // string | null
 user!.active;     // boolean
 
-// Column autocomplete
-User.where("email", "a@b.com");     // ✓
-User.orderBy("created_at", "desc"); // ✓
-User.where("nonexistent", "x");     // ✗ TS error
-
-// Relation autocomplete
-User.with("posts");                 // ✓
-User.with("posts.comments");        // ✓ nested
-User.with("nonexistent");           // ✗ TS error
+// Column and relation names autocomplete
+User.where("email", "a@b.com");
+User.orderBy("created_at", "desc");
+User.with("posts");
+User.with("posts.comments");        // nested
 
 // Typed eager-load results
 const users = await User.with("posts").get();
@@ -66,24 +110,20 @@ const admissionsWithSubjects = await Admission.with(["subjects", "subjects.subje
 admissionsWithSubjects[0].json().subjects[0].subject; // Subject | null
 ```
 
-### Irregular plurals
-
-If the class name doesn't pluralize naturally to your table name (`curricula`, `media`, `criteria`), pass the singular name as the second argument so foreign-key inference still works:
-
-```ts
-class Curriculum extends Model.define<CurriculumAttributes>("curricula") {}
-
-// When assigning to a variable instead of subclassing:
-const CurriculumModel = Model.define<CurriculumAttributes>("curricula", "Curriculum");
-```
+Column and relation names are suggestions, not a closed list: `where()` also
+takes a qualified `users.email` or a column the model does not declare, and
+`with()` takes any string, so a misspelled name compiles and fails when the query
+runs.
 
 ## Plain `extends Model<T>`
 
-If you prefer to subclass `Model` directly — typically because you have generated `.d.ts` files in place — you can pass the attribute type as a generic. This types `$attributes` and `getAttribute()`, but does not add transparent property access or typed eager-load narrowing:
+With neither generated declarations nor `Model.define<T>()`, passing the
+attribute type as a generic types `$attributes` and `getAttribute()`, but adds no
+property access or eager-load narrowing:
 
 ```ts
 class User extends Model<UserAttributes> {
-  static table = "users";
+  static override table = "users";
 }
 
 const user = await User.first();
@@ -91,8 +131,6 @@ user!.getAttribute("name");   // string
 user!.$attributes.email;      // string | null
 user!.name;                   // not typed — use getAttribute()
 ```
-
-`Model.define<T>()` is strictly more featureful — pick it unless you have a specific reason not to.
 
 ## Query builder typing
 
@@ -168,21 +206,16 @@ users[0].profile_exists;     // boolean
 
 ```ts
 import { Model, type AccessorMap } from "@rekkr/orm";
+import type { UsersAttributes } from "./types/users"; // from orm types:generate
 
-interface UserAttrs {
-  id: number;
-  first_name: string;
-  last_name: string;
-}
-
-class User extends Model.define<UserAttrs>("users") {
+export class User extends Model {
   declare full_name: string;
 
-  static accessors: AccessorMap<UserAttrs, User> = {
+  static override accessors: AccessorMap<UsersAttributes, User> = {
     full_name: {
       get: (_value, attributes, model) => {
         // value:      any
-        // attributes: UserAttrs       ← typed
+        // attributes: UsersAttributes ← typed
         // model:      User            ← typed
         return `${attributes.first_name} ${attributes.last_name}`.trim();
       },
@@ -193,14 +226,14 @@ class User extends Model.define<UserAttrs>("users") {
 
 Computed attributes need a `declare` line on the class so they appear on the instance type. Without it, `user.full_name` is a type error even though it works at runtime.
 
-The `satisfies AccessorMap<UserAttrs, User>` form is supported too:
+The `satisfies AccessorMap<UsersAttributes, User>` form is supported too:
 
 ```ts
-static accessors = {
+static override accessors = {
   full_name: {
     get: (_value, attributes, model) => /* ... */,
   },
-} satisfies AccessorMap<UserAttrs, User>;
+} satisfies AccessorMap<UsersAttributes, User>;
 ```
 
 Both styles get the same parameter narrowing. The annotation form gives clearer errors when callback shapes drift.
@@ -214,7 +247,7 @@ Static scope methods take a `Builder<TModel>` as their first argument. Annotate 
 ```ts
 import type { Builder } from "@rekkr/orm";
 
-class User extends Model.define<UserAttrs>("users") {
+class User extends Model {
   static scopeActive(query: Builder<User>) {
     return query.where("active", true);
   }
@@ -226,12 +259,12 @@ class User extends Model.define<UserAttrs>("users") {
 await User.scope("active").scope("role", "admin").get();
 ```
 
-The string name in `scope("active")` autocompletes from the available `scope*` methods on the model — `scope("nonexistent")` is a TS error.
+`scope()` takes the name as a plain string, so neither autocomplete nor the compiler checks it. An unknown name throws `Scope "nonexistent" is not defined on model User` when the query is built.
 
 ## Plain object writes
 
 `create`, `update`, and `fill` accept partial attribute objects, while
-`forceFill` bypasses mass-assignment protection. `Model.define<T>()` provides
+`forceFill` bypasses mass-assignment protection. A typed model provides
 autocomplete for known fields, but its standalone-compatible input type still
 accepts unknown keys. Declare `fillable` or `guarded` for runtime protection:
 

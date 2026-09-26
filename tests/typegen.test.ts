@@ -1,7 +1,9 @@
 import { expect, test, describe, beforeAll, afterAll, readText, writeText } from "./harness.js";
 import { mkdir, readdir, rm, writeFile } from "fs/promises";
-import { join } from "path";
-import { Schema, TypeGenerator, TypeMapper, discoverModelTables } from "../src/index.js";
+import { join, relative } from "path";
+import { Migrator, Schema, TypeGenerator, TypeMapper, discoverModelTables } from "../src/index.js";
+import { makeTypesGenerateCommand } from "../src/cli/TypesGenerateCommand.js";
+import type { OrmConfig } from "../src/config/OrmConfig.js";
 import { setupTestDb } from "./helpers.js";
 
 const OUT_DIR = join(process.cwd(), "tests", "temp_types");
@@ -64,11 +66,11 @@ describe("TypeGenerator", () => {
     expect(content).toContain("created_at?: Date | null;");
     expect(content).toContain("updated_at?: Date | null;");
     expect(content).toContain("deleted_at?: string | null;");
-    expect(content).toContain("get created_at(): Date | null {");
+    expect(content).toContain("get created_at(): Date | null | undefined {");
 
     // Stubs
     expect(content).toContain("export class UsersBase extends Model<UsersAttributes> {");
-    expect(content).toContain('static table = "users";');
+    expect(content).toContain('static override table = "users";');
     expect(content).toContain("get id(): number {");
     expect(content).toContain("set id(value: number) {");
   });
@@ -117,7 +119,7 @@ describe("TypeGenerator", () => {
     await writeText(
       join(DATE_CAST_MODEL_DIR, "DateCastRecord.ts"),
       `import { Model } from "../../src/index.js";
-export default class DateCastRecord extends Model {
+export class DateCastRecord extends Model {
   static table = "typegen_cast_records";
   static casts = {
     created_at: "string",
@@ -142,6 +144,131 @@ export default class DateCastRecord extends Model {
     expect(content).toContain("deleted_at?: string | null;");
     expect(content).toContain("stored_timestamp?: Date | null;");
     expect(content).toContain("decoded_datetime?: Date | null;");
+  });
+
+  // A soft-deleting model reads deleted_at as a Date on every driver, as its
+  // timestamps are; a model without soft deletes gets the driver's raw type.
+  test("types deleted_at as a Date only on a soft-deleting model", async () => {
+    for (const table of ["typegen_soft_records", "typegen_hard_records"]) {
+      await Schema.create(table, (t) => {
+        t.increments("id");
+        t.timestamps();
+        t.timestamp("deleted_at").nullable();
+      });
+    }
+    const dir = join(DATE_CAST_MODEL_DIR, "soft");
+    await mkdir(dir, { recursive: true });
+    await writeText(
+      join(dir, "SoftRecord.ts"),
+      `import { Model } from "../../../src/index.js";
+export class SoftRecord extends Model {
+  static table = "typegen_soft_records";
+  static softDeletes = true;
+}
+export class HardRecord extends Model {
+  static table = "typegen_hard_records";
+}
+`,
+    );
+
+    await new TypeGenerator(connection, {
+      outDir: join(dir, "types"),
+      declarations: true,
+      modelDirectories: [dir],
+      allowedTables: ["typegen_soft_records", "typegen_hard_records"],
+    }).generate();
+
+    const soft = await readText(join(dir, "types", "typegen_soft_records.d.ts"));
+    expect(soft).toContain("deleted_at?: Date | null;");
+    expect(soft).toContain("created_at?: Date | null;");
+    expect(soft).not.toContain("deleted_at?: string");
+    const hard = await readText(join(dir, "types", "typegen_hard_records.d.ts"));
+    expect(hard).toContain("deleted_at?: string | null;");
+    expect(hard).toContain("created_at?: Date | null;");
+
+    // The generated types must describe what the same models read back.
+    const { SoftRecord, HardRecord } = await import(join(dir, "SoftRecord.ts"));
+    const deletedAt = new Date("2024-02-29T23:59:58.123Z");
+    for (const model of [SoftRecord, HardRecord]) await model.query().insert({ deleted_at: deletedAt });
+    const softRow = await SoftRecord.withTrashed().firstOrFail();
+    expect(softRow.getAttribute("deleted_at")).toEqual(deletedAt);
+    expect(softRow.getAttribute("created_at")).toBeNull();
+    const hardRow = await HardRecord.firstOrFail();
+    expect(typeof hardRow.getAttribute("deleted_at")).toBe("string");
+  });
+
+  // TypeScript cannot merge a `declare module` interface into a default
+  // export, so the generated file would type nothing. Say so, from every entry
+  // point that generates declarations.
+  test("warns about a model exported only as default, from the generator, the command and migrations", async () => {
+    for (const table of ["typegen_gadgets", "typegen_widgets", "typegen_tools"]) {
+      await Schema.create(table, (t) => { t.increments("id"); t.string("name"); });
+    }
+    const dir = join(DATE_CAST_MODEL_DIR, "exports");
+    await mkdir(dir, { recursive: true });
+    const orm = `import { Model } from "../../../src/index.js";`;
+    await writeText(join(dir, "Gadget.ts"), `${orm}\nexport default class Gadget extends Model { static table = "typegen_gadgets"; }\n`);
+    await writeText(join(dir, "Widget.ts"), `${orm}\nexport class Widget extends Model { static table = "typegen_widgets"; }\n`);
+    await writeText(join(dir, "Tool.ts"), `${orm}\nexport class Tool extends Model { static table = "typegen_tools"; }\nexport default Tool;\n`);
+    const expected = [
+      `Gadget in ${relative(process.cwd(), join(dir, "Gadget.ts"))} is a default export, so the types generated ` +
+        `for "typegen_gadgets" do not apply to it: TypeScript merges them only into a named export. ` +
+        "Export it as `export class Gadget`.",
+    ];
+    const allowedTables = ["typegen_gadgets", "typegen_widgets", "typegen_tools"];
+
+    const warnings: string[] = [];
+    await new TypeGenerator(connection, {
+      outDir: join(dir, "types"), declarations: true, modelDirectories: [dir], allowedTables,
+      warn: (message) => warnings.push(message),
+    }).generate();
+    expect(warnings).toEqual(expected);
+    for (const table of allowedTables) {
+      expect(await readText(join(dir, "types", `${table}.d.ts`))).toContain("name: string;");
+    }
+
+    // A table the config maps by hand declares whatever the config names.
+    warnings.length = 0;
+    await new TypeGenerator(connection, {
+      outDir: join(dir, "types"), declarations: true, modelDirectories: [dir], allowedTables,
+      modelDeclarations: { typegen_gadgets: { path: "$models/Gadgets", className: "Gadget" } },
+      warn: (message) => warnings.push(message),
+    }).generate();
+    expect(warnings).toEqual([]);
+
+    // A plain modelsPath, the default single-database config, must discover its models.
+    await rm(join(dir, "types"), { recursive: true, force: true });
+    const CommandClass = makeTypesGenerateCommand({ modelsPath: dir } as unknown as OrmConfig, connection) as any;
+    const command = new CommandClass();
+    command._parsedArgs = {};
+    command._parsedOptions = {};
+    const commandWarnings: string[] = [];
+    command.warn = (message: string) => commandWarnings.push(message);
+    command.info = () => {};
+    await command.handle();
+    expect(commandWarnings).toEqual(expected);
+    for (const table of allowedTables) {
+      expect(await readText(join(dir, "types", `${table}.d.ts`))).toContain("name: string;");
+    }
+
+    // Migrations regenerate types only after applying one.
+    const migrations = join(DATE_CAST_MODEL_DIR, "export_migrations");
+    await mkdir(migrations, { recursive: true });
+    await writeText(
+      join(migrations, "20260101000000_noop.ts"),
+      `import { Migration } from "../../../src/index.js";\nexport default class Noop extends Migration { async up() {} async down() {} }\n`,
+    );
+    try {
+      const migratorWarnings: string[] = [];
+      const migrator = new Migrator(connection, migrations, { modelDirectories: [dir] }, {
+        output: () => {},
+        warn: (line) => migratorWarnings.push(line),
+      });
+      await migrator.run();
+      expect(migratorWarnings).toEqual(expected);
+    } finally {
+      await rm(migrations, { recursive: true, force: true });
+    }
   });
 
   test("generates convention-based declaration mappings", async () => {

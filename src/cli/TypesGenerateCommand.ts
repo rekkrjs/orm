@@ -35,7 +35,9 @@ export function makeTypesGenerateCommand(config: OrmConfig, connection: Connecti
         const modelRoots          = normalizePathList(landlordModels);
         const useModelTypesFolder = !explicitOutDir;
         const outDir              = explicitOutDir ?? join(modelRoots[0], "types");
-        const landlordExcludes    = getScopeExclusions(landlordModels, tenantModels);
+        // A plain modelsPath is both scopes at once; excluding the other scope's
+        // root would exclude this one and discover no models at all.
+        const landlordExcludes    = hasScopedModels ? getScopeExclusions(landlordModels, tenantModels) : undefined;
         const allowedTables       = modelRoots.length > 0 ? await discoverModelTables(modelRoots, landlordExcludes) : undefined;
 
         if (modelRoots.length > 0 && (!allowedTables || allowedTables.length === 0)) {
@@ -55,6 +57,7 @@ export function makeTypesGenerateCommand(config: OrmConfig, connection: Connecti
           declarationDirName: "types",
           allowedTables,
           skipIndex,
+          warn: (message) => this.warn(message),
         });
 
         const tables      = await generator.generate();
@@ -88,7 +91,7 @@ export function makeTypesGenerateCommand(config: OrmConfig, connection: Connecti
           const modelRoots      = normalizePathList(tenantModels);
           const useModelTypesFolder = !explicitOutDir;
           const outDir          = explicitOutDir ?? join(modelRoots[0], "types");
-          const tenantExcludes  = getScopeExclusions(tenantModels, landlordModels);
+          const tenantExcludes  = hasScopedModels ? getScopeExclusions(tenantModels, landlordModels) : undefined;
           const allowedTables   = modelRoots.length > 0 ? await discoverModelTables(modelRoots, tenantExcludes) : undefined;
 
           if (modelRoots.length > 0 && (!allowedTables || allowedTables.length === 0)) {
@@ -108,6 +111,7 @@ export function makeTypesGenerateCommand(config: OrmConfig, connection: Connecti
             declarationDirName: "types",
             allowedTables,
             skipIndex,
+            warn: (message) => this.warn(message),
           });
 
           const tables      = await generator.generate();

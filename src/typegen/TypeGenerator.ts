@@ -45,6 +45,8 @@ export interface TypeGeneratorOptions {
   allowedTables?: string[];
   skipIndex?: boolean;
   tsconfigPath?: string;
+  /** Where warnings go. Defaults to console.warn. */
+  warn?: (message: string) => void;
 }
 
 export class TypeGenerator {
@@ -83,6 +85,14 @@ export class TypeGenerator {
         const lines: string[] = [];
 
         const modelDeclarations = this.getModelDeclarations(table, className, discovered, target.modelImportPrefix, tsconfigAliases);
+        const model = discovered.get(table);
+        if (declarationOnly && model?.defaultExport && !this.options.modelDeclarations?.[table]) {
+          (this.options.warn ?? console.warn)(
+            `${model.className} in ${relative(process.cwd(), model.absolutePath)} is a default export, so the types generated ` +
+              `for "${table}" do not apply to it: TypeScript merges them only into a named export. ` +
+              `Export it as \`export class ${model.className}\`.`,
+          );
+        }
         // The SQL type alone cannot tell whether a model decodes a column. Ask
         // the model when one was discovered. Only generated stubs have a safe
         // fallback: they extend Model with its default timestamp pair active.
@@ -125,12 +135,13 @@ export class TypeGenerator {
 
         if (!declarationOnly && this.options.stubs) {
           lines.push(`export class ${className}Base extends Model<${interfaceName}> {`);
-          lines.push(`  static table = "${table}";`);
+          lines.push(`  static override table = "${table}";`);
           lines.push("");
 
           for (const col of columns) {
             const tsType = columnType(col);
-            lines.push(`  get ${col.name}(): ${tsType} {`);
+            // A nullable column is optional in the interface, so getAttribute() may return undefined.
+            lines.push(`  get ${col.name}(): ${tsType}${col.nullable ? " | undefined" : ""} {`);
             lines.push(`    return this.getAttribute("${col.name}");`);
             lines.push(`  }`);
             lines.push(`  set ${col.name}(value: ${tsType}) {`);
@@ -303,6 +314,12 @@ export class TypeGenerator {
           modelImportPrefix: this.options.modelImportPrefix || this.options.modelDirectory || "",
         },
       ];
+    }
+
+    // A single root with an explicit output directory (`orm types:generate <dir>`)
+    // writes there, importing the models by their path relative to it.
+    if (!this.options.modelDirectories && this.options.modelDirectory) {
+      return [{ outDir: this.options.outDir, modelImportPrefix: this.options.modelImportPrefix || "", modelDirectory: this.options.modelDirectory }];
     }
 
     const declarationDirName = this.options.declarationDirName || "types";

@@ -6,30 +6,27 @@ import { mkdir, writeFile, access } from "fs/promises";
 import { join } from "path";
 import type { OrmConfig } from "../config/OrmConfig.js";
 
-function toTableName(modelName: string): string {
+export function toTableName(modelName: string): string {
   const snake = snakeCase(modelName.replace(/Model$/i, ""));
   const lastWord = snake.split("_").pop()!;
   const pluralized = pluralize(lastWord);
   return snake.slice(0, snake.length - lastWord.length) + pluralized;
 }
 
-function toClassName(name: string): string {
+export function toClassName(name: string): string {
   return name
     .split(/[_\-\s]/)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join("");
 }
 
-function buildModelStub(className: string, tableName: string): string {
+export function buildModelStub(className: string, tableName: string): string {
+  // The model's own convention only appends "s"; name any other table.
+  const body = tableName === snakeCase(className) + "s" ? "" : `\n  static override table = "${tableName}";\n`;
   return `import { Model } from "@rekkr/orm";
 
-interface ${className}Attributes {
-  id: number;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export class ${className} extends Model.define<${className}Attributes>("${tableName}") {}
+// Attribute types come from \`orm types:generate\` once the table exists.
+export class ${className} extends Model {${body}}
 `;
 }
 

@@ -3,6 +3,10 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { Connection, Schema, TypeGenerator } from "../src/index.js";
+import { buildModelStub, toTableName } from "../src/cli/MakeModelCommand.js";
+import { buildStub } from "../src/search/commands/MakeSearchableCommand.js";
 
 /**
  * What an installer's `tsc` sees. The package is copied — not linked — into a
@@ -58,6 +62,40 @@ const columns: Record<string, Record<string, unknown>> = {
 const projects = new Map<string, string>();
 
 /**
+ * Code the ORM writes into an application: both scaffolds and a generated stub.
+ * It is compiled with the consumer's flags, `noImplicitOverride` included.
+ */
+const generated = new Map<string, string>();
+
+async function generateSources(): Promise<void> {
+  for (const name of ["User", "Category"]) generated.set(`${name}.ts`, buildModelStub(name, toTableName(name)));
+  generated.set("Post.ts", buildStub("Post"));
+
+  const connection = new Connection({ url: "sqlite://:memory:" });
+  const out = mkdtempSync(join(tmpdir(), "orm-consumer-stubs-"));
+  try {
+    await Schema.create("accounts", (table) => {
+      table.increments("id");
+      table.string("name");
+      table.string("email").nullable();
+      table.timestamps();
+    }, connection);
+    await new TypeGenerator(connection, { outDir: out, stubs: true }).generate();
+    generated.set("accounts.ts", await readFile(join(out, "accounts.ts"), "utf-8"));
+  } finally {
+    await connection.close();
+    rmSync(out, { recursive: true, force: true });
+  }
+  generated.set("use.ts", [
+    `import { AccountsBase } from "./accounts";`,
+    `import { Post } from "./Post";`,
+    `export class Account extends AccountsBase {}`,
+    `export const hits = Post.search("rust").get();`,
+    ``,
+  ].join("\n"));
+}
+
+/**
  * A project that installed the package plus one runtime's types. As published
  * it carries src, bin and the emitted dist; installed from git it has no dist,
  * and its types fall back to the TypeScript source.
@@ -75,10 +113,13 @@ function createProject(types: "node" | "bun", fromGit = false): string {
     symlinkSync(join(root, "node_modules", name), join(project, "node_modules", name));
   }
   writeFileSync(join(project, "app.ts"), app);
+  mkdirSync(join(project, "generated"));
+  for (const [file, source] of generated) writeFileSync(join(project, "generated", file), source);
   return project;
 }
 
-beforeAll(() => {
+beforeAll(async () => {
+  await generateSources();
   for (const types of ["node", "bun"] as const) projects.set(types, createProject(types));
   projects.set("bun-git", createProject("bun", true));
 }, 120_000);
@@ -94,7 +135,7 @@ function typecheck(types: string, extra: Record<string, unknown>, project = proj
       target: "ESNext", module: "ESNext", moduleResolution: "bundler", strict: true,
       skipLibCheck: true, noEmit: true, types: [types], ...extra,
     },
-    files: ["app.ts"],
+    include: ["app.ts", "generated/**/*.ts"],
   }));
   try {
     execFileSync(tsc, ["-p", config], { cwd: project, encoding: "utf8" });

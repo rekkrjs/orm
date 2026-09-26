@@ -53,6 +53,8 @@ export interface ModelDeclarationInfo {
   absolutePath: string;
   /** Columns whose effective model cast decodes them to a `Date`. */
   dateCastColumns: string[];
+  /** Exported only as `default`, which a `declare module` block cannot merge into. */
+  defaultExport: boolean;
 }
 
 /** Never let a misconfigured model abort discovery; it just gets no date columns. */
@@ -84,17 +86,21 @@ export async function discoverModelDeclarations(root: string, outDir: string, ex
           declarations.set(table, {
             table, className, relativePath, relativeToRoot, absolutePath: file,
             dateCastColumns: modelDateCastColumns(exported),
+            defaultExport: false,
           });
         }
       }
 
-      if (isModelSubclass(mod.default)) {
+      // `export class User` plus `export default User` merges through the name.
+      const alsoNamed = Object.entries(mod).some(([name, value]) => name !== "default" && value === mod.default);
+      if (isModelSubclass(mod.default) && !alsoNamed) {
         const table =
           (mod.default as any).table || snakeCase(mod.default.name || basename(file, extname(file))) + "s";
         const className = mod.default.name || basename(file, extname(file));
         declarations.set(table, {
           table, className, relativePath, relativeToRoot, absolutePath: file,
           dateCastColumns: modelDateCastColumns(mod.default),
+          defaultExport: true,
         });
       }
     } catch {
