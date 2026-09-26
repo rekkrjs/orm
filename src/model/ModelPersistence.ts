@@ -20,7 +20,7 @@ import { formatIso, shouldGeneratePrimaryKeyForColumn } from "../utils.js";
 import type { Connection, WriteResult } from "../connection/Connection.js";
 import { insertAndResolveKey, primaryKeyColumn, type PrimaryKeyColumn } from "./PrimaryKeyResolution.js";
 import { isBackedEnumDefinition } from "./BackedEnum.js";
-import { normalizeHydratedCastValue } from "./ModelJsonRow.js";
+import { normalizeHydratedCastValue, rememberHydratedJsonValues } from "./ModelJsonRow.js";
 
 type TimestampColumns = { createdAt: string; updatedAt: string };
 
@@ -78,11 +78,14 @@ function hydrateModelRow<M extends ModelConstructor>(
   row: Record<string, any>,
   connection: Connection | undefined,
   ownsRow: boolean,
+  forJson = false,
+  existing?: InstanceType<M>,
 ): InstanceType<M> {
-  const instance = new model() as InstanceType<M>;
+  const instance = existing ?? new model() as InstanceType<M>;
   const target = getModelTarget(instance);
   const hydrated = ownsRow ? row : { ...row };
   const casts = target.$mergedCasts;
+  const jsonCache: Record<string, unknown> | undefined = forJson ? {} : undefined;
   for (const key of Object.keys(casts)) {
     const cast = casts[key];
     if (isBackedEnumDefinition(cast)) {
@@ -91,7 +94,9 @@ function hydrateModelRow<M extends ModelConstructor>(
       }
       continue;
     }
-    const normalized = normalizeHydratedCastValue(cast, hydrated[key]);
+    const value = hydrated[key];
+    const normalized = normalizeHydratedCastValue(cast, value);
+    if (jsonCache && normalized !== value) jsonCache[key] = value;
     if (normalized !== hydrated[key]) hydrated[key] = normalized;
   }
   target.$dirtyKeys?.clear();
@@ -108,6 +113,7 @@ function hydrateModelRow<M extends ModelConstructor>(
     : ownsRow ? { ...hydrated } : hydrated;
   target.$original = ownsRow ? hydrated : { ...hydrated };
   target.$castCache = {};
+  if (jsonCache) rememberHydratedJsonValues(target, jsonCache);
   target.$exists = true;
   if (connection && usesDefaultSetConnection) target.$connection = connection;
   if (connection && !usesDefaultSetConnection) instance.setConnection(connection);
@@ -264,6 +270,29 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
     return this.hydrate === defaultHydrate
       ? hydrateModelRow(this, row, connection, true)
       : this.hydrate(row, connection);
+  }
+
+  /** @internal Builder.json() keeps the parsed driver JSON until serialization. */
+  protected static hydrateForJsonRow<M extends ModelConstructor>(
+    this: M,
+    row: Record<string, unknown>,
+    connection?: Connection,
+    ownsRow = true,
+  ): InstanceType<M> {
+    return this.hydrate === defaultHydrate
+      ? hydrateModelRow(this, row, connection, ownsRow, true)
+      : this.hydrate(row, connection);
+  }
+
+  /** @internal Reuse the model inspected before Builder.json() chose hydration. */
+  protected static hydrateJsonSample<M extends ModelConstructor>(
+    this: M,
+    sample: InstanceType<M>,
+    row: Record<string, unknown>,
+    connection: Connection | undefined,
+    ownsRow: boolean,
+  ): InstanceType<M> {
+    return hydrateModelRow(this, row, connection, ownsRow, true, sample);
   }
 
   static async create<M extends ModelConstructor>(

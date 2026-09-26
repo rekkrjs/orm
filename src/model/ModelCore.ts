@@ -32,7 +32,7 @@ import {
   isBackedEnumDefinition,
   type BackedEnumDefinition,
 } from "./BackedEnum.js";
-import { assertSupportedStringCast, castBuiltInAttribute, castMetadata, implicitDateCasts } from "./ModelJsonRow.js";
+import { assertSupportedStringCast, castBuiltInAttribute, castMetadata, forgetHydratedJsonValue, forgetHydratedJsonValues, implicitDateCasts, takeHydratedJsonValue } from "./ModelJsonRow.js";
 
 function dateCastKeys(casts: Record<string, any>): string[] {
   const keys: string[] = [];
@@ -226,7 +226,7 @@ export class ModelCore<T extends Record<string, any> = any> {
   $relations: Record<string, any> = {};
   $casts: Record<string, CastDefinition> = {};
   $castCache: Record<string, any> = {};
-  $mergedCasts: Record<string, CastDefinition> = {};
+  $mergedCasts!: Record<string, CastDefinition>; // Assigned once in the constructor.
   $dirtyKeys?: Set<string>;
   $connection?: Connection;
   $hidden: string[] = [];
@@ -591,7 +591,9 @@ export class ModelCore<T extends Record<string, any> = any> {
     if (!backedEnum && Object.prototype.hasOwnProperty.call(this.$castCache, key as string)) {
       return this.$castCache[key as string];
     }
-    const casted = backedEnum ? value : this.castAttributeFromTarget(receiver, key as string, value, cast);
+    const pending = backedEnum ? undefined : takeHydratedJsonValue(this, key as string);
+    const casted = backedEnum ? value
+      : pending !== undefined ? pending : this.castAttributeFromTarget(receiver, key as string, value, cast);
     if (cast && !backedEnum && value !== null && value !== undefined) {
       this.$castCache[key as string] = casted;
     }
@@ -619,6 +621,7 @@ export class ModelCore<T extends Record<string, any> = any> {
     }
     (this.$attributes as any)[key] = serialized;
     delete this.$castCache[key as string];
+    forgetHydratedJsonValue(getModelTarget(this), key as string);
   }
 
   castAttribute(key: string, value: any): any {
@@ -702,6 +705,7 @@ export class ModelCore<T extends Record<string, any> = any> {
     const ctor = this.getModelConstructor();
     this.$mergedCasts = { ...implicitDateCasts(ctor), ...(ctor.casts || {}), ...this.$casts };
     this.$castCache = {};
+    forgetHydratedJsonValues(getModelTarget(this));
     return this;
   }
 

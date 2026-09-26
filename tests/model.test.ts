@@ -293,6 +293,38 @@ describe("Model", () => {
     expect(instanceHidden.toJSON()).toEqual({ name: "Visible" });
   });
 
+  test("toJSON observes in-place edits to static visibility arrays", () => {
+    class HiddenRecord extends Model {
+      static override timestamps = false;
+      static override hidden = ["secret"];
+    }
+    class VisibleRecord extends Model {
+      static override timestamps = false;
+      static override visible = ["name"];
+    }
+    const row = { name: "Ada", secret: "private" };
+    const hidden = HiddenRecord.hydrate(row);
+    const visible = VisibleRecord.hydrate(row);
+
+    expect(hidden.toJSON()).toEqual({ name: "Ada" });
+    expect(visible.toJSON()).toEqual({ name: "Ada" });
+    HiddenRecord.hidden[0] = "name";
+    VisibleRecord.visible[0] = "secret";
+    expect(hidden.toJSON()).toEqual({ secret: "private" });
+    expect(visible.toJSON()).toEqual({ secret: "private" });
+    HiddenRecord.hidden[0] = "secret";
+    VisibleRecord.visible[0] = "name";
+    expect(hidden.toJSON()).toEqual({ name: "Ada" });
+    expect(visible.toJSON()).toEqual({ name: "Ada" });
+
+    const unusualVisible: string[] = [];
+    unusualVisible[Symbol.iterator] = () => ["secret"].values();
+    const oneModel = HiddenRecord.hydrate(row);
+    oneModel.$visible = unusualVisible;
+    expect(oneModel.toJSON()).toEqual(row);
+    expect(hidden.toJSON()).toEqual({ name: "Ada" });
+  });
+
   test("makeHiddenIf / makeVisibleIf apply only when the guard holds", async () => {
     const attributes = { name: "Visible", secret: "shown" };
 

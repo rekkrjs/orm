@@ -5,6 +5,7 @@ import {
   isBackedEnumDefinition,
 } from "./BackedEnum.js";
 import type { CastDefinition, ModelConstructor } from "./ModelTypes.js";
+import { getModelTarget } from "./ModelBase.js";
 
 export interface RawJsonPlan {
   readonly modelName: string;
@@ -288,12 +289,86 @@ export function canReturnRawJsonRows(plan: RawJsonPlan): boolean {
     && !plan.hidden;
 }
 
+/** Only use the direct plan when a hydrated model would add no row behavior. */
+export function createHydratedJsonPlan(model: ModelConstructor, baseModel: ModelConstructor): RawJsonPlan | undefined {
+  if (model.hydrate !== baseModel.hydrate || Object.keys(model.attributes ?? {}).length > 0) return;
+  if ((model.appends ?? []).length > 0 || hasAccessorConfiguration(model.accessors)) return;
+  for (const method of [
+    "toJSON", "serialize", "setConnection", "getAppends", "getModelConstructor",
+    "getAttributeFromTarget", "castAttributeFromTarget", "getCastDefinition",
+    "validateBackedEnumAttribute", "assertBackedEnumValue",
+  ]) {
+    if (model.prototype[method] !== baseModel.prototype[method]) return;
+  }
+
+  // Explicit constructors may have effects for every row even if they leave
+  // no instance fields. Keep their normal hydration path.
+  for (let current = model; current !== baseModel; current = Object.getPrototypeOf(current)) {
+    if (!current) return;
+    const source = Function.prototype.toString.call(current);
+    if (!/^class\b/.test(source) || /\bconstructor\s*\(|#[\w$]/.test(source)) return;
+  }
+
+  let plan: RawJsonPlan;
+  try {
+    plan = createRawJsonPlan(model, baseModel);
+  } catch {
+    return;
+  }
+  if (Object.values(plan.casts).some(cast => cast.custom || !cast.supported)) return;
+  return plan;
+}
+
+/** A class field can change visibility, casts, or install a method per instance. */
+export function hydratedJsonSampleIsPlain(sample: object, baseKeys: ReadonlySet<PropertyKey>, plan: RawJsonPlan): boolean {
+  const target = getModelTarget(sample) as any;
+  if (Reflect.ownKeys(target).some(key => !baseKeys.has(key))) return false;
+  for (const key of ["$attributes", "$original", "$changes", "$relations", "$casts", "$castCache"]) {
+    if (!target[key] || typeof target[key] !== "object" || Reflect.ownKeys(target[key]).length > 0) return false;
+  }
+  for (const key of ["$hidden", "$visible", "$appends"]) {
+    if (!Array.isArray(target[key]) || target[key].length > 0) return false;
+  }
+  if (target.$appendsOverride !== undefined || target.$dirtyKeys || target.$connection
+    || target.$exists || target.$wasRecentlyCreated) return false;
+  const actualCasts = target.$mergedCasts;
+  const castKeys = Object.keys(plan.casts);
+  return actualCasts !== null && typeof actualCasts === "object"
+    && Object.keys(actualCasts).length === castKeys.length
+    && castKeys.every(key => actualCasts[key] === plan.casts[key]!.definition);
+}
+
 /** Hydration stores json casts as text: `$attributes` holds what the row holds. */
 export function normalizeHydratedCastValue(cast: unknown, value: unknown): unknown {
   if (typeof cast !== "string" || value === null || value === undefined || typeof value === "string") return value;
   const separator = cast.indexOf(":");
   const type = separator === -1 ? cast : cast.slice(0, separator);
   return type === "json" || type === "array" || type === "object" ? JSON.stringify(value) : value;
+}
+
+// A JSON-only model keeps its driver objects here until their casts are read.
+// Delaying $castCache population preserves what accessors observe before then.
+const pendingJsonValues = Symbol("pendingJsonValues");
+
+export function rememberHydratedJsonValues(model: object, values: Record<string, unknown>): void {
+  if (Object.keys(values).length > 0) (model as any)[pendingJsonValues] = values;
+}
+
+export function takeHydratedJsonValue(model: object, key: string): unknown {
+  const values = (model as any)[pendingJsonValues] as Record<string, unknown> | undefined;
+  if (!values || !Object.hasOwn(values, key)) return;
+  const value = values[key];
+  delete values[key];
+  return value;
+}
+
+export function forgetHydratedJsonValue(model: object, key: string): void {
+  const values = (model as any)[pendingJsonValues] as Record<string, unknown> | undefined;
+  if (values) delete values[key];
+}
+
+export function forgetHydratedJsonValues(model: object): void {
+  delete (model as any)[pendingJsonValues];
 }
 
 const builtInCasts = new Set([

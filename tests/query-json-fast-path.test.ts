@@ -55,6 +55,82 @@ class CompiledCastJsonUser extends FastJsonUser {
   static override hidden: string[] = [];
 }
 
+class DirectCastJsonUser extends PermissiveModel {
+  static override table = "fast_json_users";
+  static override timestamps = false;
+  static override hidden = ["secret"];
+  static override casts = FastJsonUser.casts;
+}
+
+let instanceHiddenConstructions = 0;
+class InstanceHiddenJsonUser extends DirectCastJsonUser {
+  override $hidden = (instanceHiddenConstructions++, ["name"]);
+}
+
+let privateFieldConstructions = 0;
+class PrivateFieldJsonUser extends DirectCastJsonUser {
+  #serial = ++privateFieldConstructions;
+}
+
+class ObservedJsonUser extends PermissiveModel {
+  declare id: number;
+  declare metadata: { nested: { value: number } };
+  static override table = "fast_json_users";
+  static override timestamps = false;
+  static override casts = { metadata: "json" };
+  static override appends = ["observed"];
+
+  get observed() {
+    return {
+      original: this.getOriginal("metadata"),
+      clean: this.isClean(),
+      current: this.getAttribute("metadata"),
+    };
+  }
+}
+
+class CacheAwareJsonUser extends PermissiveModel {
+  static override table = "fast_json_users";
+  static override timestamps = false;
+  static override casts = { metadata: "json" };
+  static override accessors = {
+    metadata: {
+      get: (value: unknown, _attributes: Record<string, unknown>, model: CacheAwareJsonUser) => ({
+        parsed: JSON.parse(String(value)),
+        cacheKeys: Object.keys(model.$castCache),
+      }),
+    },
+  };
+}
+
+class MutatingJsonUser extends PermissiveModel {
+  static override table = "fast_json_users";
+  static override timestamps = false;
+  static override casts = { metadata: "json" };
+  static override accessors = {
+    id: {
+      get: (value: unknown, _attributes: Record<string, unknown>, model: MutatingJsonUser) => {
+        model.setAttribute("metadata", { nested: { value: 9 } });
+        return value;
+      },
+    },
+  };
+}
+
+class RecastingJsonUser extends PermissiveModel {
+  static override table = "fast_json_users";
+  static override timestamps = false;
+  static override casts = { metadata: "json" };
+  static override accessors = {
+    id: {
+      get: (value: unknown, _attributes: Record<string, unknown>, model: RecastingJsonUser) => {
+        model.mergeCasts({ metadata: "string" });
+        return value;
+      },
+    },
+  };
+}
+
 class VisibleFastJsonUser extends PermissiveModel {
   static override table = "fast_json_users";
   static override timestamps = false;
@@ -457,6 +533,159 @@ describe("Builder.rawJson", () => {
     });
   });
 
+  test("json() serializes simple driver JSON directly and preserves every built-in cast", async () => {
+    const query = () => DirectCastJsonUser.whereIn("id", [1, 2]).orderBy("id");
+    expect(await query().json()).toEqual((await query().get()).toJSON());
+    expect(JSON.stringify(await query().json())).toBe(JSON.stringify(await query().rawJson()));
+
+    const source = { nested: { value: 7 } };
+    const originalQuery = connection.query.bind(connection);
+    const originalStringify = JSON.stringify;
+    let normalized = 0;
+    connection.query = (async (sql: string, bindings?: any[]) => {
+      if (sql.includes("fast_json_users")) {
+        return [{ id: 11, name: "Direct", active: 1, metadata: source, state: JsonState.Active }];
+      }
+      return originalQuery(sql, bindings);
+    }) as any;
+    JSON.stringify = ((value: unknown, ...args: any[]) => {
+      if (value === source) normalized++;
+      return originalStringify(value, ...args);
+    }) as typeof JSON.stringify;
+    try {
+      expect(await DirectCastJsonUser.where("id", 11).json()).toEqual([{
+        id: 11, name: "Direct", active: true, metadata: source, state: JsonState.Active,
+      }]);
+      expect(normalized).toBe(0);
+    } finally {
+      JSON.stringify = originalStringify;
+      connection.query = originalQuery as any;
+    }
+  });
+
+  test("json() honors instance fields and the Identity Map", async () => {
+    instanceHiddenConstructions = 0;
+    expect(await InstanceHiddenJsonUser.select("id", "name").where("id", 1).json())
+      .toEqual([{ id: 1 }]);
+    expect(instanceHiddenConstructions).toBe(1);
+    privateFieldConstructions = 0;
+    expect(await PrivateFieldJsonUser.select("id").whereIn("id", [1, 2]).json())
+      .toEqual([{ id: 1 }, { id: 2 }]);
+    expect(privateFieldConstructions).toBe(2);
+    await DirectCastJsonUser.useIdentityMap(async () => {
+      const model = await DirectCastJsonUser.select("id", "name").where("id", 1).first();
+      model!.setAttribute("name", "Local change");
+      expect(await DirectCastJsonUser.select("id", "name").where("id", 1).json())
+        .toEqual([{ id: 1, name: "Local change" }]);
+    });
+  });
+
+  test("json() uses visibility changed while the driver reads", async () => {
+    const originalHidden = DirectCastJsonUser.hidden;
+    const originalQuery = connection.query.bind(connection);
+    DirectCastJsonUser.hidden = [];
+    connection.query = (async (sql: string, bindings?: any[]) => {
+      if (sql.includes("fast_json_users")) {
+        DirectCastJsonUser.hidden = ["name"];
+        return [{ id: 11, name: "Direct" }];
+      }
+      return originalQuery(sql, bindings);
+    }) as any;
+    try {
+      expect(await DirectCastJsonUser.where("id", 11).json()).toEqual([{ id: 11 }]);
+    } finally {
+      DirectCastJsonUser.hidden = originalHidden;
+      connection.query = originalQuery as any;
+    }
+  });
+
+  test("json() keeps an overridden Builder.get()", async () => {
+    class InstrumentedBuilder extends Builder {
+      reads = 0;
+      override async get() {
+        this.reads++;
+        return super.get();
+      }
+    }
+    const query = new InstrumentedBuilder(connection, "fast_json_users");
+    query.setModel(DirectCastJsonUser)
+      .select("id", "name")
+      .where("id", 1);
+    expect(await query.json()).toEqual([{ id: 1, name: "Ada" }]);
+    expect(query.reads).toBe(1);
+  });
+
+  test("json() keeps original values visible to appends without reparsing driver JSON", async () => {
+    const source = { nested: { value: 7 } };
+    const originalQuery = connection.query.bind(connection);
+    const originalParse = JSON.parse;
+    let reparses = 0;
+    connection.query = (async (sql: string, bindings?: any[]) => {
+      if (sql.includes("fast_json_users")) return [{ id: 11, metadata: source }];
+      return originalQuery(sql, bindings);
+    }) as any;
+    JSON.parse = ((value: string, ...args: any[]) => {
+      if (value === '{"nested":{"value":7}}') reparses++;
+      return originalParse(value, ...args);
+    }) as typeof JSON.parse;
+    try {
+      expect(await ObservedJsonUser.where("id", 11).json()).toEqual([{
+        id: 11,
+        metadata: source,
+        observed: { original: '{"nested":{"value":7}}', clean: true, current: source },
+      }]);
+      expect(reparses).toBe(0);
+    } finally {
+      JSON.parse = originalParse;
+      connection.query = originalQuery as any;
+    }
+  });
+
+  test("json() leaves the cast cache empty until a cast is read", async () => {
+    const originalQuery = connection.query.bind(connection);
+    connection.query = (async (sql: string, bindings?: any[]) => sql.includes("fast_json_users")
+      ? [{ id: 11, metadata: { nested: { value: 7 } } }]
+      : originalQuery(sql, bindings)) as any;
+    try {
+      expect(await CacheAwareJsonUser.where("id", 11).json()).toEqual([{
+        id: 11,
+        metadata: { parsed: { nested: { value: 7 } }, cacheKeys: [] },
+      }]);
+    } finally {
+      connection.query = originalQuery as any;
+    }
+  });
+
+  test("json() drops a pending driver value when an accessor replaces the cast", async () => {
+    const originalQuery = connection.query.bind(connection);
+    connection.query = (async (sql: string, bindings?: any[]) => sql.includes("fast_json_users")
+      ? [{ id: 11, metadata: { nested: { value: 7 } } }]
+      : originalQuery(sql, bindings)) as any;
+    try {
+      expect(await MutatingJsonUser.where("id", 11).json()).toEqual([{
+        id: 11,
+        metadata: { nested: { value: 9 } },
+      }]);
+    } finally {
+      connection.query = originalQuery as any;
+    }
+  });
+
+  test("json() drops pending JSON when an accessor changes its cast", async () => {
+    const originalQuery = connection.query.bind(connection);
+    connection.query = (async (sql: string, bindings?: any[]) => sql.includes("fast_json_users")
+      ? [{ id: 11, metadata: { nested: { value: 7 } } }]
+      : originalQuery(sql, bindings)) as any;
+    try {
+      expect(await RecastingJsonUser.where("id", 11).json()).toEqual([{
+        id: 11,
+        metadata: '{"nested":{"value":7}}',
+      }]);
+    } finally {
+      connection.query = originalQuery as any;
+    }
+  });
+
   test("does not materialize unselected cast attributes", async () => {
     const direct = await FastJsonUser.select("id", "name").where("id", 1).rawJson();
     const hydrated = (
@@ -534,7 +763,7 @@ describe("Builder.rawJson", () => {
   test("keeps json() hydrated and rejects rawJson() on plain DB builders", async () => {
     CountingJsonModel.constructions = 0;
     await CountingJsonModel.query().json();
-    expect(CountingJsonModel.constructions).toBeGreaterThan(0);
+    expect(CountingJsonModel.constructions).toBe(1);
 
     const query = new Builder(connection, "fast_json_users")
       .select("id", "name")

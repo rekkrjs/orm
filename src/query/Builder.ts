@@ -14,7 +14,7 @@ import { ObserverRegistry } from "../model/Observer.js";
 import { ModelNotFoundError } from "../model/ModelNotFoundError.js";
 import { IdentityMap } from "../model/IdentityMap.js";
 import { timestampsEnabled, withInsertTimestamps } from "../model/TimestampScope.js";
-import { assertSupportedStringCast, canReturnRawJsonRows, createRawJsonPlan, serializeRawJsonRow, serializeRowDates } from "../model/ModelJsonRow.js";
+import { assertSupportedStringCast, canReturnRawJsonRows, createHydratedJsonPlan, createRawJsonPlan, hydratedJsonSampleIsPlain, serializeRawJsonRow, serializeRowDates } from "../model/ModelJsonRow.js";
 import {
   assertBackedEnumValue,
   isBackedEnumDefinition,
@@ -2166,7 +2166,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return this.connection.use(() => this.executeGet());
   }
 
-  private async executeGet(): Promise<Collection<TResult>> {
+  private async executeGet(forJson = false): Promise<Collection<TResult>> {
     const connection = this.connection;
     const key = this.cacheKey ? Cache.queryKey(this.cacheKey, connection) : undefined;
     const tags = this.cacheTagNames.map(tag => Cache.queryKey(tag, connection));
@@ -2218,9 +2218,11 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
           }
         }
 
-        const instance = cacheable
-          ? (this.model as any).hydrate(row, connection)
-          : (BaseModel as any).hydrateOwnedRow.call(this.model, row, connection);
+        const instance = forJson
+          ? (BaseModel as any).hydrateForJsonRow.call(this.model, row, connection, !cacheable)
+          : cacheable
+            ? (this.model as any).hydrate(row, connection)
+            : (BaseModel as any).hydrateOwnedRow.call(this.model, row, connection);
 
         if (identityMap) {
           const pk = row[primaryKey];
@@ -2432,7 +2434,31 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   }
 
   async json(): Promise<CollectionJson<TResult>> {
-    return (await this.get()).toJSON();
+    if (!this.model || this.eagerLoads.length > 0 || IdentityMap.current()
+      || this.get !== Builder.prototype.get || this.clone !== Builder.prototype.clone) {
+      return (await this.get()).toJSON();
+    }
+    const hydratedJson = async () =>
+      (await this.connection.use(() => this.executeGet(true))).toJSON();
+    const plan = createHydratedJsonPlan(this.model, BaseModel);
+    if (!plan) return hydratedJson();
+
+    const query = this.clone();
+    query.model = undefined;
+    const rows = await query.get();
+    if (rows.length === 0) return [] as unknown as CollectionJson<TResult>;
+
+    const sample = new this.model();
+    const baseKeys = new Set(Reflect.ownKeys(new BaseModel()));
+    const currentPlan = createHydratedJsonPlan(this.model, BaseModel);
+    if (!currentPlan || !hydratedJsonSampleIsPlain(sample, baseKeys, currentPlan)) {
+      const cacheable = this.shouldUseCache();
+      const models = Array.from(rows, (row: any, index) => index === 0
+        ? (BaseModel as any).hydrateJsonSample.call(this.model, sample, row, this.connection, !cacheable)
+        : (BaseModel as any).hydrateForJsonRow.call(this.model, row, this.connection, !cacheable));
+      return new Collection(models).toJSON() as CollectionJson<TResult>;
+    }
+    return Array.from(rows, (row) => serializeRawJsonRow(row as Record<string, unknown>, currentPlan)) as CollectionJson<TResult>;
   }
 
   async rawJson(): Promise<DirectJson<T, TSelected, TResult>[]> {

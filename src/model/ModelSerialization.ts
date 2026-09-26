@@ -48,6 +48,17 @@ function findNativeGetter(model: object, key: string): (() => unknown) | undefin
   return undefined;
 }
 
+const staticVisibilitySets = new WeakMap<readonly string[], { values: string[]; set: Set<string> }>();
+
+function staticVisibilitySet(values: readonly string[]): Set<string> {
+  const cached = staticVisibilitySets.get(values);
+  if (cached && cached.values.length === values.length
+    && cached.values.every((value, index) => value === values[index])) return cached.set;
+  const set = new Set(values);
+  staticVisibilitySets.set(values, { values: [...values], set });
+  return set;
+}
+
 export class ModelSerialization<T extends Record<string, any> = any> extends ModelPersistence<T> {
   makeHidden(...keys: (string | readonly string[])[]): this {
     const flat = keys.flat();
@@ -113,12 +124,20 @@ export class ModelSerialization<T extends Record<string, any> = any> extends Mod
     const staticVisible = constructor.visible || [];
     const staticHidden = constructor.hidden || [];
     const visible = staticVisible.length > 0
-      ? new Set([...staticVisible, ...target.$visible])
+      ? target.$visible.length === 0 && Array.isArray(staticVisible)
+        ? staticVisibilitySet(staticVisible)
+        : new Set([...staticVisible, ...target.$visible])
       : undefined;
     let hidden: Set<string> | undefined;
     if (staticHidden.length > 0 || target.$hidden.length > 0) {
-      hidden = new Set([...staticHidden, ...target.$hidden]);
-      for (const key of target.$visible) hidden.delete(key);
+      let shared = target.$hidden.length === 0 && target.$visible.length === 0 && Array.isArray(staticHidden);
+      hidden = shared
+        ? staticVisibilitySet(staticHidden)
+        : new Set([...staticHidden, ...target.$hidden]);
+      for (const key of target.$visible) {
+        if (shared) { hidden = new Set(hidden); shared = false; }
+        hidden.delete(key);
+      }
     }
     const attributes = target.$attributes as Record<string, any>;
     const accessors = constructor.accessors || {};
