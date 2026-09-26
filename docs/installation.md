@@ -165,8 +165,11 @@ same write counts and error codes. What remains different:
 - **SQLite integers past 2^53.** Bun rounds them to the nearest JavaScript
   number. Node.js returns them exact: as a string, or as a `bigint` with
   `bigint: true`, the convention MySQL's `BIGINT` already follows.
-- **`prepare` has no effect on Node.js.** `pg` sends unnamed statements, and
-  `mysql2` prepares every statement that carries bindings.
+- **`prepare` on Node.js.** With `prepare: true`, `pg` names the first 1000
+  distinct statements that carry bindings and prepares each once per session,
+  as `bun:sql` does; later ones, and every statement with the default `false`,
+  run unnamed. For MySQL `prepare` has no effect: `mysql2` prepares every
+  statement that carries bindings.
 - **TLS in URLs.** `sslmode` on a PostgreSQL URL keeps libpq's meaning on both
   runtimes: `require` encrypts without verifying the certificate, `verify-full`
   verifies it. On a MySQL URL, `ssl-mode=REQUIRED` (or `require`) encrypts
