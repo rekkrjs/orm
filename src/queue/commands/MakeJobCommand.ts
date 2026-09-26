@@ -15,9 +15,9 @@ function buildJobStub(className: string, queue: string): string {
   return `import { DispatchableJob, registerJob } from "@rekkr/orm/queue";
 
 export default class ${className} extends DispatchableJob {
-  static queue = "${queue}";
-  static maxAttempts = 3;
-  static delay = 0;
+  static override queue = "${queue}";
+  static override maxAttempts = 3;
+  static override delay = 0;
 
   async handle(): Promise<void> {
     //

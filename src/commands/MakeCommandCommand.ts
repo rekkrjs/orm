@@ -23,8 +23,8 @@ function buildCommandStub(className: string, signature: string): string {
   return `import { Command } from "@rekkr/orm/commands";
 
 export class ${className} extends Command {
-  static signature = "${signature}";
-  static description = "";
+  static override signature = "${signature}";
+  static override description = "";
 
   async handle() {
     //

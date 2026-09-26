@@ -72,7 +72,7 @@ interface JobAttributes {
 }
 
 export class Job extends Model.define<JobAttributes>(__JOBS_TABLE__) {
-  static timestamps = false;
+  static override timestamps = false;
 }
 `;
 
@@ -88,7 +88,7 @@ interface FailedJobAttributes {
 }
 
 export class FailedJob extends Model.define<FailedJobAttributes>(__FAILED_TABLE__) {
-  static timestamps = false;
+  static override timestamps = false;
 }
 `;
 

@@ -28,7 +28,7 @@ describe("make:command — file creation", () => {
 
     const content = await readFile(join(tmpDir, "SendEmailsCommand.ts"), "utf-8");
     expect(content).toContain("class SendEmailsCommand extends Command");
-    expect(content).toContain('static signature = "app:send-emails"');
+    expect(content).toContain('static override signature = "app:send-emails"');
   });
 
   it("appends Command suffix when missing from name", async () => {
@@ -44,7 +44,7 @@ describe("make:command — file creation", () => {
     await runner.run(cmd, ["SendEmailsCommand", `--dir=${tmpDir}`, "--command=email:send"]);
 
     const content = await readFile(join(tmpDir, "SendEmailsCommand.ts"), "utf-8");
-    expect(content).toContain('static signature = "email:send"');
+    expect(content).toContain('static override signature = "email:send"');
   });
 
   it("uses config commandsPath as default dir", async () => {

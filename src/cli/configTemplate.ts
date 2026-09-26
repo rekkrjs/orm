@@ -28,7 +28,7 @@ export function buildOrmConfigTemplate(opts: {
     // JSON.stringify, not interpolation: a prompt answer containing a quote or
     // a ${...} would otherwise break the generated file, or worse, be executed
     // as a template expression the moment the config is imported.
-    `    url: process.env.DATABASE_URL || ${JSON.stringify(opts.databaseUrl)},`,
+    `    url: process.env["DATABASE_URL"] || ${JSON.stringify(opts.databaseUrl)},`,
     "  },",
     `  migrationsPath: ${JSON.stringify(opts.migrationsPath)},`,
     `  seedersPath: ${JSON.stringify(opts.seedersPath)},`,
