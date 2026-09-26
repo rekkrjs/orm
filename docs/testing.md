@@ -8,7 +8,7 @@ ORM ships with no built-in test harness — it's just a database library — but
 // tests/user.test.ts
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Connection, Model, Schema } from "@rekkr/orm";
-import User from "../src/models/User";
+import { User } from "../src/models/User";
 
 describe("User model", () => {
   let connection: Connection;
@@ -107,7 +107,7 @@ Use [factories](./seeders.md#factories) to produce realistic fixtures inline wit
 
 ```ts
 import { Factory } from "@rekkr/orm";
-import User from "../src/models/User";
+import { User } from "../src/models/User";
 
 class UserFactory extends Factory<User> {
   definition(seq: number) {
@@ -170,7 +170,7 @@ Register observers in `beforeEach` and unregister in `afterEach` to avoid cross-
 ```ts
 import { beforeEach, afterEach } from "bun:test";
 import { ObserverRegistry } from "@rekkr/orm";
-import User from "../src/models/User";
+import { User } from "../src/models/User";
 import UserObserver from "../src/observers/UserObserver";
 
 beforeEach(() => {

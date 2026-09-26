@@ -241,9 +241,9 @@ You can also isolate cache invalidation in a dedicated observer that watches eve
 ```ts
 import { Observer } from "@rekkr/orm";
 import { Cache } from "@rekkr/orm/cache";
-import Category from "./models/Category";
-import Product from "./models/Product";
-import ProductPrice from "./models/ProductPrice";
+import { Category } from "./models/Category";
+import { Product } from "./models/Product";
+import { ProductPrice } from "./models/ProductPrice";
 
 type CatalogCacheModel = Category | Product | ProductPrice;
 

@@ -13,7 +13,7 @@ Extend the `Seeder` class and implement `run()`:
 ```ts
 // database/seeders/UserSeeder.ts
 import { Seeder } from "@rekkr/orm";
-import User from "../../src/models/User";
+import { User } from "../../src/models/User";
 
 export default class UserSeeder extends Seeder {
   async run() {
@@ -48,7 +48,7 @@ To suppress model observers for a seeder and every seeder it calls, set the stat
 
 ```ts
 export default class DatabaseSeeder extends Seeder {
-  static withoutModelEvents = true;
+  static override withoutModelEvents = true;
 
   async run() {
     await this.call([UserSeeder, PostSeeder]);
@@ -158,7 +158,7 @@ Define a factory class per model (Laravel-style): subclass `Factory<Model>`, imp
 ```ts
 // factories/UserFactory.ts
 import { Factory } from "@rekkr/orm";
-import User from "../models/User";
+import { User } from "../models/User";
 
 export class UserFactory extends Factory<User> {
   definition(sequence: number) {

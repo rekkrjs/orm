@@ -8,7 +8,7 @@ Register once at server startup:
 
 ```ts
 import { registerPolicy } from "@rekkr/orm/policies";
-import User from "$models/user";
+import { User } from "$models/user";
 
 class UserPolicy {
   create(user: User, model: typeof User) {
@@ -76,7 +76,7 @@ Use `.can(...)` after binding:
 ```ts
 import type { PageServerLoad } from "./$types";
 import { route } from "@rekkr/orm/sveltekit";
-import Announcement from "$models/announcement";
+import { Announcement } from "$models/announcement";
 
 export const load: PageServerLoad = route()
   .bind(Announcement)

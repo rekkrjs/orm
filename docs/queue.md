@@ -43,10 +43,10 @@ default client, which reads `REDIS_URL`. A `QueueDriver` instance is also accept
 import { DispatchableJob } from "@rekkr/orm/queue";
 
 export class SendWelcomeEmail extends DispatchableJob {
-  static jobName = "send-welcome-email"; // stable across minification/deploys
-  static queue = "emails";    // optional; defaults to config.queue.defaultQueue
-  static maxAttempts = 3;     // optional; default 3
-  static delay = 0;           // optional dispatch delay in seconds
+  static override jobName = "send-welcome-email"; // stable across minification/deploys
+  static override queue = "emails";    // optional; defaults to config.queue.defaultQueue
+  static override maxAttempts = 3;     // optional; default 3
+  static override delay = 0;           // optional dispatch delay in seconds
 
   constructor(private userId: number) {
     super(userId); // forward args to base class so instance dispatch works

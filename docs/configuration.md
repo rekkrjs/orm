@@ -381,11 +381,11 @@ tenancy: {
 For PostgreSQL schema-per-tenant apps, you can pin specific models to a fixed schema (commonly landlord/shared models on `public`) while other models stay tenant-scoped:
 
 ```ts
-class LandlordPlan extends Model.define<{ id: number }>("plans") {
-  static modelSchema = "public";
+class Plan extends Model {
+  static override modelSchema = "public";
 }
 
-class TenantInvoice extends Model.define<{ id: number }>("invoices") {}
+class Invoice extends Model {}
 ```
 
 Resolution order for model table names:

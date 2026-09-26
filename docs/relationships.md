@@ -43,15 +43,12 @@ await Schema.create("posts", (t) => {
 
 // Models
 class User extends Model {
-  static table = "users";
   posts() {
     return this.hasMany(Post);
   } // FK: post.user_id
 }
 
-class Post extends Model {
-  static table = "posts";
-}
+class Post extends Model {}
 
 // Usage
 const posts = await user.posts().get(); // Collection<Post>
@@ -339,20 +336,14 @@ You can also pass a pivot model as the second argument. In that form ORM uses th
 
 ```ts
 class Section extends Model {
-  static table = "sections";
-
   students() {
     return this.belongsToMany(Student, Offering);
   }
 }
 
-class Student extends Model {
-  static table = "students";
-}
+class Student extends Model {}
 
-class Offering extends Model {
-  static table = "offerings";
-}
+class Offering extends Model {}
 ```
 
 This uses `offerings` as the pivot table, `section_id` as the parent pivot key, and `student_id` as the related pivot key.
@@ -587,7 +578,7 @@ await user.loadMissing("posts"); // skips posts when already loaded
 
 ### Typed Eager Load Results
 
-When models use `Model.define<T>()`, relation names autocomplete and results are fully typed:
+With typed models (generated declarations or `Model.define<T>()`), relation names autocomplete and results are fully typed:
 
 ```ts
 // All of these autocomplete and are type-checked:
@@ -1016,7 +1007,7 @@ Assumptions for IntelliSense:
 
 ```ts
 class Post extends Model {
-  static morphName = "post"; // stored in {name}_type column as "post" instead of "Post"
+  static override morphName = "post"; // stored in {name}_type column as "post" instead of "Post"
 }
 ```
 

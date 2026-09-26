@@ -50,8 +50,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 ```ts
 import type { PageServerLoad } from "./$types";
 import { route } from "@rekkr/orm/sveltekit";
-import Branch from "$lib/server/models/Branch";
-import Payroll from "$lib/server/models/Payroll";
+import { Branch } from "$lib/server/models/Branch";
+import { Payroll } from "$lib/server/models/Payroll";
 
 export const load: PageServerLoad = route()
   .bind(Branch) // binds params.id -> context.branch
@@ -90,7 +90,7 @@ fail(422, { issues });
 import type { Actions } from "./$types";
 import { route } from "@rekkr/orm/sveltekit";
 import { Validator, rule } from "@rekkr/orm/validation";
-import Branch from "$lib/server/models/Branch";
+import { Branch } from "$lib/server/models/Branch";
 
 const PostSchema = Validator.schema({
   title: rule().required().string(),
@@ -125,7 +125,7 @@ Use `.request()` for `RequestHandler` routes in `+server.ts`.
 import type { RequestHandler } from "./$types";
 import { route } from "@rekkr/orm/sveltekit";
 import { Validator, rule } from "@rekkr/orm/validation";
-import Branch from "$lib/server/models/Branch";
+import { Branch } from "$lib/server/models/Branch";
 
 const BodySchema = Validator.schema({
   title: rule().required().string(),
@@ -236,7 +236,7 @@ Register a model policy once, then enforce abilities in the route builder.
 
 ```ts
 import { registerPolicy } from "@rekkr/orm/policies";
-import Announcement from "$lib/server/models/Announcement";
+import { Announcement } from "$lib/server/models/Announcement";
 
 class AnnouncementPolicy {
   update(user: User, model: Announcement) {

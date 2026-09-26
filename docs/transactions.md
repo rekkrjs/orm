@@ -14,8 +14,8 @@ the error propagates out:
 
 ```ts
 import { DB, Model } from "@rekkr/orm";
-import User from "./models/User";
-import Wallet from "./models/Wallet";
+import { User } from "./models/User";
+import { Wallet } from "./models/Wallet";
 
 await DB.transaction(async () => {
   const sender = await User.findOrFail(1);

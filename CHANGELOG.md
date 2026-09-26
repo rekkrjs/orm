@@ -35,6 +35,12 @@
 
 ### Added
 
+- A searchable model no longer needs `fts`. Without it, the PostgreSQL and
+  SQLite engines index the model's table: text columns are searched, the
+  others stored for `where()`, `orderBy()` and `facet()`, and the primary key
+  and `hidden` columns left out. `Search.register(Post)` is the whole setup,
+  as with Scout; `fts` stays for choosing columns, computed fields, a language
+  or a tokenizer. See [Search](./docs/search.md#choosing-what-to-index--fts).
 - `DB.listen(listener)` calls a function after each statement the application
   runs, on every connection, with its SQL, bindings, duration, connection and,
   if it failed, the error; it returns the function that stops it. Transaction
@@ -68,6 +74,22 @@
   implementation: a project with `exactOptionalPropertyTypes` and similar flags
   saw hundreds of errors in ORM code. A Git install without `dist/` falls back
   to the source.
+- `update()`, `increment()` and `decrement()` on a model query set
+  `updated_at` to the current time, as Eloquent does, unless the call passes a
+  value for it. They left it alone, so an incremental sync reading rows by
+  `updated_at` missed every bulk update. A backfill or data migration that must
+  not mark rows as changed runs inside `Model.withoutTimestamps()`; a builder
+  with no model is unaffected. In an `UPDATE ... JOIN` built with
+  `updateFrom()` the column is qualified with the model's table, since the
+  joined table may have its own `updated_at`. See
+  [Query builder](./docs/query-builder.md).
+- `upsert()` on a model query sets timestamps as `User.upsert()` does: both
+  columns on the rows it inserts, `updated_at` on the rows it updates. It set
+  none, so it inserted rows with a NULL `created_at`. `User.insertGetId()` and
+  `User.insertOrIgnore()` set `created_at` and `updated_at` as `User.insert()`
+  does; they wrote NULL. A value the call passes is kept. The query
+  `insert()`, `insertGetId()` and `insertOrIgnore()` stay the raw path, without
+  timestamps. See [Models](./docs/models.md#insert--insertorignore--upsert).
 - The `orm` bin is `bin/orm.mjs`, which runs the CLI on the runtime that
   launched it: Node.js under npm, pnpm and yarn; Bun under `bunx`, `bun run`,
   and when invoked directly with Bun installed.
@@ -100,9 +122,112 @@
   use `decimal()` for a fixed number of places. Existing tables are not altered;
   [Schema builder](./docs/schema-builder.md#floating-point-and-decimals) shows
   the `ALTER` for each database.
+- The Meilisearch engine is removed: `MeilisearchEngine`, the `"meilisearch"`
+  and `"meili"` aliases, the `host` and `apiKey` search options, and the
+  Meilisearch settings validation (`validateMeilisearchSettings`,
+  `InvalidMeilisearchSettingsError`, `MEILISEARCH_SETTING_KEYS`). So are the
+  builder methods only it implemented, `vector()`, `hybrid()` and
+  `orderByGeo()`, which the built-in engines ignored without a word, along with
+  the `vector`, `hybrid` and `typoTolerance` capabilities and
+  `SearchEngine.waitForTask()`. Search now runs on PostgreSQL full-text search
+  or SQLite FTS5, in the database the application already uses; another
+  service can still be wired through the `SearchEngine` interface. See
+  [Search](./docs/search.md).
+- `SqliteFTS5Engine` names its FTS5 tables `_fts_<index>`, as
+  `PostgresFTSEngine` already did (`prefix` option). An index created before
+  this change must be created again with `orm search:create-index` and
+  `orm search:import`.
 
 ### Fixed behaviour
 
+- The PostgreSQL and SQLite search engines read the model's `fts` config in
+  every process. Only `search:create-index`, `search:reindex` and
+  `search:verify` passed it to the engine, so an application following the
+  documentation failed on its first `Post.create()` or `Post.search()` with
+  `no schema configured for index "posts"`. An index with no explicit
+  `configureIndex()` now takes the `fts` of the registered model whose
+  `searchableAs()` returns its name, per tenant under `tenantScope`; an
+  explicit config still wins. `orm queue` loads `modelsPath` when search is
+  configured, so search jobs find the config in the worker too.
+- `SqliteFTS5Engine` no longer writes to the table it indexes. Its FTS5 table
+  took the index name, which defaults to the model's table: `createIndex()`
+  found that table already there and did nothing, each save overwrote the row
+  with only the indexed fields and blanked the others, and
+  `removeAllFromSearch()` or `orm search:flush` deleted every row of it.
+- An `orWhere()` on a search no longer escapes the text match. The PostgreSQL
+  and SQLite engines appended the filters to the match without parentheses, so
+  `Post.search("rust").where("status", "draft").orWhere("featured", true)` ran
+  as `(match AND draft) OR featured`: PostgreSQL returned featured rows that do
+  not mention "rust", and SQLite refused the query with `unable to use function
+  MATCH in the requested context`.
+- `forceDelete()` on a model instance fires the `deleting` and `deleted`
+  observers, as `delete()` does and as Eloquent does, with or without soft
+  deletes. It fired neither, so an observer that cleans up after a row, such as
+  removing its file, missed every permanent delete. A `deleting` observer that
+  throws now stops the delete. `forceDeleteQuietly()` deletes permanently
+  without observers, the way `forceDelete()` used to. See
+  [Commands](./docs/commands.md#recipe-pruning-old-records) for a recipe that
+  replaces Laravel's `model:prune`.
+- `restore()` on a model instance fires the `restoring` and `restored`
+  observers, as [Observers](./docs/observers.md) already promised. It fired
+  neither, so a `restored` observer never ran. A `restoring` observer that
+  throws now leaves the row trashed.
+- A soft delete and `restore()` set `updated_at` along with `deleted_at`, as
+  Eloquent does. That covers `delete()`, `deleteQuietly()` and `restore()` on
+  a model, and `delete()` and `restore()` on a query, which follow the rule
+  for query updates under Breaking. They left `updated_at`
+  alone, so an incremental sync that reads rows by `updated_at` missed every
+  delete and restore. A query-level `restore()` now only updates trashed rows:
+  it also matched live rows and would have moved their `updated_at`. See
+  [Models](./docs/models.md#soft-deletes).
+- `upsert()` with explicit update columns sets `updated_at` on the rows it
+  updates, as Eloquent does. Unless the list named `updated_at`, an updated row
+  kept its old `updated_at` and an incremental sync missed it.
+- On MySQL, a date written under a qualified key, such as
+  `update({ "posts.published_at": "2024-01-01T00:00:00Z" })` in an
+  `updateFrom()` join, reached the server as ISO text and was rejected as an
+  incorrect datetime. It is now converted like an unqualified one.
+- `orm types:generate` with `modelsPath` set to a path or a list of paths, the
+  single-database setup, generated no declarations: it excluded its own model
+  directory as if it belonged to another tenancy scope, found no models and
+  only warned "No models discovered". It now generates them; a config that
+  separates `landlord` and `tenant` paths still keeps each scope's models apart.
+- `orm types:generate <dir>` writes the declarations to `<dir>`, as documented.
+  With a single model directory it wrote them to that directory's `types/`
+  folder instead, while reporting `<dir>` as the output.
+- `search:status`, `search:verify`, `search:list-indexes` and
+  `search:sync-index-settings` handled a searchable model once per name it was
+  exported under, so a model exported as `Post`, as its base class and as
+  `default` was listed and synced twice. Each class is now handled once.
+- `orm make:model` scaffolds `export class User extends Model {}` instead of a
+  hand-written attribute interface and `Model.define()`, and `orm
+  make:searchable` scaffolds a named model class passed to `Search.register()`
+  instead of an unexported `_Post` behind a default export. Both work with
+  `orm types:generate`, which could not type the old searchable scaffold at all.
+  A model whose table the convention would misname (`Category`, `Status`) gets
+  `static override table`, so it still reads the table its migration creates.
+- Generated stubs (`typeStubs: true`) compile under `strict`: the getter of a
+  nullable column returned `T | null` while reading an optional attribute, a
+  type error for nearly every table since `timestamps()` columns are nullable.
+  They also declare `static override table`, so they compile under
+  `noImplicitOverride`.
+- Type generation warns about a model exported only as `export default class`.
+  TypeScript cannot merge the generated `declare module` block into a default
+  export, so its declarations typed nothing and nothing said so. The warning
+  names the file and asks for a named export (`export class User`); a class
+  also exported by name, or a table mapped in `typeDeclarations`, is not
+  reported. See [Type Generation](./docs/type-generation.md).
+- `updateTimestamps()` followed by `save()` writes the new `updated_at`. The
+  column was set without being marked as changed, so `save()` found nothing to
+  write and left the model with the new time in memory and the old one in the
+  database.
+- A timestamp you set yourself is kept, as Eloquent does. `create()`, `save()`,
+  `createMany()`, `saveMany()`, `increment()`, `decrement()` and
+  `updateTimestamps()` overwrote `created_at` and `updated_at` with the current
+  time even when the model carried its own value, so importing a row with its
+  real creation date took `withoutTimestamps()`. They now stamp only a column
+  left alone, as `insert()` and `upsert()` already did. See
+  [Models](./docs/models.md#timestamps).
 - With `log.file` set, a process restarted on the same day overwrote the day's
   query log from its first byte and left the tail of the old log behind. Lines
   are now appended.

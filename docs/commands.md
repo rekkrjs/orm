@@ -26,12 +26,12 @@ Two styles are supported — pick whichever you prefer.
 // app/commands/ReportOverdueCommand.ts
 import { Command } from "@rekkr/orm/commands";
 import { TenantContext } from "@rekkr/orm";
-import Invoice from "../models/Invoice";
+import { Invoice } from "../models/Invoice";
 
 export default class ReportOverdueCommand extends Command.define(
   "report:overdue {tenant} {--limit=25}"
 ) {
-  static description = "List overdue invoices for a tenant.";
+  static override description = "List overdue invoices for a tenant.";
 
   async handle(): Promise<void> {
     const tenant = this.argument("tenant");   // ✅ autocompletes "tenant"
@@ -174,6 +174,8 @@ orm make:policy AnnouncementPolicy
 orm make:policy AnnouncementPolicy --model=Announcement
 ```
 
+`make:model` writes `export class User extends Model {}`, adding `static override table` only when the table it names (and `--migration` creates) is not the model's own convention, as for `Category` → `categories`. Attribute types come from `orm types:generate` once the table exists.
+
 `make:policy` writes to `--dir` when provided, otherwise to `policyPath` from `orm.config.ts`, falling back to `./app/policies`.
 
 ## Registering Commands Manually
@@ -196,6 +198,60 @@ const entry = resolveCommand("email:send");
 if (entry) {
   await new CommandRunner().run(entry, ["alice@example.com", "--force"]);
 }
+```
+
+## Recipe: pruning old records
+
+There is no built-in counterpart to Laravel's `Prunable` models and
+`model:prune`. A command per model, run by the system scheduler, does the same
+job:
+
+```ts
+// app/commands/prune-activity-logs.ts
+import { defineCommand } from "@rekkr/orm/commands";
+import { ActivityLog } from "../models/ActivityLog";
+
+export default defineCommand({
+  signature: "prune:activity-logs {--pretend : Count the rows without deleting them}",
+  description: "Delete activity logs older than 90 days.",
+
+  async handle({ option, info }) {
+    const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    // withTrashed(): on a soft-delete model, also prune rows already in the trash.
+    const prunable = () => ActivityLog.withTrashed().where("created_at", "<", cutoff);
+
+    if (option("pretend")) {
+      info(`${await prunable().count()} activity log(s) would be deleted.`);
+      return;
+    }
+
+    await prunable().forceDelete();
+  },
+});
+```
+
+`forceDelete()` on the query is a single `DELETE`, like Laravel's
+`MassPrunable`: registered observers get `deleted` for each row, never
+`deleting`. When each row needs its own cleanup, such as removing a file, or
+its `deleting` observer, delete the rows one by one, like Laravel's `Prunable`:
+
+```ts
+await prunable().chunkById(500, async (logs) => {
+  for (const log of logs) {
+    // Per-row cleanup (Laravel's `pruning()`) goes here.
+    await log.forceDelete(); // fires `deleting` and `deleted`
+  }
+});
+```
+
+`chunkById()` pages by primary key, so deleting the rows of one chunk does not
+skip any in the next.
+
+Schedule it with cron, or a systemd timer:
+
+```sh
+# Every day at 03:00
+0 3 * * * cd /srv/app && npx orm run prune:activity-logs >> /var/log/app-prune.log 2>&1
 ```
 
 ## Commands vs Queue Jobs

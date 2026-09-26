@@ -8,39 +8,48 @@ import { Model } from "@rekkr/orm";
 
 ## Defining a model
 
-There are two ways to declare a model. They differ only in how attribute types reach TypeScript.
-
-### `Model.define<T>(table)` — typed (recommended)
-
-Pass an attribute interface and the table name. The returned base class has every attribute, every column name in `where()`, and every relation name in `with()` fully typed:
+The smallest model is an empty class:
 
 ```ts
 import { Model } from "@rekkr/orm";
 
-interface ProductAttributes {
-  sku: string;
-  name: string;
-  price: string;
-  active: boolean;
-  status: string;
-  metadata: Record<string, any> | null;
-  deleted_at: Date | null;
-}
+class Product extends Model {}
+```
 
-class Product extends Model.define<ProductAttributes>("products") {
-  static primaryKey = "sku";
-  static keyType = "string" as const;
-  static incrementing = false;
-  static timestamps = false;
-  static softDeletes = true;
-  static fillable = ["sku", "name", "price", "active", "status", "metadata"];
+The conventions below fill in the rest: the table is `products`, the primary key
+is an auto-incrementing integer `id`, and `created_at` and `updated_at` are
+managed for you. Attribute types come from the database: `bunx orm types:generate`
+writes declarations that add every column to the class, so `product.name` and
+`Product.where("price", ">", "10")` are typed without listing the columns again in
+TypeScript. See [Type Generation](./type-generation.md).
 
-  static attributes = {
+Mass assignment is closed by default: list in `fillable` the attributes that
+`create()` and `fill()` may set.
+
+### Overriding the defaults
+
+Every convention is a static property. Override only the ones your table does not
+follow:
+
+```ts
+import { Model } from "@rekkr/orm";
+
+class Product extends Model {
+  static override primaryKey = "sku";          // default "id"
+  static override keyType = "string" as const; // default "int"
+  static override incrementing = false;        // default true: the database assigns the key
+  static override timestamps = false;          // default true: created_at and updated_at
+  static override softDeletes = true;          // default false: delete() removes the row
+  static override fillable = ["sku", "name", "price", "active", "status", "metadata"]; // default: none
+
+  // Values a new instance starts with (default: none)
+  static override attributes = {
     active: true,
     status: "draft",
   };
 
-  static casts = {
+  // How columns are converted on read and write (default: as the driver returns them)
+  static override casts = {
     active: "boolean",
     price: "decimal:2",
     metadata: "json",
@@ -48,7 +57,30 @@ class Product extends Model.define<ProductAttributes>("products") {
 }
 ```
 
-For tables with irregular plural names (`curricula`, `media`, ...) pass the singular class name as the second argument so foreign key inference works correctly when the class is assigned to a variable instead of subclassed:
+### Without type generation: `Model.define<T>()`
+
+If you do not generate declarations, `Model.define<T>(table)` takes the attribute
+types from an interface you write instead. The class body is the same:
+
+```ts
+interface ProductAttributes {
+  sku: string;
+  name: string;
+  price: string;
+  active: boolean;
+}
+
+class Product extends Model.define<ProductAttributes>("products") {
+  static override primaryKey = "sku";
+  static override keyType = "string" as const;
+  static override incrementing = false;
+}
+```
+
+The cost is keeping the interface in step with the table by hand. For tables with
+irregular plural names (`curricula`, `media`, ...) pass the singular class name as
+the second argument so foreign key inference works when the class is assigned to a
+variable instead of subclassed:
 
 ```ts
 // Subclassed — class name is always correct:
@@ -57,27 +89,6 @@ class Curriculum extends Model.define<CurriculumAttributes>("curricula") {}
 // Direct assignment — provide name explicitly:
 const CurriculumModel = Model.define<CurriculumAttributes>("curricula", "Curriculum");
 ```
-
-### Plain `extends Model`
-
-If you don't need attribute typing (or already have it from generated declarations), you can subclass `Model` directly:
-
-```ts
-class Product extends Model {
-  static table = "products";
-  static primaryKey = "sku";
-  static timestamps = false;
-  static softDeletes = true;
-
-  static casts = {
-    active: "boolean",
-    price: "decimal:2",
-    metadata: "json",
-  };
-}
-```
-
-This is mostly useful when you're combining the ORM with generated `.d.ts` files (see [Type Generation](./type-generation.md)).
 
 ## Conventions
 
@@ -103,6 +114,21 @@ class User extends Model {
   static override updatedAtColumn = "updatedAt";
 }
 ```
+
+A value you set yourself is kept, as in Eloquent: a write stamps the current
+time only on a timestamp column you left alone. That lets an import or a test
+record when a row was really created:
+
+```ts
+await User.create({ name: "Imported", created_at: new Date("2024-02-29T10:00:00Z") });
+
+user.name = "Edited";
+user.updated_at = new Date("2025-01-01T00:00:00Z");
+await user.save();              // keeps that updated_at; created_at is untouched
+await user.increment("logins", 1, { updated_at: someDate }); // keeps someDate
+```
+
+`touch()` always stamps the current time.
 
 `User.getCreatedAtColumn()` and `User.getUpdatedAtColumn()` expose the resolved
 names. Model writes, `dateColumns()`, `schema()`, `replicate()`, `latest()`, and
@@ -168,11 +194,11 @@ Example:
 ```ts
 import { Model, TenantContext } from "@rekkr/orm";
 
-class Plan extends Model.define<{ id: number; name: string }>("plans") {
-  static modelSchema = "public"; // landlord/shared
+class Plan extends Model {
+  static override modelSchema = "public"; // landlord/shared
 }
 
-class Invoice extends Model.define<{ id: number; total: string }>("invoices") {
+class Invoice extends Model {
   // tenant-resolved schema
 }
 
@@ -190,7 +216,7 @@ Use `static attributes` to give new instances in-memory defaults before saving:
 
 ```ts
 class User extends Model {
-  static attributes = {
+  static override attributes = {
     active: true,
     role: "member",
   };
@@ -209,7 +235,7 @@ These are model defaults, not database defaults. Values passed to the constructo
 
 ```ts
 class User extends Model {
-  static casts = {
+  static override casts = {
     active: "boolean",
     login_count: "integer",
     price: "decimal:2",
@@ -272,7 +298,7 @@ export const PublicationState = backedEnum({
 export type PublicationState = EnumValue<typeof PublicationState>;
 
 class Article extends Model {
-  static casts = {
+  static override casts = {
     state: PublicationState,
   };
 }
@@ -322,7 +348,7 @@ class UppercaseCast implements CastsAttributes {
 }
 
 class Product extends Model {
-  static casts = {
+  static override casts = {
     sku: UppercaseCast,
   };
 }
@@ -346,7 +372,7 @@ user.mergeCasts({ count: "string" });
 
 ```ts
 class User extends Model {
-  static accessors = {
+  static override accessors = {
     name: {
       get: (value: string) => value?.toUpperCase(),
     },
@@ -373,20 +399,15 @@ Annotate `static accessors` with `AccessorMap<TAttrs, TModel>` so the callback p
 
 ```ts
 import { Model, type AccessorMap } from "@rekkr/orm";
+import type { UsersAttributes } from "./types/users"; // from orm types:generate
 
-interface UserAttrs {
-  id: number;
-  first_name: string;
-  last_name: string;
-}
-
-class User extends Model.define<UserAttrs>("users") {
+export class User extends Model {
   declare full_name: string;
 
-  static accessors: AccessorMap<UserAttrs, User> = {
+  static override accessors: AccessorMap<UsersAttributes, User> = {
     full_name: {
       get: (_value, attributes, model) => {
-        //    ^ any        ^ UserAttrs      ^ User
+        //    ^ any        ^ UsersAttributes ^ User
         return `${attributes.first_name} ${attributes.last_name}`.trim();
       },
     },
@@ -404,7 +425,7 @@ A `get` with no matching database column behaves as a computed property derived 
 class User extends Model {
   declare full_name: string;
 
-  static accessors = {
+  static override accessors = {
     full_name: {
       get: (_value: any, attrs: Record<string, any>) =>
         `${attrs.first_name ?? ""} ${attrs.last_name ?? ""}`.trim(),
@@ -426,9 +447,9 @@ non-internal attribute to them throws `MassAssignmentError`. Declare either
 
 ```ts
 class User extends Model {
-  static fillable = ["name", "email", "role"];
+  static override fillable = ["name", "email", "role"];
   // — or —
-  static guarded = ["id", "is_admin", "created_at", "updated_at"];
+  static override guarded = ["id", "is_admin", "created_at", "updated_at"];
 }
 
 await User.create({ name: "Alice", email: "a@b.com", is_admin: true });
@@ -442,8 +463,8 @@ Partial policies silently discard protected attributes by default. Set
 Model.preventSilentlyDiscardingAttributes = true; // all models
 
 class StrictUser extends Model {
-  static guarded = ["is_admin"];
-  static preventSilentlyDiscardingAttributes = true; // or only this model
+  static override guarded = ["is_admin"];
+  static override preventSilentlyDiscardingAttributes = true; // or only this model
 }
 ```
 
@@ -504,9 +525,9 @@ Control what `toJSON()` returns. Use `hidden` to remove fields from output, or `
 
 ```ts
 class User extends Model {
-  static hidden = ["password", "remember_token"];
+  static override hidden = ["password", "remember_token"];
   // — or, allow-list style —
-  static visible = ["id", "name", "email"];
+  static override visible = ["id", "name", "email"];
 }
 ```
 
@@ -697,6 +718,7 @@ await User.where("active", false).decrement("score", 2);   // bulk
 await user.saveQuietly();
 await user.updateQuietly({ name: "Imported name" });
 await user.deleteQuietly();
+await user.forceDeleteQuietly();
 await User.createMany(records, { events: false });
 await User.saveMany(models, { events: false });
 model.save({ events: false });
@@ -766,6 +788,13 @@ await User.upsert(
   "email",
 );
 ```
+
+`User.insert()`, `User.insertGetId()` and `User.insertOrIgnore()` set `created_at`
+and `updated_at` on every row that leaves them out. `upsert()`, on the model or
+on `User.query()`, does the same for the rows it inserts, and sets `updated_at`
+on the rows it updates even when `updateColumns` does not list it; `created_at`
+is never overwritten. A value you pass is kept. `User.query().insert()`,
+`insertGetId()` and `insertOrIgnore()` are the raw path and set no timestamps.
 
 ### `createMany` / `saveMany`
 
@@ -1029,14 +1058,8 @@ getter is a real TypeScript member, no separate `declare` or ORM-specific
 accessor is needed:
 
 ```ts
-type UserAttrs = {
-  id: number;
-  first_name: string;
-  last_name: string;
-};
-
-class User extends Model.define<UserAttrs>("users") {
-  static appends = ["fullName"];
+class User extends Model {
+  static override appends = ["fullName"];
 
   get fullName(): string {
     return `${this.first_name} ${this.last_name}`.trim();
@@ -1074,12 +1097,13 @@ Set `static softDeletes = true` and add a `deleted_at` column (`table.softDelete
 
 ```ts
 class User extends Model {
-  static softDeletes = true;
+  static override softDeletes = true;
 }
 
 await user.delete();         // sets deleted_at — row stays in DB
 await user.restore();        // clears deleted_at
-await user.forceDelete();    // permanently removes the row
+await user.forceDelete();    // permanently removes the row; fires deleting / deleted
+await user.forceDeleteQuietly(); // same, without observers
 
 await User.all();                       // excludes trashed
 await User.withTrashed().get();         // includes trashed
@@ -1090,6 +1114,18 @@ await User.onlyTrashed().restore();     // restore everything trashed
 await User.where("inactive", true).delete();          // bulk soft delete
 await User.onlyTrashed().where("inactive", true).forceDelete(); // bulk permanent delete
 ```
+
+A soft delete or a restore also sets `updated_at` to the current time, as in
+Eloquent, so a sync that reads rows changed since a checkpoint also sees the
+ones that were deleted or came back:
+
+```ts
+const changed = await User.withTrashed().where("updated_at", ">", lastSync).get();
+```
+
+A query-level `restore()` only touches rows that are trashed, so rows that were
+never deleted keep their `updated_at`. Inside `withoutTimestamps()`, and on a
+model with `timestamps = false`, only `deleted_at` changes.
 
 Override `deletedAtColumn` when the schema uses another name, and pass the same
 name to the migration helper:
@@ -1153,7 +1189,7 @@ Declare `static touches` to bump a parent relation's `updated_at` whenever this 
 
 ```ts
 class Post extends Model {
-  static touches = ["author"];
+  static override touches = ["author"];
 
   author() {
     return this.belongsTo(User);
@@ -1180,4 +1216,4 @@ Useful for cache invalidation patterns where the parent's timestamp drives view 
 - [Query Builder](./query-builder.md) — every chainable filter, join, and aggregate.
 - [Observers](./observers.md) — lifecycle hooks for creating, updating, and deleting.
 - [Events](./events.md) — explicit application events and class-based handlers.
-- [TypeScript](./typescript.md) — how the types flow through `Model.define<T>()`.
+- [TypeScript](./typescript.md) — how attribute types flow through models and queries.
