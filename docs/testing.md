@@ -138,9 +138,9 @@ beforeAll(async () => {
 
 ## Transactional isolation
 
-When the code under test only issues ordinary model or query-builder calls, the
-fastest isolation strategy is to open a manual transaction before each test and
-roll it back afterward:
+For fast isolation, open a manual transaction before each test and roll it back
+afterward. Application code may call `DB.transaction()` or
+`connection.transaction()` inside the test; those callbacks use savepoints:
 
 ```ts
 import { afterEach, beforeEach } from "bun:test";
@@ -154,14 +154,13 @@ afterEach(async () => {
 });
 ```
 
-The next test starts with the original schema and seed data intact. Do not use
-this harness when the code under test opens `DB.transaction()` or
-`connection.transaction()` itself: a callback transaction cannot be opened on
-top of an owned connection's manual root transaction. For those tests, use a
-fresh in-memory database per test or wrap the complete test body in
-`DB.transaction()` and deliberately throw a test-only sentinel at the end so
-the outer callback rolls back; nested callback transactions then use
-savepoints.
+The next test starts with the original schema and seed data intact. A failed
+callback rolls back only its savepoint; the test's final rollback also undoes
+successful callbacks. Concurrent tests in one process need their own
+connections and separate `TransactionContext.run(connection, testBody)` scopes
+so `DB` and models resolve the right connection. Increase or disable
+`transactions.abandonedTimeoutMs` for tests longer than its 60-second default,
+so it does not roll back a test's manual transaction while the test is running.
 
 ## Testing observers
 

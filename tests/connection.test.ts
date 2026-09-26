@@ -493,15 +493,24 @@ describe("SQLite busy_timeout", () => {
 });
 
 describe("transaction() and a manual beginTransaction()", () => {
-  test("refuses to open BEGIN inside an open manual transaction", async () => {
+  test("uses a savepoint inside an open manual transaction", async () => {
     const conn = new Connection({ url: "sqlite://:memory:" });
     try {
       await conn.run("CREATE TABLE tx_guard (id INTEGER PRIMARY KEY)");
       await conn.beginTransaction();
-      // Previously this issued a second BEGIN on the same connection.
-      await expect(conn.transaction(async () => {})).rejects.toThrow(/manual beginTransaction/);
+      await conn.run("INSERT INTO tx_guard (id) VALUES (1)");
+      await conn.transaction(async (tx) => {
+        await tx.run("INSERT INTO tx_guard (id) VALUES (2)");
+      });
+      await expect(conn.transaction(async (tx) => {
+        await tx.run("INSERT INTO tx_guard (id) VALUES (3)");
+        throw new Error("inner failure");
+      })).rejects.toThrow("inner failure");
+      expect(await conn.query("SELECT id FROM tx_guard ORDER BY id")).toEqual([{ id: 1 }, { id: 2 }] as any);
       await conn.rollback();
+      expect(await conn.query("SELECT id FROM tx_guard ORDER BY id")).toEqual([]);
     } finally {
+      if (conn.isInTransaction()) await conn.rollback();
       await conn.close();
     }
   });

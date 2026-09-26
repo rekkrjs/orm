@@ -888,9 +888,6 @@ export class Connection {
     if (this.isPretending()) return await TransactionContext.run(this, () => callback(this));
     await this.ensureSqliteDefaults();
     if (this.isInTransaction()) {
-      if (this.ownsDriver && this.transactionRoot) {
-        throw new Error("transaction() was called while a manual beginTransaction() is still open on this connection. Commit or roll back first.");
-      }
       const savepointName = `orm_trans_${++this.savepointId}`;
       const driver = this.getDriver();
       this.transactionDepth++;

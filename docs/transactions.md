@@ -117,6 +117,9 @@ try {
 ```
 
 `beginTransaction`, `commit`, and `rollback` honor the same nested savepoint behavior as the callback form. `connection.isInTransaction()` returns true while a transaction is open.
+`DB.transaction()` and `connection.transaction()` also use savepoints inside a
+manual root transaction. This lets a test open one transaction in `beforeEach`,
+run application callbacks normally, and roll everything back in `afterEach`.
 
 > **Always pair `beginTransaction()` with a `commit()`/`rollback()` in `try/catch`.** `beginTransaction()` reserves a pooled connection; a path that throws before `commit()` without a `rollback()` would otherwise leak that connection. As a safety net, an abandoned manual transaction (no `commit`/`rollback`) is force-rolled-back and its connection released after `transactions.abandonedTimeoutMs` (default 60s — see [Configuration](./configuration.md#transactions)). The safety net is a backstop, not a substitute for correct `try/catch`; prefer the callback form, which releases automatically.
 

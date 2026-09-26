@@ -12,6 +12,7 @@ import {
   Migrator,
   Model,
   Schema,
+  TransactionContext,
   UniqueConstraintViolationError,
   backedEnum,
   type QueryEvent,
@@ -320,6 +321,70 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
 
     afterAll(async () => {
       await context?.dispose();
+    });
+
+    run("runs callback transactions inside a test transaction and rolls back everything", async () => {
+      const connection = context.connection;
+      await Schema.create("contract_test_transactions", (table) => {
+        table.integer("id").primary();
+      }, connection);
+
+      await connection.beginTransaction();
+      try {
+        await DB.table("contract_test_transactions").insert({ id: 1 });
+        await DB.transaction(async () => {
+          await DB.table("contract_test_transactions").insert({ id: 2 });
+          await DB.transaction(async () => {
+            await DB.table("contract_test_transactions").insert({ id: 3 });
+          });
+        });
+        await expect(DB.transaction(async () => {
+          await DB.table("contract_test_transactions").insert({ id: 4 });
+          throw new Error("inner failure");
+        })).rejects.toThrow("inner failure");
+        expect(await DB.table("contract_test_transactions").orderBy("id").pluck("id")).toEqual([1, 2, 3]);
+      } finally {
+        await connection.rollback();
+      }
+      expect(await DB.table("contract_test_transactions").count()).toBe(0);
+
+      if (driver === "sqlite") return;
+      const second = new Connection(connection.getConfig());
+      let ready = 0;
+      let release!: () => void;
+      const bothReady = new Promise<void>((resolve) => { release = resolve; });
+      let firstDone!: () => void;
+      const firstFinished = new Promise<void>((resolve) => { firstDone = resolve; });
+      const runTest = async (session: Connection, id: number) => {
+        await session.beginTransaction();
+        try {
+          await TransactionContext.run(session, async () => {
+            await DB.transaction(async () => {
+              await DB.table("contract_test_transactions").insert({ id });
+            });
+            if (++ready === 2) release();
+            await bothReady;
+            expect(await DB.table("contract_test_transactions").orderBy("id").pluck("id")).toEqual([id]);
+            if (id === 2) {
+              await firstFinished;
+              expect(await DB.table("contract_test_transactions").orderBy("id").pluck("id")).toEqual([2]);
+            }
+          });
+        } finally {
+          await session.rollback();
+          if (id === 1) firstDone();
+        }
+      };
+      const tests = [runTest(connection, 1), runTest(second, 2)];
+      try {
+        await Promise.all(tests);
+        expect(await DB.table("contract_test_transactions").count()).toBe(0);
+      } finally {
+        release();
+        firstDone();
+        await Promise.allSettled(tests);
+        await second.close();
+      }
     });
 
     run("supports schema changes, CRUD, relations, dates, JSON, upserts, and transactions", async () => {
