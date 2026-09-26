@@ -162,6 +162,11 @@ const user = await User.where("email", "alice@example.com").firstOrFail();
 const posts = await user.posts().get();
 
 console.log(user.getAttribute("name"), posts.length);
+
+// Three ways to list users:
+const users = await User.orderBy("id").get();     // Collection of User models
+const usersJson = await User.orderBy("id").json(); // JSON-ready objects
+const usersRawJson = await User.orderBy("id").rawJson(); // JSON-ready objects without hydrating models
 ```
 
 Or use the `DB` facade for ad-hoc table access without a model:
