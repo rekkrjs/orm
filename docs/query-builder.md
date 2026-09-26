@@ -864,6 +864,16 @@ precision are known to be safe. SQLite performs numeric aggregates through its
 `INTEGER`/`REAL` numeric representations, so arbitrary-precision decimal
 aggregates are not available natively.
 
+When no row matches, or every matching value is `NULL`, the aggregates follow
+Eloquent: `count()` is `0`, `sum()` is `0`, `exists()` is `false`, and
+`avg()`, `average()`, `min()` and `max()` are `null`, so "no data" never reads
+as an average of zero:
+
+```ts
+await Order.where("status", "missing").sum("amount"); // 0
+await Order.where("status", "missing").avg("amount"); // null
+```
+
 ## Eager loading
 
 The fastest way to avoid N+1 query bugs. Always pre-load relations you intend to read.

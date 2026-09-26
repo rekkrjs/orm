@@ -105,6 +105,11 @@
   chunk left the earlier ones written. When `saveMany()` fails, its models go
   back to the state they had before the call, so none claims a row that was
   rolled back.
+- `avg()` and `average()` return `null` when no row matches or every value is
+  `NULL`, as Eloquent's do and as `min()` and `max()` already did. They
+  returned `0`, which read "no data" as an average of zero. `sum()` still
+  returns `0`. The return type is `NumericAggregate | null`. See
+  [Query builder](./docs/query-builder.md#aggregates).
 - The `orm` bin is `bin/orm.mjs`, which runs the CLI on the runtime that
   launched it: Node.js under npm, pnpm and yarn; Bun under `bunx`, `bun run`,
   and when invoked directly with Bun installed.

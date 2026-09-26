@@ -2688,11 +2688,12 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     return (await this.aggregate(`SUM(${this.grammar.wrap(column as string)})`, "sum_val")) ?? 0;
   }
 
-  async avg(column: ModelColumn<T>): Promise<NumericAggregate> {
-    return (await this.aggregate(`AVG(${this.grammar.wrap(column as string)})`, "avg_val")) ?? 0;
+  /** `null` when no row has a value, as in Eloquent: no data is not an average of zero. */
+  async avg(column: ModelColumn<T>): Promise<NumericAggregate | null> {
+    return await this.aggregate(`AVG(${this.grammar.wrap(column as string)})`, "avg_val");
   }
 
-  async average(column: ModelColumn<T>): Promise<NumericAggregate> {
+  async average(column: ModelColumn<T>): Promise<NumericAggregate | null> {
     return this.avg(column);
   }
 

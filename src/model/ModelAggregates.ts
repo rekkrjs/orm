@@ -101,11 +101,11 @@ export class ModelAggregates<T extends Record<string, any> = any> extends ModelQ
     return (this as any).query().sum(column);
   }
 
-  static async avg<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>): Promise<NumericAggregate> {
+  static async avg<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>): Promise<NumericAggregate | null> {
     return (this as any).query().avg(column);
   }
 
-  static async average<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>): Promise<NumericAggregate> {
+  static async average<M extends ModelConstructor>(this: M, column: ModelColumn<InstanceType<M>>): Promise<NumericAggregate | null> {
     return (this as any).query().average(column);
   }
 

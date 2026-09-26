@@ -93,6 +93,11 @@ class ContractBulkAtomicUuid extends PermissiveModel {
   static override keyType = "uuid" as const;
 }
 
+class ContractAggregate extends PermissiveModel {
+  static table = "contract_aggregates";
+  static timestamps = false;
+}
+
 class ContractUniqueRecord extends PermissiveModel {
   static table = "contract_unique_records";
   static timestamps = false;
@@ -422,6 +427,38 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
         await Promise.allSettled(tests);
         await second.close();
       }
+    });
+
+    // As in Eloquent: sum() of nothing is 0, while avg(), min() and max() of
+    // nothing are SQL's NULL, so "no data" never reads as an average of zero.
+    run("aggregates over no rows or only NULLs follow Eloquent", async () => {
+      await Schema.create("contract_aggregates", (table) => {
+        table.increments("id");
+        table.string("kind");
+        table.integer("score").nullable();
+      }, context.connection);
+      await ContractAggregate.insert([
+        { kind: "scored", score: 10 },
+        { kind: "scored", score: 20 },
+        { kind: "blank", score: null },
+      ]);
+      const none = () => ContractAggregate.where("kind", "missing");
+      const blank = () => ContractAggregate.where("kind", "blank");
+
+      expect(await none().avg("score")).toBeNull();
+      expect(await none().average("score")).toBeNull();
+      expect(await blank().avg("score")).toBeNull();
+      expect(await none().sum("score")).toBe(0);
+      expect(await blank().sum("score")).toBe(0);
+      expect(await none().min("score")).toBeNull();
+      expect(await none().max("score")).toBeNull();
+      expect(await none().count()).toBe(0);
+      expect(await none().exists()).toBe(false);
+      expect(await ContractAggregate.where("kind", "missing").avg("score")).toBeNull();
+
+      // With rows the value is the database's own: a number or a decimal string.
+      expect(Number(await ContractAggregate.where("kind", "scored").avg("score"))).toBe(15);
+      expect(Number(await ContractAggregate.avg("score"))).toBe(15);
     });
 
     // 8,000 rows of 9 columns bind 72,000 parameters: past SQLite's standard
