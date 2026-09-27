@@ -138,6 +138,12 @@ class ContractFastJson extends PermissiveModel {
   };
 }
 
+class ContractNativeJson extends PermissiveModel {
+  static override table = "contract_fast_json";
+  static override timestamps = false;
+  static override casts = { active: "boolean", metadata: "json" };
+}
+
 class ContractCalendarDay extends PermissiveModel {
   static override table = "contract_calendar_days";
   static override casts = { born_on: "date", seen_at: "datetime" };
@@ -1061,6 +1067,12 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
         metadata: JSON.stringify({ driver, nested: [1, 2] }),
         state: ContractJsonState.Ready,
       });
+      await ContractFastJson.on(connection).insert({
+        active: false,
+        happened_at: "2026-08-21T09:10:11.000Z",
+        metadata: JSON.stringify({ driver, nested: [] }),
+        state: ContractJsonState.Ready,
+      });
 
       const direct = await ContractFastJson.on(connection).rawJson();
       const hydrated = (await ContractFastJson.on(connection).get()).toJSON();
@@ -1071,6 +1083,13 @@ for (const driver of ["sqlite", "mysql", "postgres"] as const) {
         state: "ready",
       });
       expect((direct[0] as any).happened_at).toBe("2026-08-20T10:11:12.000Z");
+
+      const native = await ContractNativeJson.on(connection).orderBy("id").json();
+      expect(native).toEqual((await ContractNativeJson.on(connection).orderBy("id").get()).toJSON());
+      expect(native).toEqual([
+        { id: 1, active: true, happened_at: "2026-08-20T10:11:12.000Z", metadata: { driver, nested: [1, 2] }, state: "ready" },
+        { id: 2, active: false, happened_at: "2026-08-21T09:10:11.000Z", metadata: { driver, nested: [] }, state: "ready" },
+      ]);
     });
 
     run("paginates joined and grouped queries with having bindings", async () => {

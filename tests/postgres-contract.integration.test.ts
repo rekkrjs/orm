@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "./harness.js";
 import { PermissiveModel } from "./helpers.js";
-import { Builder, Connection, Model, Schema } from "../src/index.js";
+import { Builder, Connection, Model, Observer, Schema } from "../src/index.js";
 import { createDriverContext, postgresUrl, type DriverContext } from "./driver-harness.js";
 
 const run = postgresUrl ? test.serial : test.skip;
@@ -28,6 +28,12 @@ class PostgresNativeValue extends PermissiveModel {
     active: "boolean",
     day_value: "date",
   };
+}
+
+class MutateMetadataBeforeCreate extends Observer<PostgresNativeValue> {
+  override creating(model: PostgresNativeValue) {
+    model.metadata.values.push(2);
+  }
 }
 
 class PostgresPageItem extends PermissiveModel {
@@ -142,6 +148,24 @@ describe.serial("PostgreSQL native contracts", () => {
       note: "bulk",
     });
     expect((await PostgresNativeValue.where("note", "bulk").first())!.active).toBe(false);
+  });
+
+  run("create persists a JSON edit made in place by an observer", async () => {
+    const connection = context.connection;
+    MutateMetadataBeforeCreate.observe(PostgresNativeValue);
+    try {
+      const created = await PostgresNativeValue.create({
+        metadata: { values: [1] }, tags: [], active: true, day_value: null, note: "observer",
+      });
+      expect(created.metadata).toEqual({ values: [1, 2] });
+      expect(await connection.query(
+        `SELECT metadata, tags, active, note FROM ${connection.qualifyTable("postgres_native_values")} WHERE id = $1`,
+        [created.id]
+      )).toEqual([{ metadata: { values: [1, 2] }, tags: [], active: true, note: "observer" }]);
+      expect(await PostgresNativeValue.where("note", "bulk").count()).toBe(1);
+    } finally {
+      MutateMetadataBeforeCreate.unobserve(PostgresNativeValue);
+    }
   });
 
   run("enforces and introspects indexes, unique constraints, and foreign keys", async () => {

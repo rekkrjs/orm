@@ -510,6 +510,21 @@ export function serializeRawJsonRow(
       const serialized = serializeRowDates(row);
       return serialized === row ? { ...row } : serialized;
     }
+
+    // mysql2 returns BOOLEAN as 0/1. Only the declared casts need work;
+    // the generic path below checks visibility and accessors for every column.
+    const output = { ...row };
+    for (const cast of plan.nativeCasts) {
+      if (!Object.hasOwn(row, cast.attribute)) continue;
+      const value = row[cast.attribute];
+      if (value === null || value === undefined) continue;
+      if (cast.type === "boolean" || cast.type === "bool") {
+        output[cast.attribute] = !!value;
+      } else if (typeof value === "string") {
+        output[cast.attribute] = JSON.parse(value);
+      }
+    }
+    return serializeRowDates(output);
   }
 
   const attributes = Object.keys(plan.defaults).length > 0
@@ -528,7 +543,7 @@ export function serializeRawJsonRow(
       throw new Error(`${plan.modelName}.rawJson() does not support accessor ${key} because it appears in the output.`);
     }
 
-    const cast = plan.casts[key];
+    const cast = Object.hasOwn(plan.casts, key) ? plan.casts[key] : undefined;
     if (cast?.custom) {
       throw new Error(`${plan.modelName}.rawJson() does not support the custom cast on ${key} because it appears in the output.`);
     }
@@ -541,7 +556,12 @@ export function serializeRawJsonRow(
       || cast.backedEnum
       // An unsupported cast has to reach castCompiledAttribute to report itself.
       || (cast.supported && castValueIsReady(cast.definition, value));
-    output[key] = serializeDate(ready ? value : castCompiledAttribute(cast!, value), cast?.definition);
+    const serialized = serializeDate(ready ? value : castCompiledAttribute(cast!, value), cast?.definition);
+    if (key === "__proto__") {
+      Object.defineProperty(output, key, { value: serialized, enumerable: true, writable: true, configurable: true });
+    } else {
+      output[key] = serialized;
+    }
   }
   return output;
 }

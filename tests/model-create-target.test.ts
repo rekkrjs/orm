@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "./harness.js";
 import { Connection, DB, Model, Observer, Schema, type CastsAttributes } from "../src/index.js";
 import { getModelTarget, modelProxyHandler } from "../src/model/ModelBase.js";
+import { ModelCore } from "../src/model/ModelCore.js";
 import { PermissiveModel } from "./helpers.js";
 
 // create() fills and saves a plain model through the object behind its Proxy,
@@ -21,6 +22,12 @@ class CreatedObserved extends CreatedPlain {}
 class NameObserver extends Observer<CreatedObserved> {
   override creating(model: CreatedObserved) {
     seen.push((model as any).name);
+  }
+}
+
+class SettingsObserver extends Observer<CreatedPlain> {
+  override creating(model: CreatedPlain) {
+    (model as any).settings.a.push(2);
   }
 }
 
@@ -127,6 +134,23 @@ describe("create() through the model behind its Proxy", () => {
     expect((await DB.table("created_plain").where("id", (guarded as any).id).first())!.team_id).toBeNull();
   });
 
+  test("skips dirty recomputation for a fresh model with no materialized mutable cast", async () => {
+    const original = ModelCore.prototype.getDirty;
+    let calls = 0;
+    ModelCore.prototype.getDirty = function (...args) {
+      calls++;
+      return original.apply(this, args);
+    };
+    try {
+      const created = await CreatedPlain.create({ name: "Fresh", email: "fresh@example.test" } as any);
+      expect(calls).toBe(0);
+      expect(await DB.table("created_plain").where("id", (created as any).id).first())
+        .toEqual({ id: (created as any).id, name: "Fresh", email: "fresh@example.test", settings: null, team_id: null });
+    } finally {
+      ModelCore.prototype.getDirty = original;
+    }
+  });
+
   test("keeps the Proxy for observers, accessors, custom casts and overridden methods", async () => {
     NameObserver.observe(CreatedObserved);
     try {
@@ -138,6 +162,19 @@ describe("create() through the model behind its Proxy", () => {
       }
     } finally {
       NameObserver.unobserve(CreatedObserved);
+    }
+  });
+
+  test("persists an in-place JSON edit made by a creating observer", async () => {
+    SettingsObserver.observe(CreatedPlain);
+    try {
+      const created = await CreatedPlain.create({ name: "Mutable", email: "mutable@example.test", settings: { a: [1] } } as any);
+      expect((created as any).settings).toEqual({ a: [1, 2] });
+      expect(await DB.table("created_plain").where("id", (created as any).id).first())
+        .toEqual({ id: (created as any).id, name: "Mutable", email: "mutable@example.test", settings: '{"a":[1,2]}', team_id: null });
+      expect(created.getDirty()).toEqual({});
+    } finally {
+      SettingsObserver.unobserve(CreatedPlain);
     }
   });
 

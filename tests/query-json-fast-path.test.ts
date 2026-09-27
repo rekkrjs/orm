@@ -533,6 +533,47 @@ describe("Builder.rawJson", () => {
     });
   });
 
+  test("keeps driver rows intact when native JSON casts include a numeric boolean", () => {
+    class NativeJsonUser extends PermissiveModel {
+      static override timestamps = false;
+      static override casts = { active: "boolean", settings: "json" };
+    }
+    class GenericJsonUser extends NativeJsonUser {
+      static override hidden = ["secret"];
+    }
+    const row = {
+      id: 1,
+      active: 0,
+      settings: '{"theme":"light"}',
+      nullable: null,
+      created: new Date("2026-09-27T12:34:56.789Z"),
+      bytes: new Uint8Array([1, 2]),
+      ["__proto__"]: { polluted: true },
+    };
+
+    const output = serializeRawJsonRow(row, createRawJsonPlan(NativeJsonUser, Model));
+
+    expect(Object.keys(output)).toEqual(["id", "active", "settings", "nullable", "created", "bytes", "__proto__"]);
+    expect(output).toEqual({
+      id: 1,
+      active: false,
+      settings: { theme: "light" },
+      nullable: null,
+      created: "2026-09-27T12:34:56.789Z",
+      bytes: Buffer.from([1, 2]),
+      ["__proto__"]: { polluted: true },
+    });
+    expect(Object.getPrototypeOf(output)).toBe(Object.prototype);
+    const generic = serializeRawJsonRow(row, createRawJsonPlan(GenericJsonUser, Model));
+    expect(generic).toEqual(output);
+    expect(Object.hasOwn(generic, "__proto__")).toBe(true);
+    expect(Object.getPrototypeOf(generic)).toBe(Object.prototype);
+    expect(row.active).toBe(0);
+    expect(row.settings).toBe('{"theme":"light"}');
+    expect(row.bytes).toBeInstanceOf(Uint8Array);
+    expect(Object.prototype).not.toHaveProperty("polluted");
+  });
+
   test("json() serializes simple driver JSON directly and preserves every built-in cast", async () => {
     const query = () => DirectCastJsonUser.whereIn("id", [1, 2]).orderBy("id");
     expect(await query().json()).toEqual((await query().get()).toJSON());

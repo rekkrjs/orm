@@ -648,7 +648,9 @@ export class ModelPersistence<T extends Record<string, any> = any> extends Model
 
       // Mutable casts live in the cast cache until they are read as dirty. An
       // insert writes every attribute, so materialize those edits first.
-      Object.assign(this.$attributes, this.getDirty());
+      if (this.getDirty !== ModelCore.prototype.getDirty || Object.keys(this.$castCache).length > 0) {
+        Object.assign(this.$attributes, this.getDirty());
+      }
 
       if (timestampsEnabled(constructor)) {
         const { createdAt, updatedAt } = constructor.getTimestampColumns();
