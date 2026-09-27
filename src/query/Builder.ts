@@ -2913,7 +2913,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     positiveInteger(page, "Page");
     const items = await this.clone().forPage(page, perPage + 1).get() as unknown as Collection<TResult>;
     const hasMore = items.length > perPage;
-    const data = new Collection(items.slice(0, perPage));
+    const data = items.slice(0, perPage) as Collection<TResult>;
     const from = data.length === 0 ? 0 : (page - 1) * perPage + 1;
     const to = data.length === 0 ? 0 : from + data.length - 1;
 
@@ -2954,7 +2954,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
 
     const items = await builder.withoutCache().get() as unknown as Collection<TResult>;
     const hasMore = items.length > perPage;
-    const data = new Collection(items.slice(0, perPage));
+    const data = items.slice(0, perPage) as Collection<TResult>;
     const lastItem = data[data.length - 1];
     const nextCursor = hasMore && lastItem
       ? this.encodeCursor(orders.map((order) => this.getResultValue(lastItem, order.column)))

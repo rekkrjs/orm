@@ -140,8 +140,11 @@ export function applySearchableStatics<M extends Model>(
     ctor.makeAllSearchable = async function (chunk = 500): Promise<void> {
       const engine = getSearchEngine();
       await this.query().chunk(chunk, async (items: any) => {
-        const rows = typeof items.all === "function" ? items.all() : items;
-        const records = rows.map((m: any) => makeSearchableRecord(m)).filter(Boolean);
+        const records = [];
+        for (const item of items) {
+          const record = makeSearchableRecord(item);
+          if (record) records.push(record);
+        }
         if (records.length > 0) await engine.update(records);
       });
     };

@@ -21,8 +21,11 @@ export async function importModel(
   let chunks = 0;
 
   await (ctor as any).query().chunk(chunk, async (items: any) => {
-    const rows = typeof items.all === "function" ? items.all() : items;
-    const records = rows.map((m: any) => makeSearchableRecord(m)).filter(Boolean);
+    const records = [];
+    for (const item of items) {
+      const record = makeSearchableRecord(item);
+      if (record) records.push(record);
+    }
     if (records.length === 0) return;
     chunks++;
     if (!options.dryRun) await engine.update(records);

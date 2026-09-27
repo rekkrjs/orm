@@ -974,6 +974,38 @@ describe("Builder.rawJson", () => {
     expect(row).toEqual(before);    // and the row it read is left as it was
   });
 
+  test("serializes native and text JSON rows through the same cast plan", () => {
+    class NativeCastJsonUser extends PermissiveModel {
+      static override timestamps = false;
+      static override casts = { active: "boolean", metadata: "json" };
+    }
+
+    const plan = createRawJsonPlan(NativeCastJsonUser, Model);
+    const native = {
+      id: 1,
+      active: true,
+      metadata: { nested: { value: 1 } },
+      occurred_at: new Date("2026-08-20T10:11:12.000Z"),
+      bytes: new Uint8Array([1, 2]),
+    };
+    const result = serializeRawJsonRow(native, plan);
+    expect(result).toEqual({
+      id: 1,
+      active: true,
+      metadata: { nested: { value: 1 } },
+      occurred_at: "2026-08-20T10:11:12.000Z",
+      bytes: Buffer.from([1, 2]),
+    });
+    expect(result).not.toBe(native);
+    expect(native.occurred_at).toBeInstanceOf(Date);
+    expect(native.bytes).toBeInstanceOf(Uint8Array);
+    expect(serializeRawJsonRow({ id: 2, active: 1, metadata: '{"nested":{"value":2}}' }, plan)).toEqual({
+      id: 2,
+      active: true,
+      metadata: { nested: { value: 2 } },
+    });
+  });
+
   test("castAttribute preserves backed-enum validator overrides", () => {
     const model = new RelaxedEnumValidationModel();
     model.$attributes = { state: "invalid" } as any;

@@ -15,6 +15,7 @@ export interface RawJsonPlan {
   readonly accessors: Record<string, any>;
   readonly visible?: ReadonlySet<string>;
   readonly hidden?: ReadonlySet<string>;
+  readonly nativeCasts?: readonly CompiledCast[];
 }
 
 interface CastContext {
@@ -268,7 +269,13 @@ export function createRawJsonPlan(
   const accessors = model.accessors ?? {};
   const visible = visibleValues.length > 0 ? new Set(visibleValues) : undefined;
   const hidden = hiddenValues.length > 0 ? new Set(hiddenValues) : undefined;
-  const enumCasts = Object.values(casts).filter((cast) => cast.backedEnum);
+  const compiledCasts = Object.values(casts);
+  const enumCasts = compiledCasts.filter((cast) => cast.backedEnum);
+  const nativeCasts = !visible && !hidden && Object.keys(defaults).length === 0
+    && !hasAccessorConfiguration(accessors)
+    && compiledCasts.every((cast) => cast.type === "boolean" || cast.type === "bool"
+      || cast.type === "json" || cast.type === "array" || cast.type === "object")
+    ? compiledCasts : undefined;
 
   return {
     modelName: model.name,
@@ -278,6 +285,7 @@ export function createRawJsonPlan(
     accessors,
     visible,
     hidden,
+    nativeCasts,
   };
 }
 
@@ -486,6 +494,24 @@ export function serializeRawJsonRow(
   row: Record<string, unknown>,
   plan: RawJsonPlan,
 ): Record<string, unknown> {
+  if (plan.nativeCasts) {
+    let ready = true;
+    for (const cast of plan.nativeCasts) {
+      if (!Object.hasOwn(row, cast.attribute)) continue;
+      const value = row[cast.attribute];
+      if (value == null) continue;
+      if (cast.type === "boolean" || cast.type === "bool"
+        ? typeof value !== "boolean" : typeof value === "string") {
+        ready = false;
+        break;
+      }
+    }
+    if (ready) {
+      const serialized = serializeRowDates(row);
+      return serialized === row ? { ...row } : serialized;
+    }
+  }
+
   const attributes = Object.keys(plan.defaults).length > 0
     ? { ...plan.defaults, ...row }
     : row;

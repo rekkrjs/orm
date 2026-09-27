@@ -187,7 +187,7 @@ export class Collection<T = any> extends Array<T> {
     }
     super();
     if (items) {
-      this.push(...Array.from(items as Iterable<T> | ArrayLike<T>));
+      this.push(...(Array.isArray(items) ? items : Array.from(items as Iterable<T> | ArrayLike<T>)));
     }
   }
 
@@ -288,11 +288,11 @@ export class Collection<T = any> extends Array<T> {
   }
 
   reject(predicate: CollectionPredicate<T>): Collection<T> {
-    return new Collection(this.filter((item, index) => !predicate(item, index)));
+    return this.filter((item, index) => !predicate(item, index)) as Collection<T>;
   }
 
   pluck<K extends CollectionKey>(key: K): Collection<any> {
-    return new Collection(this.map((item) => valueFor(item, key)));
+    return this.map((item) => valueFor(item, key)) as Collection<any>;
   }
 
   keyBy<K extends CollectionKey>(key: K | ((item: T, index: number) => CollectionKey)): Record<string, T> {
@@ -322,19 +322,19 @@ export class Collection<T = any> extends Array<T> {
   }
 
   sortByDesc<K extends CollectionKey>(key: K | ((item: T) => any)): Collection<T> {
-    return new Collection(this.sortBy(key).reverse());
+    return this.sortBy(key).reverse() as Collection<T>;
   }
 
   take(count: number): Collection<T> {
-    return count >= 0 ? new Collection(this.slice(0, count)) : new Collection(this.slice(count));
+    return (count >= 0 ? this.slice(0, count) : this.slice(count)) as Collection<T>;
   }
 
   skip(count: number): Collection<T> {
-    return new Collection(this.slice(count));
+    return this.slice(count) as Collection<T>;
   }
 
   where<K extends CollectionKey>(key: K, value: any): Collection<T> {
-    return new Collection(this.filter((item) => valueFor(item, key) === value));
+    return this.filter((item) => valueFor(item, key) === value) as Collection<T>;
   }
 
   whereStrict<K extends CollectionKey>(key: K, value: any): Collection<T> {
@@ -343,7 +343,7 @@ export class Collection<T = any> extends Array<T> {
 
   whereIn<K extends CollectionKey>(key: K, values: Iterable<any>): Collection<T> {
     const set = new Set(values);
-    return new Collection(this.filter((item) => set.has(valueFor(item, key))));
+    return this.filter((item) => set.has(valueFor(item, key))) as Collection<T>;
   }
 
   whereInStrict<K extends CollectionKey>(key: K, values: Iterable<any>): Collection<T> {
@@ -352,37 +352,37 @@ export class Collection<T = any> extends Array<T> {
 
   whereNotIn<K extends CollectionKey>(key: K, values: Iterable<any>): Collection<T> {
     const set = new Set(values);
-    return new Collection(this.filter((item) => !set.has(valueFor(item, key))));
+    return this.filter((item) => !set.has(valueFor(item, key))) as Collection<T>;
   }
 
   whereNull<K extends CollectionKey>(key?: K): Collection<T> {
-    return new Collection(this.filter((item) => {
+    return this.filter((item) => {
       const value = key === undefined ? item : valueFor(item, key);
       return value === null || value === undefined;
-    }));
+    }) as Collection<T>;
   }
 
   whereNotNull<K extends CollectionKey>(key?: K): Collection<T> {
-    return new Collection(this.filter((item) => {
+    return this.filter((item) => {
       const value = key === undefined ? item : valueFor(item, key);
       return value !== null && value !== undefined;
-    }));
+    }) as Collection<T>;
   }
 
   whereBetween<K extends CollectionKey>(key: K, values: readonly [any, any]): Collection<T> {
     const [minimum, maximum] = values;
-    return new Collection(this.filter((item) => {
+    return this.filter((item) => {
       const value = valueFor(item, key);
       return value >= minimum && value <= maximum;
-    }));
+    }) as Collection<T>;
   }
 
   whereNotBetween<K extends CollectionKey>(key: K, values: readonly [any, any]): Collection<T> {
     const [minimum, maximum] = values;
-    return new Collection(this.filter((item) => {
+    return this.filter((item) => {
       const value = valueFor(item, key);
       return value < minimum || value > maximum;
-    }));
+    }) as Collection<T>;
   }
 
   contains(value: T): boolean;
@@ -430,7 +430,7 @@ export class Collection<T = any> extends Array<T> {
       return Array.prototype.find.call(this, keyOrPredicate, defaultValue);
     }
     if (Array.isArray(keyOrPredicate)) {
-      return new Collection(this.filter((item) => keyOrPredicate.some((key) => matchesModelKey(item, key))));
+      return this.filter((item) => keyOrPredicate.some((key) => matchesModelKey(item, key))) as Collection<T>;
     }
     return this.first((item) => matchesModelKey(item, keyOrPredicate), defaultValue ?? null);
   }
@@ -515,20 +515,20 @@ export class Collection<T = any> extends Array<T> {
 
   diff(items: Iterable<T>): Collection<T> {
     const others = Array.from(items);
-    return new Collection(this.filter((item) => !others.some((other) => sameModel(item, other))));
+    return this.filter((item) => !others.some((other) => sameModel(item, other))) as Collection<T>;
   }
 
   intersect(items: Iterable<T>): Collection<T> {
     const others = Array.from(items);
-    return new Collection(this.filter((item) => others.some((other) => sameModel(item, other))));
+    return this.filter((item) => others.some((other) => sameModel(item, other))) as Collection<T>;
   }
 
   only(keys: readonly any[]): Collection<T> {
-    return new Collection(this.filter((item) => keys.some((key) => matchesModelKey(item, key))));
+    return this.filter((item) => keys.some((key) => matchesModelKey(item, key))) as Collection<T>;
   }
 
   except(keys: readonly any[]): Collection<T> {
-    return new Collection(this.filter((item) => !keys.some((key) => matchesModelKey(item, key))));
+    return this.filter((item) => !keys.some((key) => matchesModelKey(item, key))) as Collection<T>;
   }
 
   unique(): Collection<T> {
@@ -564,7 +564,7 @@ export class Collection<T = any> extends Array<T> {
 
   forPage(page: number, perPage: number): Collection<T> {
     const offset = Math.max(0, (page - 1) * perPage);
-    return new Collection(this.slice(offset, offset + perPage));
+    return this.slice(offset, offset + perPage) as Collection<T>;
   }
 
   percentage(callback: CollectionPredicate<T>, precision: number = 2): number | null {
@@ -578,7 +578,7 @@ export class Collection<T = any> extends Array<T> {
     if (!Number.isFinite(size) || size <= 0) return new Collection();
     const chunks = new Collection<Collection<T>>();
     for (let index = 0; index < this.length; index += size) {
-      chunks.push(new Collection(this.slice(index, index + size)));
+      chunks.push(this.slice(index, index + size) as Collection<T>);
     }
     return chunks;
   }
