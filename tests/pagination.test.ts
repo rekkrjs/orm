@@ -1,5 +1,6 @@
 import { expect, test, describe, beforeAll } from "./harness.js";
-import { Builder, Collection, Model, Schema, type RelationConstraintQuery } from "../src/index.js";
+import { Builder, Collection, Connection, Model, Schema, type RelationConstraintQuery } from "../src/index.js";
+import type { SqlDriver } from "../src/connection/drivers/SqlDriver.js";
 import { PermissiveModel, setupTestDb } from "./helpers.js";
 
 enum PAdmissionStatus {
@@ -35,6 +36,76 @@ class POffering extends PermissiveModel.define<{ id: number; subject_id: number 
 class PAdmission extends PermissiveModel.define<{ id: number; offering_id: number; subject_id: number | null; status: PAdmissionStatus | null }>("p_admissions") {}
 
 describe("Pagination", () => {
+  test("runs independent count and page reads together, but serializes them in a transaction", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const statements: string[] = [];
+    const driver: SqlDriver = {
+      async unsafe(sql) {
+        statements.push(sql);
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight--;
+        if (sql.includes("COUNT(*)")) return [{ cnt: 3 }];
+        return [{ id: 1 }, { id: 2 }];
+      },
+      async begin(callback) { return callback(driver); },
+      async close() {},
+    };
+    const connection = new Connection({ url: "postgres://localhost/pagination_test" }, { driver });
+    const query = new Builder(connection, "pagination_test").orderBy("id");
+    const page = await query.paginate(2, 1);
+    expect(page.total).toBe(3);
+    expect(Array.from(page.data)).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(statements).toHaveLength(2);
+    expect(peak).toBe(2);
+
+    peak = 0;
+    statements.length = 0;
+    const inTransaction = await connection.transaction(() => query.paginate(2, 1));
+    expect(inTransaction.total).toBe(3);
+    expect(Array.from(inTransaction.data)).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(statements).toHaveLength(2);
+    expect(peak).toBe(1);
+    await connection.close();
+  });
+
+  test("waits for the page read before reporting a failed concurrent count", async () => {
+    let release!: () => void;
+    let started!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const pageStarted = new Promise<void>((resolve) => { started = resolve; });
+    let pageFinished = false;
+    let settled = false;
+    const driver: SqlDriver = {
+      async unsafe(sql) {
+        if (sql.includes("COUNT(*)")) throw new Error("count failed");
+        started();
+        await held;
+        pageFinished = true;
+        return [{ id: 1 }];
+      },
+      async close() {},
+    };
+    const connection = new Connection({ url: "postgres://localhost/pagination_test" }, { driver });
+    try {
+      const pending = new Builder(connection, "pagination_test").paginate(2, 1).then(
+        () => { settled = true; return "unexpected success"; },
+        (error: Error) => { settled = true; return error.message; },
+      );
+      await pageStarted;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(settled).toBe(false);
+      release();
+      expect(await pending).toBe("count failed");
+      expect(pageFinished).toBe(true);
+    } finally {
+      release();
+      await connection.close();
+    }
+  });
+
   beforeAll(async () => {
     setupTestDb();
     await Schema.create("p_users", (table) => {

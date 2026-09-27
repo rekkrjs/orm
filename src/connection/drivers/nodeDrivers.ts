@@ -160,28 +160,46 @@ function nodeSqliteDriver(url: string, { bigint }: NodeDriverOptions): SqlDriver
 
 // @ts-ignore -- an optional peer: a project that typechecks this source (a git install) may not have it.
 type Pg = typeof import("pg");
-type PgQueryable = { query(query: string | { name: string; text: string }, values?: any[]): Promise<any> };
+type PgQueryable = {
+  query(query: string | { name: string; text: string }, values?: any[]): Promise<any>;
+  getTransactionStatus(): string | null;
+};
 
-async function pgRun(target: PgQueryable, sql: string, bindings: any[] = [], nameFor?: (sql: string) => string | undefined): Promise<any> {
+async function pgRun(target: PgQueryable, sql: string, bindings: any[] = [], nameFor?: (sql: string, staleName?: string) => string | undefined): Promise<any> {
   // Without bindings pg uses the simple protocol, which (like bun:sql) runs a
   // multi-statement string and answers with one result per statement.
   const values = bindings.length ? bindings.map((value) => value ?? null) : undefined;
   // A named statement is parsed and planned once per session, as with bun:sql's prepare: true.
   const name = values && nameFor?.(sql);
-  const result = await target.query(name ? { name, text: sql } : sql, values);
+  let result;
+  try {
+    result = await target.query(name ? { name, text: sql } : sql, values);
+  } catch (error: any) {
+    if (!name || error?.code !== "0A000" || error?.routine !== "RevalidateCachedQuery") throw error;
+    // A changed SELECT * result invalidates the old name. A transaction has
+    // already been aborted by PostgreSQL; the next one will use the new name.
+    const freshName = nameFor?.(sql, name);
+    if (target.getTransactionStatus() !== "I") throw error;
+    result = await target.query(freshName ? { name: freshName, text: sql } : sql, values);
+  }
   const rows = (single: any) => withMeta(single.rows, { count: single.rowCount ?? 0, command: single.command });
   return Array.isArray(result) ? result.map(rows) : rows(result);
 }
 
 function nodePostgresDriver(config: ConnectionConfig, url: string | undefined, { max, bigint, prepare }: NodeDriverOptions): SqlDriver {
   const pg = peer<Pg>("pg", "pg", "PostgreSQL");
-  // ponytail: the first 1000 distinct statements get a name and the rest run
-  // unnamed, which bounds what each session holds on the server; an LRU with
+  // ponytail: at most 1000 statement names, including names renewed after
+  // DDL; later statements run unnamed. An LRU with
   // DEALLOCATE if an app's hot set outgrows it.
   const names = new Map<string, string>();
-  const nameFor = prepare ? (sql: string) => {
+  let nextName = 0;
+  const nameFor = prepare ? (sql: string, staleName?: string) => {
     let name = names.get(sql);
-    if (name === undefined && names.size < 1000) names.set(sql, name = `orm_${names.size}`);
+    if (staleName !== undefined && name === staleName) {
+      names.delete(sql);
+      name = undefined;
+    }
+    if (name === undefined && nextName < 1000) names.set(sql, name = `orm_${nextName++}`);
     return name;
   } : undefined;
   const parseTimestamptz = pg.types.getTypeParser(pg.types.builtins.TIMESTAMPTZ);

@@ -150,7 +150,7 @@
   "scripts": {
     "build": "rm -rf ./dist && tsc",
     "prepare": "rm -rf ./dist && tsc",
-    "test": "tsc -p tsconfig.test.json && bun test --parallel --path-ignore-patterns='**/benchmark*' && bun run scripts/public-any.ts --check",
+    "test": "tsc -p tsconfig.test.json && bun test --parallel --path-ignore-patterns='**/benchmark*' --path-ignore-patterns='**/tmp_agents/**' && bun run scripts/public-any.ts --check",
     "test:node": "rm -rf ./dist && tsc && vitest run",
     "bench": "bun test tests/benchmark*.test.ts",
     "bench:record": "bun run scripts/benchmark-history.ts",
@@ -166,7 +166,7 @@
     "@sveltejs/kit": "^2.0.0",
     "ioredis": "^5.4.0 || ^6.0.0",
     "mysql2": "^3.11.0",
-    "pg": "^8.13.0"
+    "pg": "^8.21.0"
   },
   "peerDependenciesMeta": {
     "@sveltejs/kit": {

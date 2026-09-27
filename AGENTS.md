@@ -1,3 +1,11 @@
+# Language conventions
+
+- English is the project's official language. Write project code comments,
+  tests, documentation, changelogs, and release notes in English.
+- Write all content under `tmp/` in Spanish. This path-specific rule takes
+  precedence over the project's English-language convention.
+- Communicate with the user exclusively in Spanish.
+
 # Release conventions
 
 - Always name Git tags and GitHub Releases with a leading `v`, using

@@ -23,8 +23,12 @@
 - `require("@rekkr/orm")` and its subpaths load on Node.js, for CommonJS
   projects and tools such as Jest, and hand back the same module as `import`,
   so both share one `configureOrm()` state.
-- `prepare: true` works on Node.js too: PostgreSQL statements with bindings
-  are named and planned once per session, as on Bun. The default stays `false`.
+- PostgreSQL bound statements are prepared by default on Node.js. If a schema
+  change invalidates a prepared result shape, the adapter renames the statement
+  and retries outside transactions; inside a transaction, the error still
+  aborts it, and the next transaction works. Bun keeps `prepare: false` until
+  `bun:sql` can recover. Set `prepare: false` to opt out on Node.js. Node.js
+  PostgreSQL now requires `pg` 8.21.0 or newer.
 - On MySQL, every pooled connection opens in UTC on Node.js as well: the
   `mysql2` adapter runs `SET time_zone = '+00:00'` on each connection before
   its first statement, as `bun:sql` has done itself since Bun 1.4.1. A server
@@ -53,6 +57,16 @@
 
 ### Performance
 
+- `paginate()` overlaps its independent count and page reads outside a
+  transaction. It keeps their order inside a transaction. A 1 ms per-direction
+  TCP-delay probe cut single-request PostgreSQL pagination from 5.66 to
+  2.89 ms; under 10 and 50 concurrent requests, median latency improved while
+  throughput varied with pool contention.
+- Independent eager relations load together outside transactions in both
+  `get()` and `json()`. The hydrated path preserves the relation order in
+  serialized output even when queries finish in another order. With 500
+  parents, 1,000 posts and 500 profiles on PostgreSQL, a two-connection
+  read fell from 2.55 to 1.88 ms for `json()` without added network delay.
 - `create()`, `save()` of a new model and pivot inserts no longer read the
   table's primary key column from the schema before every insert. It is read
   once per database, schema and table, and again after this process changes a

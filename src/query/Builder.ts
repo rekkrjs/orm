@@ -1984,10 +1984,17 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       return `${prefix} ${this.grammar.wrap(where.column)} ${validOperator(where.operator)} ${value}`;
     } else if (where.type === "in") {
       const op = where.operator === "NOT IN" ? "NOT IN" : "IN";
-      if ((where.value as any[]).length === 0) return `${prefix} ${op === "NOT IN" ? "1 = 1" : "0 = 1"}`;
+      const list = where.value as any[];
+      if (list.length === 0) return `${prefix} ${op === "NOT IN" ? "1 = 1" : "0 = 1"}`;
+      // Connection encodes the array for both PG drivers; measurements favor it from 100 keys.
+      if (this.parameterize && op === "IN" && this.connection.getDriverName() === "postgres" && list.length >= 100
+        && list.every((value) => typeof value === "string" || typeof value === "bigint"
+          || (typeof value === "number" && Number.isFinite(value)))) {
+        return `${prefix} ${this.grammar.wrap(where.column)} = ANY(${this.addBinding([...list])})`;
+      }
       const values = this.parameterize
-        ? (where.value as any[]).map((v: any) => this.addBinding(v)).join(", ")
-        : (where.value as any[]).map((v: any) => this.grammar.escape(v)).join(", ");
+        ? list.map((v: any) => this.addBinding(v)).join(", ")
+        : list.map((v: any) => this.grammar.escape(v)).join(", ");
       return `${prefix} ${this.grammar.wrap(where.column)} ${op} (${values})`;
     } else if (where.type === "null") {
       const op = where.operator === "NOT NULL" ? "IS NOT NULL" : "IS NULL";
@@ -2576,7 +2583,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
       }
 
       const matched: { name: string; lookup: (row: Record<string, unknown>) => unknown }[] = [];
-      for (const { name, relation, parentKey, childKey, constraint } of relations) {
+      const load = async ({ name, relation, parentKey, childKey, constraint }: typeof relations[number]) => {
         relation.addEagerConstraintsForKeys(rows.map((row) => row[parentKey]));
         if (constraint) constraint(relation.getQuery());
         const children = await eagerJsonChildren(relation, childKey);
@@ -2587,15 +2594,22 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
             if (!dictionary[key]) dictionary[key] = [];
             dictionary[key].push(child);
           }
-          matched.push({ name, lookup: (row) => (dictionary[String(row[parentKey])] || []).map(children.toJson) });
+          return { name, lookup: (row: Record<string, unknown>) => (dictionary[String(row[parentKey])] || []).map(children.toJson) };
         } else {
           const dictionary: Record<string, unknown> = {};
           for (const child of children.items) dictionary[String(children.keyOf(child))] = child;
-          matched.push({ name, lookup: (row) => {
+          return { name, lookup: (row: Record<string, unknown>) => {
             const found = dictionary[String(row[parentKey])] ?? null;
             return found === null ? null : children.toJson(found);
-          } });
+          } };
         }
+      };
+      if (this.connection.isInTransaction()) {
+        for (const relation of relations) matched.push(await load(relation));
+      } else {
+        const pending = relations.map(load);
+        try { matched.push(...await Promise.all(pending)); }
+        catch (error) { await Promise.allSettled(pending); throw error; }
       }
 
       const shown = matched.filter(({ name }) => (!plan.visible || plan.visible.has(name)) && !plan.hidden?.has(name));
@@ -2895,8 +2909,17 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
     countQuery.offsetValue = undefined;
     countQuery.orders = [];
     countQuery.invalidateSqlCache();
-    const total = await countQuery.count();
-    const data = await this.clone().forPage(page, perPage).get() as unknown as Collection<TResult>;
+    const pageQuery = this.clone().forPage(page, perPage);
+    let total: number;
+    let data: Collection<TResult>;
+    if (this.connection.isInTransaction()) {
+      total = await countQuery.count();
+      data = await pageQuery.get();
+    } else {
+      const pending = [countQuery.count(), pageQuery.get()] as const;
+      try { [total, data] = await Promise.all(pending); }
+      catch (error) { await Promise.allSettled(pending); throw error; }
+    }
     return new Paginator({
       data,
       current_page: page,

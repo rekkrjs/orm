@@ -1,13 +1,13 @@
-# The PostgreSQL `prepare: false` default
+# Bun's PostgreSQL `prepare: false` default
 
 > **This document describes a temporary hack.** It exists so that whoever reads
 > it after Bun ships a fix can verify that the fix landed and restore Bun's
 > default cleanly. If you only want the removal steps, jump to
 > [Retiring the workaround](#retiring-the-workaround).
 
-- **Status:** active; `createDriver()` in `src/connection/drivers/SqlDriver.ts`
-  defaults PostgreSQL to `prepare: false` on both runtimes.
-- **Last reviewed:** 2026-09-26
+- **Status:** active on Bun; `createDriver()` in `src/connection/drivers/SqlDriver.ts`
+  defaults PostgreSQL to `prepare: false` on Bun and `true` on Node.js.
+- **Last reviewed:** 2026-09-27
 - **Affects:** PostgreSQL only. MySQL re-prepares a statement itself when a
   table's metadata changes, and SQLite prepares nothing across calls.
 - **Verified with:** Bun 1.4.2 (`744846f84`), PostgreSQL 18.6, macOS arm64.
@@ -85,19 +85,24 @@ is in `tmp/bench_drizzle2.md`, which is local and not versioned.
 
 ## What the workaround does
 
-`createDriver()` passes `prepare: false` to `bun:sql`, and to the `pg`
-adapter, unless the connection config sets `prepare`. Statements then run
-unnamed and are planned on every execution, so no plan outlives a schema change.
-`docs/configuration.md` documents the default and how to opt in.
+`createDriver()` passes `prepare: false` to `bun:sql` unless the connection
+config sets `prepare`. Bun statements then run unnamed and are planned on
+every execution, so no plan outlives a schema change. On Node.js the `pg`
+adapter prepares bound statements by default and recovers by giving a stale
+statement a fresh name. `docs/configuration.md` documents both defaults.
 
 ## Node.js
 
-`pg` has the same gap: it caches named statements per client and does not
-recover from `0A000`. Recovering in the adapter would mean editing `pg`'s
-internal cache (`client.connection.parsedStatements`). Discarding the session
-instead would lose its `SET` values, `search_path` and advisory locks, which is
-exactly what the manual checkout in `nodeDrivers.ts` exists to keep. A Bun fix
-therefore does **not** retire the default on Node.js.
+`pg` caches named statements per client and does not recover on its own from
+`0A000`. The adapter now assigns a new statement name when PostgreSQL reports
+`RevalidateCachedQuery`. Outside a transaction it retries once; inside one it
+surfaces the error and the next transaction uses the new name. This leaves the
+session and its `SET` values, `search_path` and advisory locks intact. A test
+prepares `SELECT *`, adds a column and checks both paths; another warms three
+pool sessions and checks concurrent requests after the migration. Node.js now
+defaults to `prepare: true`; this does not change Bun's workaround. The adapter
+uses `client.getTransactionStatus()` to avoid retrying after PostgreSQL has
+aborted a transaction. This requires `pg` 8.21.0 or newer.
 
 ## Is Bun fixed yet?
 
@@ -161,8 +166,8 @@ on 2026-09-26.
    connection, the changelog entry must say so.
 2. In `createDriver()`, stop defaulting PostgreSQL to `false` **on Bun only**,
    and remove the `WORKAROUND(bun-sql-prepared-plan-cache)` marker. Find it with
-   `rg -n "WORKAROUND\(bun-sql-prepared-plan-cache\)" src/`. Node.js keeps
-   `false` until the `pg` adapter can recover too (see [Node.js](#nodejs)).
+   `rg -n "WORKAROUND\(bun-sql-prepared-plan-cache\)" src/`. Node.js already
+   defaults to `true` (see [Node.js](#nodejs)).
 3. Add a regression test on Bun: prepare a `SELECT *`, `ADD COLUMN`, and assert
    that the next model query returns the new column.
 4. Document it in `docs/configuration.md` and the CHANGELOG. The error can still

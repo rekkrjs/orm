@@ -207,6 +207,98 @@ describe("Builder.json() with eager loads", () => {
     expect(direct.statements).toHaveLength(4);
   });
 
+  test("loads sibling relations concurrently outside transactions and in order inside them", async () => {
+    const original = connection.query.bind(connection);
+    let active = 0;
+    let peak = 0;
+    let childQueries = 0;
+    const track = (run: typeof connection.query) => async (sql: string, bindings?: any[]) => {
+      if (/^SELECT/i.test(sql) && /eager_json_(?:posts|profiles|teams)/.test(sql)) {
+        childQueries++;
+        active++;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, sql.includes("eager_json_posts") ? 15 : 5));
+        try { return await run(sql, bindings); }
+        finally { active--; }
+      }
+      return run(sql, bindings);
+    };
+    connection.query = track(original);
+    try {
+      const query = () => EagerAuthor.with("posts", "profile", "team").orderBy("id");
+      const direct = await query().json();
+      expect(childQueries).toBe(3);
+      expect(peak).toBe(3);
+      expect((direct as any[])[0].posts.map((post: any) => post.title)).toEqual(["One", "Three"]);
+      expect((direct as any[])[0].profile.bio).toBe("second");
+      expect((direct as any[])[0].team.name).toBe("Núñez");
+
+      childQueries = peak = 0;
+      const hydrated = (await query().get()).toJSON();
+      expect(hydrated).toEqual(direct);
+      expect(JSON.stringify(hydrated)).toBe(JSON.stringify(direct));
+      expect(childQueries).toBe(3);
+      expect(peak).toBe(3);
+
+      childQueries = peak = 0;
+      const inTransaction = await connection.transaction(async (tx) => {
+        const originalTx = tx.query.bind(tx);
+        tx.query = track(originalTx);
+        try { return await query().json(); }
+        finally { tx.query = originalTx; }
+      });
+      expect(inTransaction).toEqual(direct);
+      expect(childQueries).toBe(3);
+      expect(peak).toBe(1);
+
+      childQueries = peak = 0;
+      const hydratedInTransaction = await connection.transaction(async (tx) => {
+        const originalTx = tx.query.bind(tx);
+        tx.query = track(originalTx);
+        try { return (await query().get()).toJSON(); }
+        finally { tx.query = originalTx; }
+      });
+      expect(JSON.stringify(hydratedInTransaction)).toBe(JSON.stringify(direct));
+      expect(childQueries).toBe(3);
+      expect(peak).toBe(1);
+    } finally {
+      connection.query = original;
+    }
+  });
+
+  test("waits for sibling queries already started before reporting an eager-load failure", async () => {
+    const original = connection.query.bind(connection);
+    for (const method of ["json", "get"] as const) {
+      let release!: () => void;
+      let started!: () => void;
+      const held = new Promise<void>((resolve) => { release = resolve; });
+      const profileStarted = new Promise<void>((resolve) => { started = resolve; });
+      let finished = false;
+      connection.query = async (sql, bindings) => {
+        if (sql.includes("eager_json_posts")) throw new Error("posts failed");
+        if (sql.includes("eager_json_profiles")) {
+          started();
+          await held;
+        }
+        return original(sql, bindings);
+      };
+      try {
+        const pending = EagerAuthor.with("posts", "profile")[method]().then(
+          () => { finished = true; return "unexpected success"; },
+          (error: Error) => { finished = true; return error.message; },
+        );
+        await profileStarted;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(finished).toBe(false);
+        release();
+        expect(await pending).toBe("posts failed");
+      } finally {
+        release();
+        connection.query = original;
+      }
+    }
+  });
+
   test("applies eager constraints and keeps a relation the parent hides out of the output", async () => {
     const constrained = await both(() => EagerAuthor.with({
       posts: (query: any) => query.where("published", true).orderBy("id", "desc"),

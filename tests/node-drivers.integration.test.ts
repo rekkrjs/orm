@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, isBun, test } from "./harness.js";
 import { createNodeDriver } from "../src/connection/drivers/nodeDrivers.js";
-import type { SqlDriver } from "../src/connection/drivers/SqlDriver.js";
+import { createDriver, type SqlDriver } from "../src/connection/drivers/SqlDriver.js";
 import { mysqlUrl, postgresUrl, type ServerDriver } from "./driver-harness.js";
 
 /**
@@ -291,6 +291,63 @@ describe.skipIf(!postgresUrl)("postgres adapter URL options", () => {
 
 describe.skipIf(!postgresUrl)("postgres adapter prepare", () => {
   const named = async (driver: SqlDriver) => (await rowsOf(driver, "SELECT statement FROM pg_prepared_statements ORDER BY statement")).map((row) => row.statement);
+
+  test.skipIf(isBun)("Node PostgreSQL prepares bound statements by default", async () => {
+    const driver = createDriver("postgres", { url: postgresUrl! }, postgresUrl, 1);
+    try {
+      expect(await rowsOf(driver, "SELECT $1::int AS n", [7])).toEqual([{ n: 7 }]);
+      expect(await named(driver)).toEqual(["SELECT $1::int AS n"]);
+    } finally {
+      await driver.close();
+    }
+  });
+
+  test("a stale prepared SELECT recovers outside a transaction and refreshes after a failed transaction", async () => {
+    const driver = createNodeDriver("postgres", { url: postgresUrl! }, postgresUrl, { max: 1, prepare: true });
+    const table = `node_plan_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
+    const query = `SELECT * FROM ${table} WHERE id = $1`;
+    try {
+      await driver.unsafe(`CREATE TABLE ${table} (id INT PRIMARY KEY)`);
+      await driver.unsafe(`INSERT INTO ${table} VALUES (1)`);
+      expect(await rowsOf(driver, query, [1])).toEqual([{ id: 1 }]);
+      await driver.unsafe(`ALTER TABLE ${table} ADD COLUMN first_value TEXT DEFAULT 'first'`);
+      expect(await rowsOf(driver, query, [1])).toEqual([{ id: 1, first_value: "first" }]);
+
+      await driver.unsafe(`ALTER TABLE ${table} ADD COLUMN second_value TEXT DEFAULT 'second'`);
+      await expect(driver.begin!(async (tx) => rowsOf(tx, query, [1]))).rejects.toMatchObject({
+        code: "0A000",
+        routine: "RevalidateCachedQuery",
+      });
+      expect(await driver.begin!(async (tx) => rowsOf(tx, query, [1])))
+        .toEqual([{ id: 1, first_value: "first", second_value: "second" }]);
+    } finally {
+      await driver.unsafe(`DROP TABLE IF EXISTS ${table}`);
+      await driver.close();
+    }
+  });
+
+  test("stale plans recover across pooled sessions after one schema change", async () => {
+    const driver = createNodeDriver("postgres", { url: postgresUrl! }, postgresUrl, { max: 3, prepare: true });
+    const table = `node_plan_pool_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
+    const query = `SELECT * FROM ${table} WHERE id = $1`;
+    try {
+      await driver.unsafe(`CREATE TABLE ${table} (id INT PRIMARY KEY)`);
+      await driver.unsafe(`INSERT INTO ${table} VALUES (1)`);
+      const sessions = await Promise.all([driver.reserve!(), driver.reserve!(), driver.reserve!()]);
+      try {
+        expect(await Promise.all(sessions.map((session) => rowsOf(session, query, [1]))))
+          .toEqual([[{ id: 1 }], [{ id: 1 }], [{ id: 1 }]]);
+      } finally {
+        await Promise.all(sessions.map((session) => session.release()));
+      }
+      await driver.unsafe(`ALTER TABLE ${table} ADD COLUMN label TEXT DEFAULT 'ready'`);
+      expect(await Promise.all(Array.from({ length: 9 }, () => rowsOf(driver, query, [1]))))
+        .toEqual(Array.from({ length: 9 }, () => [{ id: 1, label: "ready" }]));
+    } finally {
+      await driver.unsafe(`DROP TABLE IF EXISTS ${table}`);
+      await driver.close();
+    }
+  });
 
   test("prepare: true names each distinct bound statement once per session, as bun:sql does; without it none is named", async () => {
     for (const prepare of [true, false]) {

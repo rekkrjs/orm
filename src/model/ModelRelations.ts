@@ -48,7 +48,7 @@ export class ModelRelations<T extends Record<string, any> = any> extends ModelSe
       groups.set(first, group);
     }
 
-    for (const [relationName, definitions] of groups) {
+    const loadGroup = async ([relationName, definitions]: [string, EagerLoadDefinition[]]) => {
       const direct = definitions.find((definition) => definition.name === relationName);
       await (this as any).eagerLoadRelation(models, relationName, direct?.constraint);
 
@@ -59,7 +59,7 @@ export class ModelRelations<T extends Record<string, any> = any> extends ModelSe
           constraint: definition.constraint,
         }));
 
-      if (nestedDefinitions.length === 0) continue;
+      if (nestedDefinitions.length === 0) return;
 
       const nestedModels: ModelRelations[] = [];
       for (const model of models) {
@@ -69,6 +69,27 @@ export class ModelRelations<T extends Record<string, any> = any> extends ModelSe
       }
       if (nestedModels.length > 0) {
         await (this as any).eagerLoadRelations(nestedModels, nestedDefinitions);
+      }
+    };
+
+    if (groups.size < 2 || models[0]?.getConnection().isInTransaction()) {
+      for (const group of groups) await loadGroup(group);
+    } else {
+      const existing = models.map((model) => Object.keys(model.$relations));
+      const pending = Array.from(groups, loadGroup);
+      try { await Promise.all(pending); }
+      catch (error) { await Promise.allSettled(pending); throw error; }
+      // match() writes relations as each query finishes. Keep the caller's
+      // relation order in toJSON(), even when the later query finishes first.
+      for (const [index, model] of models.entries()) {
+        const relations = model.$relations;
+        const current = Object.keys(relations);
+        const ordered = Array.from(new Set([...existing[index]!, ...groups.keys(), ...current]))
+          .filter((key) => Object.hasOwn(relations, key));
+        if (current.every((key, position) => key === ordered[position])) continue;
+        const values = ordered.map((key) => relations[key]);
+        for (const key of current) delete relations[key];
+        for (const [position, key] of ordered.entries()) relations[key] = values[position];
       }
     }
   }

@@ -157,6 +157,30 @@ describe("Eager Loading", () => {
     expect((found as any).books).toHaveLength(1);
   });
 
+  test("parallel load preserves an existing relation and the requested output order", async () => {
+    const author = await EAuthor.create({ name: "Parallel load" });
+    await EBook.create({ author_id: author.id, title: "Kept book" });
+    await EProfile.create({ author_id: author.id, bio: "Kept profile" });
+    author.setRelation("existing", { source: "caller" });
+    const relations = author.$relations;
+    const connection = EAuthor.getConnection();
+    const original = connection.query.bind(connection);
+    connection.query = async (sql, bindings) => {
+      if (sql.includes("e_books")) await new Promise((resolve) => setTimeout(resolve, 10));
+      return original(sql, bindings);
+    };
+    try {
+      await author.load("books", "profile");
+    } finally {
+      connection.query = original;
+    }
+    expect(author.$relations).toBe(relations);
+    expect(Object.keys(author.$relations)).toEqual(["existing", "books", "profile"]);
+    expect(author.getRelation("existing")).toEqual({ source: "caller" });
+    expect((author.getRelation("books") as EBook[]).map((book) => book.title)).toEqual(["Kept book"]);
+    expect((author.getRelation("profile") as EProfile).bio).toBe("Kept profile");
+  });
+
   test("collection load eagerly loads every model and returns the collection", async () => {
     const first = await EAuthor.create({ name: "Collection load A" });
     const second = await EAuthor.create({ name: "Collection load B" });

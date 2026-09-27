@@ -35,10 +35,9 @@ export type DriverName = "sqlite" | "mysql" | "postgres";
 
 /** Bun's native client when running on Bun, the Node.js adapter for the engine otherwise. */
 export function createDriver(driverName: DriverName, config: ConnectionConfig, url: string | undefined, defaultPostgresPoolMax: number): SqlDriver {
-  // WORKAROUND(bun-sql-prepared-plan-cache): neither bun:sql nor pg recovers a
-  // cached statement once ADD COLUMN changes a `SELECT *` result. See
-  // .tmp_hacks/bun-sql-prepared-plan-cache.md.
-  const prepare = config.prepare ?? (driverName === "postgres" ? false : undefined);
+  // WORKAROUND(bun-sql-prepared-plan-cache): Bun cannot recover a named SELECT *
+  // after ADD COLUMN yet. See .tmp_hacks/bun-sql-prepared-plan-cache.md.
+  const prepare = config.prepare ?? (driverName === "postgres" ? typeof Bun === "undefined" : undefined);
   const max = config.max ?? (driverName === "postgres" ? defaultPostgresPoolMax : undefined);
   const bigint = config.bigint;
   if (typeof Bun === "undefined") return createNodeDriver(driverName, config, url, { max, bigint, prepare });
