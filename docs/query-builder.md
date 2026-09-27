@@ -150,7 +150,7 @@ const result = await User.where("email", "a@b.com").firstOr(() => guestUser);
 const byId = await User.findOr(1, () => guestUser);
 const users = await User.where("active", true).get();        // Collection<User>
 const arr = users.toArray();                                 // plain User[]
-const payload = await User.where("active", true).json();     // hydrated, then serialized
+const payload = await User.where("active", true).json();     // JSON-ready; may use direct rows
 const direct = await User.where("active", true).rawJson();   // direct rows, or an error
 ```
 
@@ -158,9 +158,18 @@ const direct = await User.where("active", true).rawJson();   // direct rows, or 
 `filter`, and `groupBy`. Call `.toArray()` when an API requires a plain array;
 its entries remain hydrated `User` models.
 
-`Builder.json()` always hydrates models before serializing them. Use
-`Builder.rawJson()` when an HTTP response only needs static model behavior and
-must not construct one model per row:
+`Builder.json()` preserves hydrated-model JSON output but can serialize rows
+directly for simple models. This also works with eager `HasMany`, `HasOne`, and
+`BelongsTo` relations when their models allow it. It hydrates when instance
+behavior or another relation type requires it:
+
+```ts
+const usersWithPosts = await User.with("posts").orderBy("id").json();
+// Plain objects; simple models and relations use the direct row path.
+```
+
+Use `Builder.rawJson()` when an HTTP response only needs static model behavior
+and must never fall back to hydration:
 
 ```ts
 class User extends Model {

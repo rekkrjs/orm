@@ -1034,8 +1034,10 @@ the object without serializing it.
 
 ### Direct query JSON
 
-`Builder.json()` always hydrates models and preserves their complete instance
-semantics. `Builder.rawJson()` is the explicit direct-row alternative:
+`Builder.json()` returns the same JSON as hydrated models. For simple models it
+can serialize query rows directly, including eager `HasMany`, `HasOne`, and
+`BelongsTo` relations. It hydrates when the direct path cannot preserve model
+behavior. `Builder.rawJson()` is the strict direct-row alternative:
 
 ```ts
 class User extends Model {
@@ -1074,8 +1076,10 @@ const rows = (await DB.table<UserRow>("users").get()).toArray();
 // Raw rows: no model casts, visibility, accessors, or constructors.
 ```
 
-Instance `json()`, `toJSON()`, `JSON.stringify(model)`, collection serialization,
-and `Builder.json()` always use hydrated models.
+Instance `json()`, `toJSON()`, `JSON.stringify(model)`, and collection
+serialization use their existing hydrated models. `Builder.json()` may avoid
+hydrating query rows; `Builder.rawJson()` rejects eager loads and never falls
+back to hydration.
 
 ### Picking fields
 
