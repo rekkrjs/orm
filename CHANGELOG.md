@@ -1,91 +1,6 @@
 # Changelog
 
-## Unreleased
-
-### Node.js support
-
-- ORM runs on Node.js 24.21 or newer as well as on Bun, with the same API and
-  CLI. SQLite uses the built-in `node:sqlite`; PostgreSQL, MySQL and Redis use
-  `pg`, `mysql2` and `ioredis`, declared as optional peer dependencies. On Bun
-  nothing changes: the driver is still `bun:sql`, and there are still no
-  dependencies. See [Installation](./docs/installation.md#what-differs-between-runtimes)
-  for what remains different.
-- The test suite runs on both runtimes against the same servers and holds them
-  to one values contract: the same JavaScript type for every column type, dates
-  stored as UTC whatever the process time zone, the same write counts and error
-  codes.
-- On Node.js the CLI loads `.env` files with Bun's precedence and `${NAME}`
-  expansion, names the file when Node.js cannot strip its TypeScript, and runs
-  `orm repl` on `node:repl`.
-- `resolveRedisClient()` is exported from `@rekkr/orm/cache` and
-  `@rekkr/orm/queue`: the default Redis client on either runtime, for wiring a
-  `RedisCacheStore` or `RedisQueueDriver` by hand.
-- `require("@rekkr/orm")` and its subpaths load on Node.js, for CommonJS
-  projects and tools such as Jest, and hand back the same module as `import`,
-  so both share one `configureOrm()` state.
-- PostgreSQL bound statements are prepared by default on Node.js. If a schema
-  change invalidates a prepared result shape, the adapter renames the statement
-  and retries outside transactions; inside a transaction, the error still
-  aborts it, and the next transaction works. Bun keeps `prepare: false` until
-  `bun:sql` can recover. Set `prepare: false` to opt out on Node.js. Node.js
-  PostgreSQL now requires `pg` 8.21.0 or newer.
-- On MySQL, every pooled connection opens in UTC on Node.js as well: the
-  `mysql2` adapter runs `SET time_zone = '+00:00'` on each connection before
-  its first statement, as `bun:sql` has done itself since Bun 1.4.1. A server
-  whose default time zone is not UTC therefore needs no configuration on either
-  runtime; before, a date write was refused on such a server and `TIMESTAMP`
-  columns were read shifted by the session's offset. A proxy that rejects
-  `SET time_zone` is not supported. See [Configuration](./docs/configuration.md#mysql-sessions-run-in-utc).
-
-### Added
-
-- A searchable model no longer needs `fts`. Without it, the PostgreSQL and
-  SQLite engines index the model's table: text columns are searched, the
-  others stored for `where()`, `orderBy()` and `facet()`, and the primary key
-  and `hidden` columns left out. `Search.register(Post)` is the whole setup,
-  as with Scout; `fts` stays for choosing columns, computed fields, a language
-  or a tokenizer. See [Search](./docs/search.md#choosing-what-to-index--fts).
-- `DB.listen(listener)` calls a function after each statement the application
-  runs, on every connection, with its SQL, bindings, duration, connection and,
-  if it failed, the error; it returns the function that stops it. Transaction
-  control, savepoints and the ORM's own session checks are not reported. A
-  listener that throws or rejects is reported with `console.error` and never
-  reaches the query. The events are published on the `node:diagnostics_channel`
-  channel `@rekkr/orm:query`, so APM and OpenTelemetry tooling can subscribe by
-  name. With no listener the cost is one boolean check per statement; measured
-  within noise on both runtimes. See [Configuration](./docs/configuration.md#listening-to-queries-in-code).
-
-### Performance
-
-- `paginate()` overlaps its independent count and page reads outside a
-  transaction. It keeps their order inside a transaction. A 1 ms per-direction
-  TCP-delay probe cut single-request PostgreSQL pagination from 5.66 to
-  2.89 ms; under 10 and 50 concurrent requests, median latency improved while
-  throughput varied with pool contention.
-- Independent eager relations load together outside transactions in both
-  `get()` and `json()`. The hydrated path preserves the relation order in
-  serialized output even when queries finish in another order. With 500
-  parents, 1,000 posts and 500 profiles on PostgreSQL, a two-connection
-  read fell from 2.55 to 1.88 ms for `json()` without added network delay.
-- `create()`, `save()` of a new model and pivot inserts no longer read the
-  table's primary key column from the schema before every insert. It is read
-  once per database, schema and table, and again after this process changes a
-  table's shape. On PostgreSQL that lookup was 86% of a `create()`: measured
-  per `create()`, 23.6× faster on Bun (1.61 → 0.07 ms) and 16.4× on Node.js
-  (1.75 → 0.11 ms); 1.6–1.8× on MySQL and 1.3–1.4× on SQLite. Checking each
-  statement for a schema change costs nothing measurable on either runtime.
-  A table re-keyed by another process is seen after a restart.
-- `json()` with eager-loaded `HasMany`, `HasOne` and `BelongsTo` relations
-  serializes models without accessors, appends, custom casts or overridden
-  methods straight from their rows, as `json()` without relations already did,
-  instead of building a model for every parent and child. The JSON is the same
-  byte for byte; anything else falls back to hydrating the rows already read.
-  With 500 parents and 1,000 children, 28% more reads per second on Node.js
-  with PostgreSQL and 44% with MySQL.
-- `create()` and `forceCreate()` fill and save a model without observers,
-  accessors, custom casts, `touches` or overridden methods, outside an Identity
-  Map, without going through its Proxy for each internal field. 13% less time
-  per `create()` on Node.js and 9% on Bun, with PostgreSQL.
+## 5.0.0 — 2026-09-28
 
 ### Breaking
 
@@ -182,6 +97,108 @@
   `PostgresFTSEngine` already did (`prefix` option). An index created before
   this change must be created again with `orm search:create-index` and
   `orm search:import`.
+
+### Node.js support
+
+- ORM runs on Node.js 24.21 or newer as well as on Bun, with the same API and
+  CLI. SQLite uses the built-in `node:sqlite`; PostgreSQL, MySQL and Redis use
+  `pg`, `mysql2` and `ioredis`, declared as optional peer dependencies. On Bun
+  nothing changes: the driver is still `bun:sql`, and there are still no
+  dependencies. See [Installation](./docs/installation.md#what-differs-between-runtimes)
+  for what remains different.
+- The test suite runs on both runtimes against the same servers and holds them
+  to one values contract: the same JavaScript type for every column type, dates
+  stored as UTC whatever the process time zone, the same write counts and error
+  codes.
+- On Node.js the CLI loads `.env` files with Bun's precedence and `${NAME}`
+  expansion, names the file when Node.js cannot strip its TypeScript, and runs
+  `orm repl` on `node:repl`.
+- `resolveRedisClient()` is exported from `@rekkr/orm/cache` and
+  `@rekkr/orm/queue`: the default Redis client on either runtime, for wiring a
+  `RedisCacheStore` or `RedisQueueDriver` by hand.
+- `require("@rekkr/orm")` and its subpaths load on Node.js, for CommonJS
+  projects and tools such as Jest, and hand back the same module as `import`,
+  so both share one `configureOrm()` state.
+- PostgreSQL bound statements are prepared by default on Node.js. If a schema
+  change invalidates a prepared result shape, the adapter renames the statement
+  and retries outside transactions; inside a transaction, the error still
+  aborts it, and the next transaction works. Bun keeps `prepare: false` until
+  `bun:sql` can recover. Set `prepare: false` to opt out on Node.js. Node.js
+  PostgreSQL now requires `pg` 8.21.0 or newer.
+- On MySQL, every pooled connection opens in UTC on Node.js as well: the
+  `mysql2` adapter runs `SET time_zone = '+00:00'` on each connection before
+  its first statement, as `bun:sql` has done itself since Bun 1.4.1. A server
+  whose default time zone is not UTC therefore needs no configuration on either
+  runtime; before, a date write was refused on such a server and `TIMESTAMP`
+  columns were read shifted by the session's offset. A proxy that rejects
+  `SET time_zone` is not supported. See [Configuration](./docs/configuration.md#mysql-sessions-run-in-utc).
+
+### Added
+
+- A searchable model no longer needs `fts`. Without it, the PostgreSQL and
+  SQLite engines index the model's table: text columns are searched, the
+  others stored for `where()`, `orderBy()` and `facet()`, and the primary key
+  and `hidden` columns left out. `Search.register(Post)` is the whole setup,
+  as with Scout; `fts` stays for choosing columns, computed fields, a language
+  or a tokenizer. See [Search](./docs/search.md#choosing-what-to-index--fts).
+- `DB.listen(listener)` calls a function after each statement the application
+  runs, on every connection, with its SQL, bindings, duration, connection and,
+  if it failed, the error; it returns the function that stops it. Transaction
+  control, savepoints and the ORM's own session checks are not reported. A
+  listener that throws or rejects is reported with `console.error` and never
+  reaches the query. The events are published on the `node:diagnostics_channel`
+  channel `@rekkr/orm:query`, so APM and OpenTelemetry tooling can subscribe by
+  name. With no listener the cost is one boolean check per statement; measured
+  within noise on both runtimes. See [Configuration](./docs/configuration.md#listening-to-queries-in-code).
+- Read replicas: `connection: { write, read: [...], sticky }` sends
+  application `SELECT` queries to the read URLs in rotation, each with its own
+  pool, as Laravel's `read`/`write` config does. Writes, locking reads, schema
+  and migration operations, and everything inside a transaction use `write`.
+  `DB.raw()` and `Connection.query()` send a single plain `SELECT` or read-only
+  `WITH` to a replica and any other SQL to the primary;
+  `Connection.queryPrimary()` always reads the primary. With `sticky: true`, a
+  successful write inside `DB.scope()` keeps the rest of that scope's reads on
+  `write`, so a request sees its own writes; concurrent scopes are unaffected,
+  and a failed write does not pin the scope. A single-URL `connection` is
+  unchanged. See [Configuration](./docs/configuration.md#read-replicas).
+- `tls: "require"` on a MySQL `connection` given by driver fields encrypts it
+  without verifying the server certificate, as `?ssl-mode=require` does in the
+  URL form, on both runtimes. That form had no way to ask for TLS, so against a
+  MySQL 8 server that had not yet cached the user's `caching_sha2_password` it
+  failed with `ERR_MYSQL_PUBLIC_KEY_RETRIEVAL_NOT_ALLOWED`. The type accepts it
+  only with `driver: "mysql"`. See [Configuration](./docs/configuration.md#driver-form).
+
+### Performance
+
+- `paginate()` overlaps its independent count and page reads outside a
+  transaction. It keeps their order inside a transaction. A 1 ms per-direction
+  TCP-delay probe cut single-request PostgreSQL pagination from 5.66 to
+  2.89 ms; under 10 and 50 concurrent requests, median latency improved while
+  throughput varied with pool contention.
+- Independent eager relations load together outside transactions in both
+  `get()` and `json()`. The hydrated path preserves the relation order in
+  serialized output even when queries finish in another order. With 500
+  parents, 1,000 posts and 500 profiles on PostgreSQL, a two-connection
+  read fell from 2.55 to 1.88 ms for `json()` without added network delay.
+- `create()`, `save()` of a new model and pivot inserts no longer read the
+  table's primary key column from the schema before every insert. It is read
+  once per database, schema and table, and again after this process changes a
+  table's shape. On PostgreSQL that lookup was 86% of a `create()`: measured
+  per `create()`, 23.6× faster on Bun (1.61 → 0.07 ms) and 16.4× on Node.js
+  (1.75 → 0.11 ms); 1.6–1.8× on MySQL and 1.3–1.4× on SQLite. Checking each
+  statement for a schema change costs nothing measurable on either runtime.
+  A table re-keyed by another process is seen after a restart.
+- `json()` with eager-loaded `HasMany`, `HasOne` and `BelongsTo` relations
+  serializes models without accessors, appends, custom casts or overridden
+  methods straight from their rows, as `json()` without relations already did,
+  instead of building a model for every parent and child. The JSON is the same
+  byte for byte; anything else falls back to hydrating the rows already read.
+  With 500 parents and 1,000 children, 28% more reads per second on Node.js
+  with PostgreSQL and 44% with MySQL.
+- `create()` and `forceCreate()` fill and save a model without observers,
+  accessors, custom casts, `touches` or overridden methods, outside an Identity
+  Map, without going through its Proxy for each internal field. 13% less time
+  per `create()` on Node.js and 9% on Bun, with PostgreSQL.
 
 ### Fixed behaviour
 
@@ -329,6 +346,10 @@
 - A binary column serializes like a `Buffer`, `{ "type": "Buffer", "data": […] }`,
   on every driver. SQLite hands back a `Uint8Array`, which `toJSON()`,
   `json()` and `rawJson()` turned into an object keyed by index.
+- `orm queue` prints `[Queue] Worker started.` after it handles `SIGTERM` and
+  `SIGINT`, not before. A supervisor that stopped the worker as soon as it
+  announced itself could kill it mid-start, without `[Queue] Worker stopped.`
+  and with exit code 143.
 - Migrations are imported by file URL, not by raw path.
 - Four tests awaited nothing on `expect(...).rejects` and asserted nothing; they
   now assert.
@@ -355,6 +376,27 @@
   what `create()` leaves in memory is what `find()` reads back, `toJSON()`,
   `json()` and `rawJson()` agree, and assigning the same values again writes
   nothing. It found the four fixes above.
+
+### Compatibility and verification
+
+- Requires Bun 1.4.2 or Node.js 24.21.0 or newer. On Node.js, install the
+  driver the connection uses: `pg` 8.21.0 or newer, `mysql2` or `ioredis`.
+  SQLite needs nothing on either runtime.
+- Before upgrading, review Breaking. The changes that need action are:
+  - Serialized `date` casts, and `avg()` / `average()` on empty sets, now
+    return different values; check code that reads them.
+  - Query `update()`, `increment()`, `decrement()` and `upsert()` on a model
+    now set `updated_at`; wrap backfills that must not in
+    `Model.withoutTimestamps()`.
+  - `float()` / `double()` changed their MySQL column types, and new
+    timestamp columns now have millisecond precision. Existing tables are not
+    altered.
+  - Meilisearch is removed.
+  - SQLite FTS5 indexes must be created and imported again.
+- The suite (1,981 tests, 5 skipped) passes on Bun and on Node.js 24.21, the
+  newest 24.x and 26, against SQLite, PostgreSQL 16, MySQL 8.4 and Redis 7, and
+  again in seven time zones from UTC−11 to UTC+14. The packed package is
+  smoke-tested on both runtimes.
 
 ## 4.1.0 — 2026-09-21
 
