@@ -927,10 +927,10 @@ async function main() {
         retryDelaySeconds: config.queue?.retryDelaySeconds,
         pollIntervalMs: config.queue?.pollIntervalMs,
       });
-      console.log(`[Queue] Worker started. queue=${queueName} concurrency=${workerCount}`);
       const shutdown = () => { console.log("\n[Queue] Shutting down..."); worker.stop(); };
       process.once("SIGTERM", shutdown);
       process.once("SIGINT", shutdown);
+      console.log(`[Queue] Worker started. queue=${queueName} concurrency=${workerCount}`);
       try {
         await worker.run();
       } catch (err) {

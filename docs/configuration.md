@@ -231,6 +231,12 @@ connection: { driver: "postgres", host: "localhost", database: "mydb" }
 
 Credentials in this form are handed to the driver verbatim instead of being assembled into a URL, so usernames and passwords containing `/`, `?`, `#`, `@` or `%` need no escaping. The `url` form is parsed as a URL and still requires percent-encoded credentials.
 
+For MySQL, `tls: "require"` encrypts the connection without verifying the server certificate, as `?ssl-mode=require` does in the URL form. MySQL 8's default `caching_sha2_password` authentication needs it on a server that has not yet cached the user's password, which otherwise refuses the connection with `ERR_MYSQL_PUBLIC_KEY_RETRIEVAL_NOT_ALLOWED`:
+
+```ts
+connection: { driver: "mysql", host: "db.internal", database: "mydb", username: "app", password: process.env.DB_PASSWORD!, tls: "require" }
+```
+
 For PostgreSQL, `prepare` defaults to `true` on Node.js and `false` on Bun. Node.js requires `pg` 8.21.0 or newer and names up to 1000 statements through it; if a schema change invalidates a statement's result shape, the adapter gives it a fresh name and retries once outside a transaction. Inside a transaction PostgreSQL aborts that transaction, but the next one uses the fresh name. Bun's `bun:sql` cannot recover a stale named plan yet, so it runs statements unnamed by default. Set `prepare: false` on Node.js if your pooler does not support prepared statements. For MySQL, Node.js ignores `prepare`: `mysql2` prepares every statement that carries bindings.
 
 For PostgreSQL, the pool `max` defaults to `10` when unset (`Connection.defaultPostgresPoolMax`). Override per-connection with `max`, or globally before constructing connections:

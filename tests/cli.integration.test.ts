@@ -162,14 +162,19 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
   });
 
   test("starts and stops the database queue worker", async () => {
-    // The worker runs until it is asked to stop.
-    const { exitCode, stdout: output, stderr } = await runProcess([...ormCli, "queue", "--queue=smoke", "--workers=1"], { cwd: project, timeoutMs: 500 });
+    // Stop once the worker is ready: CI can take longer than any fixed deadline to start it.
+    const { exitCode, stdout: output, stderr, timedOut } = await runProcess([...ormCli, "queue", "--queue=smoke", "--workers=1"], {
+      cwd: project,
+      stopOnStdout: "[Queue] Worker started. queue=smoke concurrency=1",
+      timeoutMs: 10_000,
+    });
 
+    expect(timedOut).toBe(false);
     expect(exitCode).toBe(0);
     expect(stderr).toBe("");
     expect(output).toContain("[Queue] Worker started. queue=smoke concurrency=1");
     expect(output).toContain("[Queue] Worker stopped.");
-  }, 5_000);
+  }, 15_000);
 
   test("boots the interactive REPL and evaluates a piped command", async () => {
     const repl = await runCli(["repl"], {

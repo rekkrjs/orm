@@ -324,6 +324,7 @@ function nodeMysqlDriver(config: ConnectionConfig, url: string | undefined, { ma
           database: config.database ?? env.MYSQL_DATABASE,
           user: config.username ?? env.MYSQL_USER ?? "root",
           password: config.password ?? env.MYSQL_PASSWORD,
+          ...(config.tls === "require" ? { ssl: { rejectUnauthorized: false } } : {}),
         } : {}),
     connectionLimit: max ?? 10,
     // As bun:sql: dates travel as UTC whatever the process time zone, BIGINT

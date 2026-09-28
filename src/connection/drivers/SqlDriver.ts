@@ -51,6 +51,7 @@ export function createDriver(driverName: DriverName, config: ConnectionConfig, u
       database: config.database,
       username: config.username,
       password: config.password,
+      ...(config.driver === "mysql" && config.tls ? { tls: config.tls } : {}),
       ...(max !== undefined ? { max } : {}),
       ...(prepare !== undefined ? { prepare } : {}),
       ...(bigint !== undefined ? { bigint } : {}),

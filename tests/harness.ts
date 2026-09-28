@@ -48,7 +48,7 @@ export interface ProcessResult { stdout: string; stderr: string; exitCode: numbe
 /** Runs a command to completion. At `timeoutMs` it is sent SIGTERM and reported as timed out. */
 export function runProcess(
   command: string[],
-  options: { cwd?: string; env?: Record<string, string | undefined>; input?: string; timeoutMs?: number } = {},
+  options: { cwd?: string; env?: Record<string, string | undefined>; input?: string; timeoutMs?: number; stopOnStdout?: string } = {},
 ): Promise<ProcessResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command[0]!, command.slice(1), {
@@ -59,7 +59,14 @@ export function runProcess(
     let stdout = "";
     let stderr = "";
     let timedOut = false;
-    child.stdout!.setEncoding("utf8").on("data", (chunk) => { stdout += chunk; });
+    let stopped = false;
+    child.stdout!.setEncoding("utf8").on("data", (chunk) => {
+      stdout += chunk;
+      if (!stopped && options.stopOnStdout && stdout.includes(options.stopOnStdout)) {
+        stopped = true;
+        child.kill("SIGTERM");
+      }
+    });
     child.stderr!.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
     const timer = options.timeoutMs === undefined ? undefined : setTimeout(() => { timedOut = true; child.kill("SIGTERM"); }, options.timeoutMs);
     child.on("error", reject);

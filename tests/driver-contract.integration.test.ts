@@ -1681,12 +1681,16 @@ export default class CreateContractMigrated extends Migration {
         };
         const previous = Object.fromEntries(Object.values(names).map((name) => [name, process.env[name]]));
         for (const [field, name] of Object.entries(names)) process.env[name] = values[field as keyof typeof values];
-        // No TLS here, unlike CI's MySQL URL: MySQL 8 accepts it because this suite's context already
-        // authenticated this user over TLS, which primes caching_sha2_password's fast path.
-        const fromEnv = new Connection({ driver, max: 1 } as any);
+        const fromEnv = new Connection(driver === "mysql" ? { driver, max: 1, tls: "require" } : { driver, max: 1 });
         try {
           const current = driver === "postgres" ? "SELECT current_database() AS name" : "SELECT DATABASE() AS name";
           expect((await fromEnv.query(current))[0].name).toBe(values.database);
+          if (driver === "mysql") {
+            const status = await fromEnv.query("SHOW SESSION STATUS LIKE 'Ssl_cipher'");
+            expect(status).toHaveLength(1);
+            expect(status[0].Variable_name).toBe("Ssl_cipher");
+            expect(status[0].Value).not.toBe("");
+          }
         } finally {
           await fromEnv.close();
           for (const [name, value] of Object.entries(previous)) {

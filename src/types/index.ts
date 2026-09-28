@@ -119,19 +119,25 @@ export type SQLitePragmaConfig = {
   busyTimeoutMs?: number;
 };
 
+type DriverConnectionFields = {
+  host?: string;
+  port?: number;
+  database?: string;
+  username?: string;
+  password?: string;
+  filename?: string; // sqlite
+  schema?: string;
+  max?: number;
+  prepare?: boolean;
+  bigint?: boolean;
+  sqlitePragmas?: false | SQLitePragmaConfig;
+};
+
 export type ConnectionConfig =
   | { url: string; schema?: string; max?: number; prepare?: boolean; bigint?: boolean; sqlitePragmas?: false | SQLitePragmaConfig }
-  | {
-      driver: "sqlite" | "mysql" | "postgres";
-      host?: string;
-      port?: number;
-      database?: string;
-      username?: string;
-      password?: string;
-      filename?: string; // sqlite
-      schema?: string;
-      max?: number;
-      prepare?: boolean;
-      bigint?: boolean;
-      sqlitePragmas?: false | SQLitePragmaConfig;
+  | DriverConnectionFields & { driver: "sqlite" | "postgres"; tls?: never }
+  | DriverConnectionFields & {
+      driver: "mysql";
+      /** MySQL ssl-mode=require: encrypt without verifying the server certificate. */
+      tls?: "require";
     };
