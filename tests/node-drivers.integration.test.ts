@@ -216,12 +216,19 @@ for (const { engine, url, session, kill, alive } of servers) {
 
     test("two begin() entries that finish out of order commit and roll back independently", async () => {
       await driver.unsafe(`DELETE FROM ${table}`);
+      // The second entry starts only once the first holds its row, so both are
+      // open at the same time whichever INSERT the server answers first.
+      let firstInserted!: () => void;
+      const inserted = new Promise<void>((resolve) => { firstInserted = resolve; });
       let finishFirst!: () => void;
+      const released = new Promise<void>((resolve) => { finishFirst = resolve; });
       const first = driver.begin!(async (tx) => {
         await tx.unsafe(`INSERT INTO ${table} VALUES ('first')`);
-        await new Promise<void>((resolve) => { finishFirst = resolve; });
+        firstInserted();
+        await released;
         throw new Error("first rolls back");
       });
+      await inserted;
       await driver.begin!(async (tx) => { await tx.unsafe(`INSERT INTO ${table} VALUES ('second')`); });
       finishFirst();
       await expect(first).rejects.toThrow("first rolls back");
