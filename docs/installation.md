@@ -36,51 +36,43 @@ PostgreSQL on Node.js needs the "pg" package. Install it next to @rekkr/orm: npm
 
 ## Add the package
 
-Rekkr ORM is distributed from its public GitHub repository. The package name and
-every application import remain `@rekkr/orm`; the Git URL only tells the package
-manager where to install it from. Do not install `@rekkr/orm` from the npm
-registry yet: the registry package is not a release from this repository.
-
-### Bun
-
 ```bash
-bun add github:rekkrjs/orm#v5.0.0
+bun add @rekkr/orm        # Bun
+npm install @rekkr/orm    # Node.js
+pnpm add @rekkr/orm
 ```
 
-Bun runs the package's TypeScript source through the `bun` export condition, so
-nothing needs building. Bun reports a blocked `prepare` script for the package;
-leave it blocked, it builds the Node.js output only.
-
-A branch, tag, or commit works the same way:
+On Node.js, add the driver for each server database you use:
 
 ```bash
-bun add github:rekkrjs/orm                # default branch
-bun add github:rekkrjs/orm#<tag>          # e.g. v5.0.0
-bun add github:rekkrjs/orm#<commit-sha>   # exact commit
-```
-
-### Node.js
-
-Node.js support starts with `v5.0.0`.
-
-```bash
-npm install --allow-git=all github:rekkrjs/orm#v5.0.0
 npm install pg        # PostgreSQL
 npm install mysql2    # MySQL
 npm install ioredis   # Redis cache or queue
 ```
 
-Node.js runs the compiled `dist/` output, which a Git checkout does not carry: the
-package's `prepare` script builds it while the package manager installs it.
-npm 12 fetches Git dependencies only with `--allow-git`; earlier versions ignore
-the flag. npm 12 then reports `install scripts blocked … (prepare: rm -rf ./dist
-&& tsc)`: that concerns the install step only. npm already ran `prepare` when it
-packed the Git dependency, so `dist/` is in place and nothing needs approving. pnpm refuses to run a dependency's build until you allow it: add the
-`allowBuilds` entry it prints to `pnpm-workspace.yaml` and install again.
+The published package carries both the TypeScript source and the compiled
+`dist/` output. Bun runs the source through the `bun` export condition; Node.js
+and bundlers run `dist/`. Nothing is built during installation. Every release is
+published from its GitHub tag by CI, with npm provenance linking the tarball to
+the commit it was built from.
+
+### From GitHub
+
+To try a commit that is not released yet, install from the repository:
 
 ```bash
-pnpm add github:rekkrjs/orm#v5.0.0
+bun add github:rekkrjs/orm#<commit-sha>
+npm install --allow-git=all github:rekkrjs/orm#<commit-sha>
 ```
+
+A Git checkout has no `dist/`, so its `prepare` script builds it when the
+package manager packs the dependency. Bun reports that script as blocked; leave
+it blocked, Bun runs the source and does not need the build. npm 12 fetches Git
+dependencies only with `--allow-git` (earlier versions ignore the flag) and
+reports `install scripts blocked … (prepare: rm -rf ./dist && tsc)`: that
+concerns the install step only, `dist/` is already in place. pnpm refuses to run
+a dependency's build until you allow it: add the `allowBuilds` entry it prints
+to `pnpm-workspace.yaml` and install again.
 
 ## TypeScript
 
@@ -88,8 +80,8 @@ The package ships its declarations; no `@types/*` package is needed for the ORM
 itself.
 
 - **Bun** — keep `bun-types` in `compilerOptions.types`, as any `bun init`
-  scaffold does. A Git install has no `dist/`, so the types resolve to the
-  TypeScript source, which matches the code Bun runs.
+  scaffold does. Types resolve to the published `.d.ts` files; a Git install,
+  which has no `dist/`, falls back to the TypeScript source.
 - **Node.js** — `@types/node` is enough; the ORM's declarations never reference
   Bun. They are the published `.d.ts` files, so your compiler flags
   (`exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, …) apply to your code
@@ -189,9 +181,10 @@ ORM is server-only. Import it from server modules exclusively — in SvelteKit
 that means `+page.server.ts`, `+server.ts`, `hooks.server.ts`, or a
 `$lib/server/` module. Importing it from client code fails the build, by design.
 
-On Bun, a Git install has no `dist/` build, so if Vite resolves the package
-(SvelteKit included) rather than Bun itself, point its **server** graph at the
-`bun` condition:
+An npm install needs no Vite configuration: Vite resolves the built `dist/`,
+which runs on both runtimes. A [Git install](#from-github) on Bun has no
+`dist/`, so if Vite resolves the package (SvelteKit included) rather than Bun
+itself, point its **server** graph at the `bun` condition:
 
 ```js
 // vite.config.js
@@ -211,8 +204,7 @@ Keep Vite's defaults in both lists: setting either option replaces its defaults,
 and other server dependencies still need their normal Node/module conditions.
 Scope it to `ssr` and nothing else: `resolve.conditions` at the top level is
 [shared by the client build and dev](https://vite.dev/config/shared-options.html#resolve-conditions),
-which would pull the ORM's source into a browser bundle. On Node.js none of this
-is needed; Vite resolves the built `dist/`.
+which would pull the ORM's source into a browser bundle.
 
 ## Next steps
 
@@ -231,13 +223,6 @@ decorator. Rewrite that construct, or run the CLI with Bun.
 **`Fetching packages of type "git" have been disabled`** — npm 12 needs
 `--allow-git=all` to install from GitHub.
 
-**`Cannot find module …/dist/src/index.js`** on Node.js — the package was
-installed without running its build. Allow the build (see
-[Node.js](#nodejs) above) and install again.
-
-**The package manager cannot resolve the package** — verify that the public
-GitHub repository and tag are reachable:
-
-```bash
-git ls-remote https://github.com/rekkrjs/orm.git refs/tags/v5.0.0
-```
+**`Cannot find module …/dist/src/index.js`** on Node.js — a Git install ran
+without its build. Allow the build (see [From GitHub](#from-github)) and install
+again, or install the released package from npm.

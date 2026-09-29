@@ -1,5 +1,23 @@
 # Changelog
 
+## 5.0.1 — 2026-09-29
+
+The first release published to npm. The code is the same as 5.0.0.
+
+- Install with `bun add @rekkr/orm` or `npm install @rekkr/orm`. The tarball
+  carries the compiled `dist/`, so nothing is built during installation:
+  Node.js no longer needs npm 12's `--allow-git`, and pnpm no longer asks to
+  approve a build. Installing from GitHub still works for unreleased commits.
+  See [Installation](./docs/installation.md).
+- Releases are published by CI from the release's tag through npm Trusted
+  Publishing, with provenance linking the package to its commit.
+- The documentation was reviewed against the code, and every example that
+  failed when copied was fixed: a composite unique index declared with
+  `unique()`, a queue job that Node.js could not load, a missing
+  `Model.update()`, and wrong paginator keys, among others. Cached queries are
+  invalidated with `Cache.forgetQueryTag()`; `Cache.forgetTags()` never reached
+  them, and the observer example now says so.
+
 ## 5.0.0 — 2026-09-28
 
 ### Breaking

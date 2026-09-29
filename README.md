@@ -3,12 +3,11 @@
 > **Runs on Bun and Node.js.** Install with:
 >
 > ```bash
-> bun add github:rekkrjs/orm#v5.0.0                         # Bun
-> npm install --allow-git=all github:rekkrjs/orm#v5.0.0     # Node.js 24.21+
+> bun add @rekkr/orm          # Bun 1.4.2+
+> npm install @rekkr/orm      # Node.js 24.21+
 > ```
 >
-> The package is installed directly from its public GitHub repository. On
-> Node.js, add `pg`, `mysql2` or `ioredis` for the servers you use — see
+> On Node.js, add `pg`, `mysql2` or `ioredis` for the servers you use — see
 > [Installation](./docs/installation.md).
 
 An **Eloquent-inspired ORM** for [Bun](https://bun.com) and [Node.js](https://nodejs.org). On Bun it runs on the native `bun:sql` client with **zero runtime dependencies**; on Node.js it runs on the built-in `node:sqlite` and the standard `pg`, `mysql2` and `ioredis` drivers. It supports **SQLite**, **MySQL**, and **PostgreSQL** with full TypeScript typing, a chainable query builder, schema migrations, model observers, polymorphic relations, and an interactive REPL.
@@ -45,9 +44,9 @@ An **Eloquent-inspired ORM** for [Bun](https://bun.com) and [Node.js](https://no
 ## Installation
 
 ```bash
-bun add github:rekkrjs/orm#v5.0.0                         # Bun
-npm install --allow-git=all github:rekkrjs/orm#v5.0.0     # Node.js 24.21+
-npm install pg                                            # Node.js + PostgreSQL
+bun add @rekkr/orm          # Bun
+npm install @rekkr/orm      # Node.js 24.21+
+npm install pg              # Node.js + PostgreSQL
 ```
 
 See [Installation](./docs/installation.md) for the driver each database needs and

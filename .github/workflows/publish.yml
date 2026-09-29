@@ -1,0 +1,39 @@
+name: Publish to npm
+# Publishes the release's tag to npm through Trusted Publishing: npm exchanges
+# this workflow's OIDC token for a short-lived publish credential, so no npm
+# token is stored in the repository, and the package gets provenance linking it
+# to this commit. The trusted publisher is configured on npmjs.com for
+# rekkrjs/orm and this file name.
+on:
+  release:
+    types: [published]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      # Trusted Publishing needs npm 11.5.1 or newer, which the newest Node.js 24 ships.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Tag matches package.json
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Release tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+      - run: bun install --frozen-lockfile
+      # The full suite already ran on this commit (test.yml); check what npm will ship.
+      - name: Smoke test packed package on Node.js and Bun
+        run: node scripts/smoke-packed-package.mjs
+      # `prepare` rebuilds dist/ before npm packs the tarball.
+      - run: npm publish
