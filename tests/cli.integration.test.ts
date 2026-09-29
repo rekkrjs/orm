@@ -5,6 +5,17 @@ import { join } from "path";
 import { pathToFileURL } from "url";
 import { Connection } from "../src/index.js";
 
+/**
+ * Asserts the REPL printed the smoke line. The terminal echoes every keystroke
+ * with ANSI redraws, so on failure the raw stdout fills the assertion message
+ * before its end, where the answer is; report the end without escapes instead.
+ */
+function expectReplSmoke(stdout: string): void {
+  if (stdout.includes("REPL_SMOKE function object")) return;
+  const tail = stdout.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").slice(-600);
+  throw new Error(`REPL output lacks "REPL_SMOKE function object". Last 600 characters:\n${tail}`);
+}
+
 interface CliResult {
   stdout: string;
   stderr: string;
@@ -186,7 +197,7 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
     expect(repl.exitCode).toBe(0);
     expect(repl.stderr).toBe("");
     expect(repl.stdout).toContain("ORM REPL ready.");
-    expect(repl.stdout).toContain("REPL_SMOKE function object");
+    expectReplSmoke(repl.stdout);
   }, 20_000);
 
   // The Bun REPL runs `bun repl` over a generated bootstrap; on Node.js the REPL is in-process and has neither.
@@ -203,7 +214,7 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
     expect(first.timedOut).toBe(false);
     expect(first.stderr).toBe("");
     expect(first.exitCode).toBe(0);
-    expect(first.stdout).toContain("REPL_SMOKE function object");
+    expectReplSmoke(first.stdout);
 
     const cacheDir = join(missingRoot, "orm-repl-cache");
     const cachedAfterFirst = await readdir(cacheDir);
@@ -212,7 +223,7 @@ export default class SmokeCommand extends Command.define("smoke:hello {name} {--
     const second = await runRepl();
     expect(second.exitCode).toBe(0);
     expect(second.stderr).toBe("");
-    expect(second.stdout).toContain("REPL_SMOKE function object");
+    expectReplSmoke(second.stdout);
     expect((await readdir(cacheDir)).length).toBeGreaterThan(0);
 
     // The disposable bootstrap dirs must not survive either session.
