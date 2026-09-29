@@ -2,7 +2,8 @@
 
 Use the SvelteKit helper to bind route params to ORM models and (for actions) validate incoming form/request data.
 
-> **Server-only.** ORM links against `bun:sql`, so every import of it — this
+> **Server-only.** ORM loads server database drivers (`bun:sql` on Bun;
+> `node:sqlite`, `pg` or `mysql2` on Node.js), so every import of it — this
 > helper included — belongs in a server module: `+page.server.ts`, `+server.ts`,
 > `hooks.server.ts`, or `$lib/server/`. Importing it from client code fails the
 > build. If you install from git, see the Vite note in
@@ -256,7 +257,7 @@ export const load: PageServerLoad = route()
   .load(async (_event, { announcement }) => ({ announcement }));
 ```
 
-`route().can(...)` uses an internal extended actor for policy checks and does not mutate `event.locals.user`.
+`route().can(...)` extends the actor with the policy helpers and assigns it back to `event.locals.user`, so later code in the request sees the same object.
 
 You can target a specific alias when multiple records are bound:
 
@@ -282,12 +283,12 @@ export const load: PageServerLoad = route()
 
 If the resolver returns `null`/`undefined`, a 404 is thrown automatically.
 
-## Validation values and locals in v3
+## Validation values and locals
 
 Validation errors omit input values by default, including custom formatters and
 problem+json. Opt in with `.request(handler, { includeValues: true })` or
 `.action(handler, { includeValues: true })` when returning submitted fields is
-appropriate. The optional `values` member is then included as before.
+appropriate. The optional `values` member is then included.
 
 Policy methods preserve the policy receiver (`this`). Attaching policy methods
 reassigns `event.locals.user` to the returned user so frozen authentication

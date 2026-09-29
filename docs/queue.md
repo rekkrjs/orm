@@ -48,8 +48,11 @@ export class SendWelcomeEmail extends DispatchableJob {
   static override maxAttempts = 3;     // optional; default 3
   static override delay = 0;           // optional dispatch delay in seconds
 
-  constructor(private userId: number) {
+  private userId: number;
+
+  constructor(userId: number) {
     super(userId); // forward args to base class so instance dispatch works
+    this.userId = userId;
   }
 
   async handle(): Promise<void> {
@@ -60,6 +63,10 @@ export class SendWelcomeEmail extends DispatchableJob {
 ```
 
 Constructor arguments must be JSON-serializable (strings, numbers, arrays, plain objects).
+Assign them to fields in the constructor body rather than declaring constructor
+parameter properties (`constructor(private userId: number)`): on Node.js the
+worker loads job files by stripping their types, which does not support them
+(see [Installation](./installation.md#models-and-migrations-on-nodejs)).
 The worker auto-registers exported job classes found under `jobsPath`. Keep
 `jobName` stable after jobs have been dispatched; the stored payload uses it to
 resolve the class when a worker eventually receives the job.

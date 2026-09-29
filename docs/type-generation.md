@@ -7,7 +7,7 @@ You don't have to use type generation. If you prefer to maintain attribute inter
 | Approach | Pros | Cons |
 |---|---|---|
 | `Model.define<T>()` | No build step, no generated files, types match exactly what you declare. | You re-declare attributes in two places (DB and TS). |
-| Type generation | Single source of truth (the database). Auto-regenerates on every migration. | Adds a build step; generated files must be in `tsconfig.json`. |
+| Type generation | Single source of truth (the database). Regenerates with `orm migrate --types` or the `configureOrm()` migration helpers. | Adds a build step; generated files must be in `tsconfig.json`. |
 
 ```ts
 const user = await User.first();
@@ -52,7 +52,7 @@ export default {
   // Module specifier prefix used in generated `declare module` blocks
   typeDeclarationImportPrefix: "$models",
 
-  // Whether to emit `class Foos { }` stubs (false) or augment your real class (true)
+  // true emits `class UsersBase extends Model` stubs; false (default) augments your real class
   typeStubs: false,
 
   // Override class names per table for irregular plurals or moved files
@@ -84,11 +84,11 @@ src/
             └── admin_users.d.ts
 ```
 
-This keeps generated declarations close to the files they augment. Make sure your `tsconfig.json` includes them:
+This keeps generated declarations close to the files they augment. Your `tsconfig.json` must include them; a pattern such as `src/**/*.ts` already matches `.d.ts` files:
 
 ```jsonc
 {
-  "include": ["src/**/*.ts", "src/**/*.d.ts"]
+  "include": ["src/**/*.ts"]
 }
 ```
 
@@ -289,7 +289,7 @@ You can safely add the generated directory to `.gitignore` if you regenerate as 
 
 ## Common pitfalls
 
-- **Types not picked up by the editor.** Ensure your `tsconfig.json` `include` covers the directory holding `.d.ts` files. `src/**/*.ts` does **not** include `.d.ts` unless you also list `**/*.d.ts`.
+- **Types not picked up by the editor.** Ensure your `tsconfig.json` `include` covers the directory holding the generated `.d.ts` files — for instance when `orm types:generate <dir>` writes outside `src/`.
 - **Wrong model name from irregular table.** Set `typeDeclarationSingularModels: false` or add a `typeDeclarations` override.
 - **Generated files re-augment a missing class.** If you delete a model but leave the table around, the next regeneration emits a `declare module "../User"` that points nowhere. Delete the corresponding `.d.ts` (`types/users.d.ts`) too.
 - **Tenant types out of sync.** If only one tenant has run new migrations, the introspected schema may not match other tenants. Run tenant migrations across every tenant before regenerating.

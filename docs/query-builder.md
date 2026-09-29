@@ -303,7 +303,12 @@ Event.whereTime("opened_at", "09:00:00");
 
 Event.wherePast("starts_at");
 Event.whereFuture("expires_at");
+Event.whereNowOrPast("starts_at");
+Event.whereNowOrFuture("expires_at");
 Event.whereToday("published_at");
+Event.whereBeforeToday("published_at");
+Event.whereAfterToday("published_at");
+Event.whereTodayOrBefore("published_at");
 Event.whereTodayOrAfter(["starts_at", "ends_at"]);
 ```
 
@@ -998,9 +1003,11 @@ See [Relationships](./relationships.md#relation-queries) for the full reference.
 const page = await User.orderBy("name").paginate(15, 1);
 page.data;          // Collection<User>
 page.total;         // number — total matching row count
-page.perPage;       // 15
-page.currentPage;   // 1
-page.lastPage;      // ceil(total / perPage)
+page.per_page;      // 15
+page.current_page;  // 1
+page.last_page;     // ceil(total / per_page)
+page.from;          // position of the first row on the page
+page.to;            // position of the last row on the page
 page.json();        // plain object suitable for API responses
 ```
 
@@ -1308,7 +1315,8 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `whereRaw(sql, bindings?)` | Raw SQL where clause |
 | `orWhereRaw(...)` | OR raw SQL |
 | `whereDate / whereDay / whereMonth / whereYear / whereTime` | Date-part filters |
-| `wherePast / whereFuture / whereNowOrPast / whereNowOrFuture / where*Today` | Relative-date filters |
+| `wherePast / whereFuture / whereNowOrPast / whereNowOrFuture` | Relative to now |
+| `whereToday / whereBeforeToday / whereAfterToday / whereTodayOrBefore / whereTodayOrAfter` | Relative to today |
 | `whereJsonContains / whereJsonDoesntContain` | JSON-array membership (cross-DB) |
 | `orWhereJsonContains / orWhereJsonDoesntContain` | OR JSON-array membership |
 | `whereJsonLength / orWhereJsonLength` | JSON array length |
@@ -1357,7 +1365,7 @@ await Room.whereBetween("capacity", [2, 8]).orderByDesc("capacity").get();
 | `clone()` | Copy builder state |
 | `toSql() / toRawSql() / dump() / dd() / explain()` | SQL compilation and debugging |
 
-## Composable SQL fragments (v3)
+## Composable SQL fragments
 
 ```ts
 import { DB, sql } from "@rekkr/orm";

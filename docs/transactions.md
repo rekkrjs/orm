@@ -157,7 +157,7 @@ single transaction; most drivers do not allow cross-database two-phase commit:
 await DB.tenant("acme", async () => {
   await DB.transaction(async () => {
     await User.create({ name: "Alice" });   // tenant_acme
-    await User.update({ active: true });    // tenant_acme
+    await User.where("name", "Alice").update({ active: true }); // tenant_acme
   });
 });
 ```

@@ -144,9 +144,9 @@ Only MySQL/MariaDB has separate storage classes for text, so it is the only driv
 |---|---|
 | `boolean(name)` | `BOOLEAN` (TINYINT(1) on MySQL) |
 | `date(name)` | `DATE` (MySQL/Postgres); `TEXT` (SQLite) |
-| `time(name, precision?)` | `TIME` (MySQL); `TIME WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
-| `dateTime(name, precision?)` | `DATETIME` (MySQL); `TIMESTAMP WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
-| `timestamp(name, precision?)` | `TIMESTAMP` (MySQL); `TIMESTAMP WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
+| `time(name, precision = 0)` | `TIME` (MySQL); `TIME(0) WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
+| `dateTime(name, precision = 0)` | `DATETIME` (MySQL); `TIMESTAMP(0) WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
+| `timestamp(name, precision = 0)` | `TIMESTAMP` (MySQL); `TIMESTAMP(0) WITHOUT TIME ZONE` (Postgres); `TEXT` (SQLite) |
 
 ```ts
 table.boolean("is_published").default(false);
@@ -297,7 +297,9 @@ These four helpers default to precision `3`, the milliseconds a JavaScript
 `Date` carries, because the model fills their columns from one. At precision
 `0` PostgreSQL and MySQL round those milliseconds to the second, so a model
 just saved held `…42.578Z` while its stored row said `…43.000Z`. Plain
-`dateTime()` and `timestamp()` columns keep the database's default precision.
+`dateTime()` and `timestamp()` columns default to whole seconds on both
+(`TIMESTAMP(0)` on PostgreSQL, whose own default would be 6); pass a precision,
+such as `timestamp("paid_at", 3)`, to keep a `Date`'s milliseconds.
 
 Tables created before this default keep their whole-second columns. To bring
 one in line, widen its columns in a migration:
@@ -677,7 +679,7 @@ When you set `connection.schema` (or use a tenant resolver), every `Schema.creat
 
 ## Driver caveats
 
-- **SQLite** can not change column types in place. The schema builder issues `ALTER TABLE` where SQLite supports it and falls back to a `create + copy + drop + rename` recipe for unsupported operations.
+- **SQLite** can not change column types in place. Adding, renaming, and dropping columns use SQLite's `ALTER TABLE`; `change()` throws, and ORM does not rebuild the table for you. Write the `create + copy + drop + rename` steps in the migration when a SQLite column must change.
 - **SQLite exact numbers:** its `REAL` values are JavaScript numbers, and so are its `INTEGER` values up to `Number.MAX_SAFE_INTEGER`. Past that, Bun's decoder rounds them, while on Node.js they come back exact, as strings (or `bigint` with `bigint: true`); arbitrary-precision decimals are not exact on either runtime. Store large IDs/decimals as `TEXT`, or store money as integer minor units. Changing `decimal()` globally to text would break numeric ordering and aggregates, so ORM does not do that implicitly.
 - **MySQL index limits** are byte-based and depend on the InnoDB row format and page size. The often-cited 191-character `utf8mb4` limit applies to the legacy 767-byte ceiling, not every MySQL installation. See the [MySQL index documentation](https://dev.mysql.com/doc/refman/8.4/en/column-indexes.html) before indexing unusually wide or composite string keys.
 - **PostgreSQL** is the only driver that supports `jsonb` and named `schema` qualification. Without an explicit precision, `dateTime()` and `timestamp()` compile to `TIMESTAMP(0) WITHOUT TIME ZONE` as before.

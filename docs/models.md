@@ -140,7 +140,7 @@ await Schema.create("camel_users", (table) => {
   table.softDeletes("deletedAt");
   table.timestamps("createdAt", "updatedAt");
 
-  table.unique(["accountId", "email"]);
+  table.uniqueIndex(["accountId", "email"]);
   table.index(["accountId", "createdAt"]);
 });
 ```
@@ -206,10 +206,6 @@ getters, `latest()`, and `replicate()` still validate the names they need.
 callback, including nested calls and subclasses inheriting the setting. Other
 callbacks and models remain unaffected. The static `timestamps` configuration
 does not change; implicit timestamp casts follow the callback's scope too.
-
-Valdyr applications keep Valdyr's direct `extends Model` requirement for static
-analysis; ORM's support for inherited settings does not introduce an
-application `BaseModel` convention there.
 
 ## Schema Resolution (PostgreSQL tenancy)
 
@@ -366,7 +362,7 @@ other integers beyond `Number.MAX_SAFE_INTEGER` as JSON strings.
 Implement `CastsAttributes` for any transformation a built-in cast can't express:
 
 ```ts
-import type { CastsAttributes, Model } from "@rekkr/orm";
+import { Model, type CastsAttributes } from "@rekkr/orm";
 
 class UppercaseCast implements CastsAttributes {
   get(_model: Model, _key: string, value: unknown) {
@@ -1266,7 +1262,7 @@ Useful for cache invalidation patterns where the parent's timestamp drives view 
 
 - **Accessors without typing widen to `any`.** Annotate `static accessors` with `AccessorMap<TAttrs, TModel>` to get full IntelliSense.
 - **Mass assignment surprises.** Adding a new column doesn't automatically expose it through `create()` if you set `static fillable`. Update the allow list when you add new fields.
-- **Builder updates skip per-instance before-hooks and timestamps.** Registered observers still receive `updated`/`saved` after `User.where(...).update(...)`; fetch the instance and call `instance.save()` or `instance.update()` when `updating`/`saving` hooks or automatic timestamps matter.
+- **Builder updates skip per-instance before-hooks and mass assignment.** `User.where(...).update(...)` sets `updated_at` and registered observers still receive `updated`/`saved`, but `updating`/`saving` never run and `fillable` is not applied; fetch the instance and call `instance.save()` or `instance.update()` when those matter.
 - **`delete()` without soft deletes is permanent.** If you intended a soft delete, set `static softDeletes = true` and add a `deleted_at` column.
 - **`fresh()` and `refresh()` differ.** `fresh()` returns a new instance (or `null`) without changing the current object; `refresh()` mutates the current instance and throws `ModelNotFoundError` if its row no longer exists. Both reload without global scopes.
 - **Relation loading is explicit.** Use `model.loadMissing()` or `Collection.loadMissing()` to load only relations that are still absent, or `with()` on the next query.

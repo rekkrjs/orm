@@ -580,9 +580,12 @@ model there as it does in the application.
 Register a secondary driver under a name, then point `search.queue.connection` at it. Search jobs land on that driver instead of the default:
 
 ```ts
-import { Queue, RedisQueueDriver } from "@rekkr/orm/queue";
+import { Queue, RedisQueueDriver, resolveRedisClient } from "@rekkr/orm/queue";
 
-Queue.registerDriver("search-driver", new RedisQueueDriver({ /* ... */ }));
+Queue.registerDriver(
+  "search-driver",
+  new RedisQueueDriver(resolveRedisClient(process.env.SEARCH_QUEUE_REDIS_URL), { prefix: "search:queue:" }),
+);
 
 configureOrm({
   // ...
@@ -971,7 +974,7 @@ reads whatever it needs from `SearchableRecord.data` and its own options.
 - Other engines (Meilisearch, Algolia, Typesense, MySQL `MATCH AGAINST`) — write one against the [`SearchEngine` interface](#custom-engines).
 - Native tokenizer-backed match positions for PostgreSQL and SQLite FTS. The current implementation computes best-effort character offsets from returned field text.
 
-## Transaction and batch behavior in v3
+## Transaction and batch behavior
 
 Search observers capture each record and its tenant at write time, then deliver
 only after root commit. Rollbacks discard delivery. Native engines resolve the

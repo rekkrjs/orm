@@ -170,7 +170,8 @@ SvelteKit `actions` example:
 
 ```ts
 import * as db from "$lib/server/db";
-import { fail, type Actions, type PageServerLoad } from "@sveltejs/kit";
+import { fail, type Actions } from "@sveltejs/kit";
+import type { PageServerLoad } from "./$types";
 import { Validator, rule } from "@rekkr/orm/validation";
 
 const loginSchema = Validator.schema({

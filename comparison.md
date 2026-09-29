@@ -45,6 +45,6 @@
 | Tenant migrations        | Often separate app code or tenancy package conventions                                    | First-class landlord / tenant migration paths and grouped CLI execution                |
 | Type safety              | PHP type hints and static analysis via tools                                              | Native TypeScript generics and typed `Collection<T>` results                           |
 | Query result ergonomics  | Collections are first-class and array-like in PHP                                         | Collections are first-class, iterable, JSON-serializable, and array-like in JS/TS      |
-| Type generation          | Mostly external tooling                                                                   | Built-in type generation and automatic regeneration after migrations                   |
+| Type generation          | Mostly external tooling                                                                   | Built-in type generation, regenerated after migrations with `--types`                  |
 | Relationship existence   | `has`, `whereHas`, `doesntHave`                                                           | Same relation existence helpers                                                        |
 | Polymorphic mapping      | `morphMap` / custom relation config                                                       | `MorphMap.register()` and polymorphic relation helpers                                 |

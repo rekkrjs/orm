@@ -501,7 +501,7 @@ typeDeclarationSingularModels: true,
 typeDeclarations: {
   admin_users: { path: "$models/admin/AdminAccount", className: "AdminAccount" },
 },
-typeStubs: false,                                  // emit stubs instead of declarations
+typeStubs: false,                                  // true emits base-class stubs instead of declarations
 ```
 
 See [Type Generation](./type-generation.md) for the full feature reference.
@@ -526,6 +526,7 @@ The timer is `unref`'d and is cleared automatically on a normal `commit()` / `ro
 log: true                                  // SQL to console
 log: { file: "./logs" }                    // SQL to ./logs/query-YYYY-MM-DD.log only
 log: { file: "./logs", console: true }     // both file and console
+log: { console: true, bindings: true }     // include binding values
 log: false                                 // off (default)
 ```
 
@@ -535,6 +536,9 @@ Controls SQL query logging.
 - `{ file }` — append queries to a dated file `query-YYYY-MM-DD.log` inside the given directory (rolls over daily; rotate/prune old files with your OS, e.g. `logrotate`). Console output is **off** unless `console: true` is also set.
 - `{ file, console: true }` — write to both.
 - `false` / omitted — no logging.
+- `bindings: true` — write the binding values next to each query. Off by default:
+  the log shows only how many bindings were hidden, since they can carry
+  passwords, tokens or personal data.
 
 Useful in development; in production prefer the file form (or leave off) and ensure query sampling if volume is high.
 
@@ -700,14 +704,26 @@ connections remain the caller's responsibility.
 
 ## Environment variables (CLI only)
 
-When no `orm.config.ts` exists, the CLI falls back to env vars:
+When neither `orm.config.ts` nor `orm.config.js` exists, the CLI falls back to env vars:
 
 ```bash
 export DATABASE_URL="sqlite://app.db"
 export MIGRATIONS_PATH="./database/migrations,./database/tenant-migrations"
 export SEEDERS_PATH="./database/seeders"
 export MODELS_PATH="./src/models"
-export TYPES_OUT_DIR="./src/generated/model-types"
+```
+
+Without `DATABASE_URL`, the connection can come from Laravel-style variables
+instead. `DB_CONNECTION` is `sqlite`, `mysql` or `postgres`; for SQLite,
+`DB_DATABASE` is the file name:
+
+```bash
+export DB_CONNECTION="postgres"
+export DB_HOST="localhost"
+export DB_PORT="5432"
+export DB_DATABASE="mydb"
+export DB_USERNAME="app"
+export DB_PASSWORD="secret"
 ```
 
 Comma-separated lists work where a config field accepts `string[]`. Prefer a real config file for anything beyond a quick experiment — the env-var path does not support `tenancy`, `createIfMissing`, or any of the type generation overrides.

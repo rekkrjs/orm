@@ -333,7 +333,7 @@ export default class UserSeeder extends Seeder {
 }
 ```
 
-For destructive seeders (wipe and reload), call `Model.truncate()` first or rely on `orm.fresh()` (drop + re-migrate + re-seed).
+For destructive seeders (wipe and reload), call `Model.truncate()` first, or rebuild the database: `orm migrate:fresh --seed` from the CLI, or `await orm.fresh()` followed by `await orm.seed()` in code (`orm.fresh()` alone drops and re-migrates without seeding).
 
 ## Common pitfalls
 
@@ -345,5 +345,5 @@ For destructive seeders (wipe and reload), call `Model.truncate()` first or rely
 ## Where to next
 
 - [Library Usage](./library-usage.md) — the `configureOrm()` facade including `orm.seed()`.
-- [Migrations](./migrations.md) — `orm.fresh()` to drop, re-migrate, and re-seed in one command.
+- [Migrations](./migrations.md) — `orm migrate:fresh --seed` to drop, re-migrate, and re-seed in one command.
 - [Testing](./testing.md) — using factories inside `bun test`.

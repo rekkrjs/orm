@@ -183,6 +183,18 @@ await Cache.flush();
 
 Tags are exact strings. ORM does not perform wildcard or prefix tag matching.
 
+There are two separate tag spaces, and neither call reaches the other:
+
+| Cached with | Invalidate with |
+|---|---|
+| `Cache.set()` / `Cache.remember()` | `Cache.forget()` / `Cache.forgetTag()` / `Cache.forgetTags()` |
+| a query's `.remember()` / `.cacheTags()` | `Cache.forgetQuery()` / `Cache.forgetQueryTag()` |
+
+Query keys and tags are scoped to the tenant, database and schema that ran the
+query (see [Query isolation](#query-isolation-and-redis-layout)), so
+`Cache.forgetTags(["curricula"])` leaves a query cached with
+`.cacheTags("curricula")` in place.
+
 ```ts
 await Cache.forgetTag(`tenant:${tenantId}:subjects`);
 
@@ -209,7 +221,11 @@ Recommended tenant-scoped tags:
 `tenant:${tenantId}:admissions-reference`
 ```
 
-Use observers to invalidate exact tags when models change:
+Use observers to invalidate exact tags when models change. Here the curricula
+list is a cached query ([Query Caching](#query-caching)) and the admissions
+payload was cached with `Cache.remember()`, so each goes through its own call.
+Passing the model's connection resolves the same tenant scope the query was
+cached under:
 
 ```ts
 import { Observer } from "@rekkr/orm";
@@ -224,11 +240,10 @@ class CurriculumObserver extends Observer<Curriculum> {
     return this.invalidate(model);
   }
 
-  private invalidate(model: Curriculum) {
-    return Cache.forgetTags([
-      `tenant:${model.tenant_id}:curricula`,
-      `tenant:${model.tenant_id}:curriculum-subjects`,
-      `tenant:${model.tenant_id}:admissions-reference`,
+  private async invalidate(model: Curriculum) {
+    await Promise.all([
+      Cache.forgetQueryTag(`tenant:${model.tenant_id}:curricula`, model.getConnection()),
+      Cache.forgetTags([`tenant:${model.tenant_id}:admissions-reference`]),
     ]);
   }
 }
@@ -236,7 +251,7 @@ class CurriculumObserver extends Observer<Curriculum> {
 CurriculumObserver.observe(Curriculum);
 ```
 
-You can also isolate cache invalidation in a dedicated observer that watches every model affecting the same read cache. This keeps cache logic separate from domain observers that send notifications, write audits, or enforce business rules:
+You can also isolate cache invalidation in a dedicated observer that watches every model affecting the same read cache. The payloads below were cached with `Cache.remember()`; for cached queries, call `Cache.forgetQueryTag()` instead. This keeps cache logic separate from domain observers that send notifications, write audits, or enforce business rules:
 
 ```ts
 import { Observer } from "@rekkr/orm";
@@ -365,7 +380,7 @@ new RedisCacheStore(redis, { prefix: "orm:" });
 
 In most applications, use the facade prefix for app or tenant namespacing and leave the Redis store prefix as the package namespace.
 
-## Query isolation and v3 Redis migration
+## Query isolation and Redis layout
 
 `remember("users")` derives a namespace from the effective tenant, database
 configuration and schema, including eager graphs and rawJson. Network/file

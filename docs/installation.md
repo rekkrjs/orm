@@ -73,7 +73,9 @@ npm install ioredis   # Redis cache or queue
 Node.js runs the compiled `dist/` output, which a Git checkout does not carry: the
 package's `prepare` script builds it while the package manager installs it.
 npm 12 fetches Git dependencies only with `--allow-git`; earlier versions ignore
-the flag. pnpm refuses to run a dependency's build until you allow it: add the
+the flag. npm 12 then reports `install scripts blocked … (prepare: rm -rf ./dist
+&& tsc)`: that concerns the install step only. npm already ran `prepare` when it
+packed the Git dependency, so `dist/` is in place and nothing needs approving. pnpm refuses to run a dependency's build until you allow it: add the
 `allowBuilds` entry it prints to `pnpm-workspace.yaml` and install again.
 
 ```bash
