@@ -2934,7 +2934,7 @@ export class Builder<T = Record<string, any>, TResult = T, TSelected extends str
   async simplePaginate(perPage: number = 15, page: number = 1): Promise<SimplePaginator<TResult>> {
     positiveInteger(perPage, "Per-page value");
     positiveInteger(page, "Page");
-    const items = await this.clone().forPage(page, perPage + 1).get() as unknown as Collection<TResult>;
+    const items = await this.clone().offset((page - 1) * perPage).limit(perPage + 1).get() as unknown as Collection<TResult>;
     const hasMore = items.length > perPage;
     const data = items.slice(0, perPage) as Collection<TResult>;
     const from = data.length === 0 ? 0 : (page - 1) * perPage + 1;

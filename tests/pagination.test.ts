@@ -223,6 +223,19 @@ describe("Pagination", () => {
     expect((result as any).last_page).toBeUndefined();
   });
 
+  test("simplePaginate pages cover every row once, in order", async () => {
+    // 25 rows at 10 per page: 1–10, 11–20, 21–25, as paginate() splits them.
+    const ids: number[][] = [];
+    for (let page = 1; page <= 4; page++) {
+      const result = await PUser.orderBy("id").simplePaginate(10, page);
+      const paged = await PUser.orderBy("id").paginate(10, page);
+      expect(Array.from(result.data, (user: any) => user.id)).toEqual(Array.from(paged.data, (user: any) => user.id));
+      ids.push(Array.from(result.data, (user: any) => user.id));
+    }
+    const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+    expect(ids).toEqual([range(1, 10), range(11, 20), range(21, 25), []]);
+  });
+
   test("simplePaginate handles later and empty pages", async () => {
     const last = await PUser.orderBy("id").simplePaginate(10, 3);
     expect(last.from).toBe(21);
