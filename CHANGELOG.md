@@ -1,5 +1,25 @@
 # Changelog
 
+## 5.0.2 — 2026-10-07
+
+- Models and the three paginators can be returned directly from an Elysia 2
+  handler. Elysia 2 sends only plain objects and arrays as JSON; for any other
+  class instance it calls `toResponse()` if there is one, and otherwise sends
+  `String(value)` with no content type. A model's body was JSON only because
+  its `toString()` happens to stringify it, so it went out without
+  `application/json`, and a `Paginator`, `SimplePaginator` or
+  `CursorPaginator` went out as `[object Object]`. They now have
+  `toResponse()`, which returns the same plain object as `toJSON()`, so Elysia
+  answers `application/json` and keeps the status and headers set with
+  `status()` or `set`. The ORM still does not depend on Elysia: `toResponse()`
+  is only the name Elysia looks for. Collections were already sent as JSON. A
+  column named `toResponse` stays reachable through `getAttribute()`, as one
+  named `toJSON` does. See [Serialization](./docs/models.md#serialization).
+- `simplePaginate()` no longer skips rows after the first page. It read
+  `perPage + 1` rows to detect a next page, but also used that number to
+  compute the offset, so page 2 at 10 per page started at row 12 instead of
+  11, and every later page lost one more row.
+
 ## 5.0.1 — 2026-09-29
 
 The first release published to npm. The code is the same as 5.0.0.
