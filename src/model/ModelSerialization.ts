@@ -202,6 +202,14 @@ export class ModelSerialization<T extends Record<string, any> = any> extends Mod
     return deepPick(full, paths);
   }
 
+  /**
+   * The model as a plain object, for frameworks that serialize class instances
+   * through a `toResponse()` method, as Elysia 2 does.
+   */
+  toResponse(): ModelJson<this> {
+    return this.toJSON();
+  }
+
   toString(): string {
     return JSON.stringify(this.toJSON());
   }

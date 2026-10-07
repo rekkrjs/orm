@@ -98,7 +98,7 @@ type BaseModelInstanceKey =
   | "updateTimestamps" | "touch" | "increment" | "incrementQuietly" | "decrement" | "decrementQuietly" | "is" | "isNot" | "isInstanceOf"
   | "load" | "loadMissing" | "loadMorph" | "loadCount" | "loadSum" | "loadAvg" | "loadMin"
   | "loadMax" | "delete" | "saveQuietly" | "deleteQuietly" | "restore" | "restoreQuietly"
-  | "forceDelete" | "forceDeleteQuietly" | "fresh" | "refresh" | "toJSON" | "json" | "toString" | "freshTimestamp"
+  | "forceDelete" | "forceDeleteQuietly" | "fresh" | "refresh" | "toJSON" | "toResponse" | "json" | "toString" | "freshTimestamp"
   | "push" | "getKey" | "getKeyName" | "getAttributes" | "assertAttributeExists"
   | "setRelation" | "getRelation" | "relationLoaded" | "setRelations" | "unsetRelation" | "unsetRelations" | "hasMany" | "belongsTo" | "hasOne"
   | "hasManyThrough" | "hasOneThrough" | "belongsToMany" | "morphTo" | "morphOne"
@@ -290,8 +290,9 @@ export type ExtractStringPaths<R> =
   : R extends object ? keyof R & string
   : never;
 
-type WithJsonMethods<T> = Omit<T, "json" | "toJSON"> & {
+type WithJsonMethods<T> = Omit<T, "json" | "toJSON" | "toResponse"> & {
   toJSON(): ModelJson<T>;
+  toResponse(): ModelJson<T>;
   json(): ModelJson<T>;
   json(options: { relations?: boolean }): ModelJson<T>;
   json<P extends DotPaths<ModelJson<T>>>(...paths: P[]): DeepPick<ModelJson<T>, P>;

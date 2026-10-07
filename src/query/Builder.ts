@@ -274,6 +274,10 @@ export class Paginator<T> {
   toJSON(): PaginatorJson<T> {
     return this.json();
   }
+
+  toResponse(): PaginatorJson<T> {
+    return this.toJSON();
+  }
 }
 
 export class SimplePaginator<T> {
@@ -322,6 +326,10 @@ export class SimplePaginator<T> {
   toJSON(): SimplePaginatorJson<T> {
     return this.json();
   }
+
+  toResponse(): SimplePaginatorJson<T> {
+    return this.toJSON();
+  }
 }
 
 export class CursorPaginator<T> {
@@ -357,6 +365,10 @@ export class CursorPaginator<T> {
 
   toJSON(): CursorPaginatorJson<T> {
     return this.json();
+  }
+
+  toResponse(): CursorPaginatorJson<T> {
+    return this.toJSON();
   }
 }
 

@@ -102,6 +102,7 @@ type BaseModelInstanceKey =
   | "fresh"
   | "refresh"
   | "toJSON"
+  | "toResponse"
   | "json"
   | "toString"
   | "freshTimestamp"

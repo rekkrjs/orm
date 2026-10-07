@@ -1038,6 +1038,19 @@ if (first.next_cursor) {
 
 Cursor pagination is stable under inserts and deletes — perfect for infinite-scroll feeds and append-only event logs.
 
+### Returning a page from an HTTP handler
+
+All three paginators serialize with `toJSON()`, so `JSON.stringify(page)`
+gives the shape shown by `page.json()`. They can also be returned directly from
+an Elysia 2 handler: Elysia calls their `toResponse()`, which returns that same
+plain object, and answers `application/json`.
+
+```ts
+app.get("/users", ({ query }) => User.orderBy("id").paginate(15, Number(query.page ?? 1)));
+```
+
+See [Serialization](./models.md#serialization) for what each row contains.
+
 ## Streaming large datasets
 
 Use streaming when you need to process every row but can't hold the result set in memory.

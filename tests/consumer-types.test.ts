@@ -69,7 +69,7 @@ const generated = new Map<string, string>();
 
 // Column names that are valid SQL but not TypeScript identifiers, or that
 // collide with members every model inherits from `Model`.
-const awkwardColumns = ["first-name", "2fa", "save", "delete", "constructor", "toJSON"];
+const awkwardColumns = ["first-name", "2fa", "save", "delete", "constructor", "toJSON", "toResponse"];
 
 async function generateSources(): Promise<void> {
   const scaffold = mkdtempSync(join(tmpdir(), "orm-consumer-scaffolds-"));

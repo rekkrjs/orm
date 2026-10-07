@@ -1015,6 +1015,18 @@ user.json({ relations: false });   // attributes only, no relations
 
 `JSON.stringify(user)` calls `toJSON()`, so it picks up relations and accessor-defined virtual fields automatically.
 
+A model can be returned straight from an Elysia 2 handler. Elysia sends only
+plain objects and arrays as JSON, and calls `toResponse()` on any other class
+instance; a model's `toResponse()` returns the same object as `toJSON()`, so
+the response is `application/json` with the body `JSON.stringify(user)` gives,
+and `status(201, user)` or `set.status` still apply. Collections and
+paginators work the same way. The ORM does not depend on Elysia: this is only
+the method name Elysia looks for.
+
+```ts
+app.get("/users/:id", ({ params }) => User.findOrFail(Number(params.id)));
+```
+
 Dates come out as ISO strings, not `Date` objects:
 
 ```ts
