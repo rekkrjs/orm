@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, ormCli, runProcess, test } from "./harness.js";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { readFile } from "node:fs/promises";
@@ -113,6 +113,9 @@ async function generateSources(): Promise<void> {
     } finally {
       await connection.close();
     }
+    // Drop the link to the checkout first: Node.js follows it when walking
+    // recursively, into temporary directories that parallel tests delete.
+    unlinkSync(join(scaffold, "node_modules", "@rekkr", "orm"));
     for (const file of readdirSync(scaffold, { recursive: true, encoding: "utf8" })) {
       if (file.endsWith(".ts") && !file.startsWith("node_modules")) generated.set(file, await readFile(join(scaffold, file), "utf-8"));
     }
