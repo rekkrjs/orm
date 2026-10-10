@@ -6,11 +6,12 @@
 > [Retiring the workaround](#retiring-the-workaround).
 
 - **Status:** active; centralized in `Connection.affectedRows(result)`
-- **Last reviewed:** 2026-09-04
+- **Last reviewed:** 2026-10-10
 - **Affects:** MySQL diverges. SQLite and PostgreSQL agree with each other.
   The Node.js adapters reproduce the same split on purpose (see [Node.js](#nodejs)).
-- **Verified with:** Bun 1.4.1 (`4661e494f`) and 1.4.0 (`34cbb9a40`),
-  MySQL 9.7.1 (Homebrew), PostgreSQL 16 (alpine), macOS arm64
+- **Verified with:** Bun 1.4.3 (`c6da4a4d3`), 1.4.1 (`4661e494f`) and
+  1.4.0 (`34cbb9a40`), MySQL 9.7.1 (Homebrew) and 26.7.0, PostgreSQL 16 (alpine)
+  and 18.6, macOS arm64
 - **Upstream:** [oven-sh/bun#40432](https://github.com/oven-sh/bun/issues/40432),
   filed 2026-08-25. Related open reports, none of which covers the cross-adapter
   split itself:
@@ -113,8 +114,9 @@ driver object. Queue leases and internal write-count consumers use this helper.
 The implementation is marked `WORKAROUND(bun-sql-write-count)`.
 
 `tests/v3-acceptance.test.ts` checks insert, update, no-op update and delete on all
-three real drivers. The probe was rerun on Bun 1.4.1 on 2026-09-04: the split and
-no-op divergence above remain, so the adapter is retained.
+three real drivers. The probe was rerun on Bun 1.4.1 on 2026-09-04 and on Bun 1.4.3
+(`c6da4a4d3`) on 2026-10-10: the split and no-op divergence above remain, so
+the adapter is retained.
 
 ## Node.js
 

@@ -7,18 +7,19 @@
 
 - **Status:** active on Bun; `createDriver()` in `src/connection/drivers/SqlDriver.ts`
   defaults PostgreSQL to `prepare: false` on Bun and `true` on Node.js.
-- **Last reviewed:** 2026-09-27
+- **Last reviewed:** 2026-10-10
 - **Affects:** PostgreSQL only. MySQL re-prepares a statement itself when a
   table's metadata changes, and SQLite prepares nothing across calls.
-- **Verified with:** Bun 1.4.2 (`744846f84`), PostgreSQL 18.6, macOS arm64.
+- **Verified with:** Bun 1.4.3 (`c6da4a4d3`) and 1.4.2 (`744846f84`),
+  PostgreSQL 18.6, macOS arm64.
   Node.js 26.10 with `pg` behaves the same way (see [Node.js](#nodejs)).
 - **Upstream:** [oven-sh/bun#29484](https://github.com/oven-sh/bun/issues/29484),
   filed 2026-04-19 on Bun 1.3.12. We added a Bun 1.4.2 reproduction and the
   postgres.js comparison in
   [a comment](https://github.com/oven-sh/bun/issues/29484#issuecomment-5848788647)
   on 2026-09-26. **Fix pending:** [oven-sh/bun#35120](https://github.com/oven-sh/bun/pull/35120),
-  opened 2026-07-22 by `robobun` and last updated 2026-09-06, is open and
-  awaiting review. Its build passes the probe (see [The fix in review](#the-fix-in-review)).
+  opened 2026-07-22 by `robobun` and last updated 2026-09-27, is open and
+  awaiting review; it is not in Bun 1.4.3. Its build passes the probe (see [The fix in review](#the-fix-in-review)).
   The probe, not the issue's or the PR's state, decides when the default can
   change.
 
@@ -114,8 +115,8 @@ $ bun scripts/bun-sql-prepared-plan-probe.ts postgres://postgres@127.0.0.1:5432/
 
 - **Exit 3:** `bun:sql` re-prepared the statement outside a transaction, and the
   query after a failed transaction worked. Bun is fixed.
-- **Exit 0:** a cached plan keeps failing on its connection. On Bun 1.4.2 the
-  three verdict lines report `0A000`.
+- **Exit 0:** a cached plan keeps failing on its connection. On Bun 1.4.2 and
+  1.4.3 the three verdict lines report `0A000`.
 - **Exit 1:** the server could not be reached, or the table could not be
   created. Nothing was learned.
 

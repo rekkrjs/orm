@@ -6,13 +6,13 @@
 > [Retiring the workaround](#retiring-the-workaround).
 
 - **Status:** active workaround
-- **Last reviewed:** 2026-09-04
+- **Last reviewed:** 2026-10-10
 - **Affects:** MySQL on Bun only. SQLite and PostgreSQL are unaffected, and so
   is Node.js: `keepEventLoopAlive()` returns early when `Bun` is undefined,
   and `mysql2`'s sockets already hold the loop while a query is in flight
   (see [Node.js](#nodejs)).
-- **Verified with:** Bun 1.4.1 (`4661e494f`) and 1.4.0 (`34cbb9a40`),
-  MySQL 9.7.1, macOS arm64
+- **Verified with:** Bun 1.4.3 (`c6da4a4d3`), 1.4.1 (`4661e494f`) and
+  1.4.0 (`34cbb9a40`), MySQL 9.7.1 and 26.7.0, macOS arm64
 - **Upstream:** [oven-sh/bun#27362](https://github.com/oven-sh/bun/issues/27362)
   documents the same timer workaround but for sequential remote queries and is
   closed as a duplicate; [oven-sh/bun#27102](https://github.com/oven-sh/bun/issues/27102)
@@ -88,12 +88,12 @@ main().catch(console.error);   // no output, exit 0
 The observed triggers do not all become reliable at once, which matters for
 deciding when the workaround can go:
 
-| Trigger | Bun 1.4.0 | Bun 1.4.1 |
-|---|---|---|
-| `reserve()` → `release()` → query | truncates every time | truncates every time |
-| `begin()` → query | truncates every time | truncates every time |
-| second `new SQL()` → query on the first | truncates every time | truncates every time |
-| two concurrent queries → a third | **flaky** — resolved 2/6 | **flaky** — resolved 3/20 |
+| Trigger | Bun 1.4.0 | Bun 1.4.1 | Bun 1.4.3 |
+|---|---|---|---|
+| `reserve()` → `release()` → query | truncates every time | truncates every time | truncates every time |
+| `begin()` → query | truncates every time | truncates every time | truncates every time |
+| second `new SQL()` → query on the first | truncates every time | truncates every time | truncates every time |
+| two concurrent queries → a third | **flaky** — resolved 2/6 | **flaky** — resolved 3/20 | resolved 0/20 |
 
 The last row is the shape of #26235 and it is the dangerous one to test with:
 on a lucky run it looks fixed. The first three are what the ORM leans on —
@@ -245,3 +245,8 @@ it is unaffected by `Connection.keepMysqlEventLoopAlive`.
 `scripts/bun-mysql-eventloop-probe.ts` was rerun on Bun 1.4.1 (`4661e494f`).
 All four triggers (reserve/release, transaction, second client and pooled queries)
 resolved 0/20 attempts. The reference-holding workaround remains enabled.
+
+## Bun 1.4.3 revalidation (2026-10-10)
+
+The probe was rerun on Bun 1.4.3 (`c6da4a4d3`) against MySQL 26.7.0. All four
+triggers resolved 0/20 attempts (exit 0). The workaround remains enabled.
